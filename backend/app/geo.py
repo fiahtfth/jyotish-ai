@@ -14,9 +14,13 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from timezonefinder import TimezoneFinder
 
 _CSV = os.path.join(
-    os.path.dirname(__file__), "..", "..",
-    ".venv-libs", "jhora-data", "geonames_places_5k.csv",
+    os.path.dirname(__file__), "..", "data", "geonames_places_5k.csv",
 )
+if not os.path.exists(_CSV):
+    _CSV = os.path.join(
+        os.path.dirname(__file__), "..", "..",
+        ".venv-libs", "jhora-data", "geonames_places_5k.csv",
+    )
 # Fall back to the installed package location
 _PKG_CSV = os.path.join(
     os.path.expanduser("~"), ".local/lib/python3.10/site-packages/jhora/data/geonames_places_5k.csv"
