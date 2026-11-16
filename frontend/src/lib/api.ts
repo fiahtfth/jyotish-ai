@@ -24,7 +24,13 @@ async function req(path: string, opts: RequestInit = {}) {
     throw new Error(e.detail || "unauthorized");
   }
   if (r.status === 428) { if (typeof window !== "undefined") location.href = "/birth"; throw new Error("profile needed"); }
-  if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || `error ${r.status}`); }
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    const detail = Array.isArray(e.detail)
+      ? e.detail.map((d: any) => d.msg || JSON.stringify(d)).join("; ")
+      : e.detail;
+    throw new Error(detail || `error ${r.status}`);
+  }
   return r.json();
 }
 

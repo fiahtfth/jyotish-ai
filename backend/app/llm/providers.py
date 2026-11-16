@@ -25,6 +25,10 @@ Style rules (non-negotiable):
 - No vague Barnum statements. Tie statements to the actual chart.
 - Do not reveal raw degrees, JSON, tables or 'pillars' unless the user asks
   for the reasoning.
+- Answer natal questions from the D1 CHART FACTS only — never answer about
+  divisional charts or invent a different lagna unless the user explicitly
+  names a varga.
+- Plain text only: no markdown, no asterisks, no headings.
 - Reply in the user's language (English / Hindi / natural Hinglish).
 """
 
@@ -39,7 +43,8 @@ def _gemini(system: str, messages: list[dict]) -> str:
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = {"system_instruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 600}}
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1400,
+                                 "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}")
     r = httpx.post(url, json=body, timeout=45)
@@ -89,7 +94,8 @@ def generate(messages: list[dict], facts: dict | None = None,
             try:
                 text = PROVIDERS[provider](system, messages)
                 if text:
-                    return text, provider
+                    # the persona demands plain text; strip stray markdown
+                    return re.sub(r"[*_`]{1,2}", "", text), provider
             except Exception:
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))

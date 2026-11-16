@@ -247,13 +247,23 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
     return conv.messages[start_len:]
 
 
+# anything question- or intent-shaped is never a calibration answer
+_QUESTIONISH = re.compile(
+    r"(tell me|what|when|why|how|show|will|would|future|chart|kundli|ignore|"
+    r"predict|read my|\?)", re.I)
+
+
 def _classify_answer(text: str) -> str | None:
     t = text.strip().lower().strip(".!")
     if t in ANSWER_MAP:
         return ANSWER_MAP[t]
-    for k, v in ANSWER_MAP.items():
-        if k in t and len(t) < 60:
-            return v
+    if _QUESTIONISH.search(t) or len(t) >= 60:
+        return None
+    # word-boundary matching, longest keys first — substring matching once
+    # misread "...future now" as the answer "no"
+    for k in sorted(ANSWER_MAP, key=len, reverse=True):
+        if re.search(rf"\b{re.escape(k)}\b", t):
+            return ANSWER_MAP[k]
     return None
 
 
@@ -283,6 +293,17 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
         conv.state = "open"
         new_msgs.append(_add_msg(db, conv, "assistant", "Let's talk — what's on your mind?"))
         return new_msgs
+
+    # chart requests are factual — answer them without losing the pending check
+    if CHART_PAT.search(text.lower()) and detect_varga(text.lower()):
+        varga = detect_varga(text.lower()) or "D1"
+        data = facts["vargas"].get(varga)
+        if data:
+            _add_msg(db, conv, "assistant",
+                     f"Here's your {varga} chart.",
+                     kind="chart", meta={"varga": varga, "chart": data})
+            _ask_event(db, conv, ev, first=False)
+            return conv.messages[-3:]
 
     # free-text intent overrides: a real question, not an answer
     feedback = _classify_answer(text)

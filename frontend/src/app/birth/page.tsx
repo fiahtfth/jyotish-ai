@@ -19,7 +19,13 @@ export default function Birth() {
     if (!token()) { router.replace("/login"); return; }
     api.getProfile().then((p: any) => {
       setF(f => ({ ...f, ...p }));
-      if (p.place_name) { setQ(`${p.place_name}, ${p.place_country}`); setPlace(p); }
+      if (p.place_name) {
+        setQ(`${p.place_name}, ${p.place_country}`);
+        // normalize profile shape -> geo-search shape used by submit()
+        setPlace({ name: p.place_name, state: p.place_state, country: p.place_country,
+                   latitude: p.latitude, longitude: p.longitude,
+                   timezone_name: p.timezone_name, utc_offset_hours: p.utc_offset_hours });
+      }
     }).catch(() => {});
   }, [router]);
 
