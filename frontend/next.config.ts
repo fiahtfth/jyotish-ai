@@ -1,9 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
-  cacheComponents: true,
-  partialPrefetching: true,
+  // static export -> served by the FastAPI backend (single deployable unit)
+  output: "export",
   turbopack: {
     rules: {
       "*.css": {

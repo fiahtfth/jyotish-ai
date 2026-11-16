@@ -1,4 +1,5 @@
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+// empty = same origin (production: FastAPI serves this frontend + the API)
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export function token() {
   return typeof window === "undefined" ? "" : localStorage.getItem("jyotish_token") || "";

@@ -1,11 +1,13 @@
 """Jyotish AI — FastAPI application."""
 import json
+import os
 import time
 from collections import defaultdict, deque
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 
 from . import geo
@@ -265,3 +267,26 @@ def calibration_status(user: User = Depends(current_user), db: Session = Depends
 @app.get("/api/health")
 def health():
     return {"ok": True, "llm_provider": settings.LLM_PROVIDER}
+
+
+# ------------------------------------------------------------- frontend
+# Serve the statically-exported Next.js app (frontend/out) with SPA fallback.
+# Registered last so every /api/* route above wins.
+_FRONTEND_DIR = os.environ.get(
+    "JYOTISH_FRONTEND_DIR",
+    os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "out"))
+
+if os.path.isdir(_FRONTEND_DIR):
+    @app.get("/{full_path:path}", include_in_schema=False)
+    def spa(full_path: str):
+        if full_path.startswith("api/"):
+            return Response(status_code=404)
+        root = os.path.abspath(_FRONTEND_DIR)
+        cand = os.path.abspath(os.path.join(root, full_path or "index.html"))
+        if not cand.startswith(root):       # path traversal guard
+            return Response(status_code=404)
+        if os.path.isfile(cand):
+            return FileResponse(cand)
+        if os.path.isfile(cand + ".html"):
+            return FileResponse(cand + ".html")
+        return FileResponse(os.path.join(root, "index.html"))

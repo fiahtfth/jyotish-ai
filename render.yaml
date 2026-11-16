@@ -1,0 +1,21 @@
+# Render.com blueprint — free web service for the pilot deployment.
+# The repo ships a statically-exported frontend (frontend/out) served by
+# FastAPI, so a plain Python environment is enough — no Node needed at
+# build or run time.
+services:
+  - type: web
+    name: jyotish-ai
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: JYOTISH_LLM_PROVIDER
+        value: gemini
+      - key: JYOTISH_LLM_EXTERNAL_CONSENT
+        value: "true"
+      - key: GEMINI_API_KEY
+        sync: false        # set in the dashboard or via API
+      - key: JYOTISH_JWT_SECRET
+        generateValue: true
