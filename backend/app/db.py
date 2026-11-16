@@ -17,8 +17,10 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     display_name = Column(String, default="")
     created_at = Column(DateTime, default=datetime.utcnow)
-    profile = relationship("BirthProfile", back_populates="user", uselist=False)
-    conversations = relationship("Conversation", back_populates="user")
+    profile = relationship("BirthProfile", back_populates="user", uselist=False,
+                           cascade="all, delete-orphan")
+    conversations = relationship("Conversation", back_populates="user",
+                                 cascade="all, delete-orphan")
 
 
 class BirthProfile(Base):
@@ -38,7 +40,8 @@ class BirthProfile(Base):
     calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated
     predictions_allowed = Column(Boolean, default=False)
     user = relationship("User", back_populates="profile")
-    calibrations = relationship("CalibrationEvent", back_populates="profile")
+    calibrations = relationship("CalibrationEvent", back_populates="profile",
+                                cascade="all, delete-orphan")
 
 
 class CalibrationEvent(Base):
@@ -71,7 +74,8 @@ class Conversation(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     user = relationship("User", back_populates="conversations")
-    messages = relationship("Message", back_populates="conversation")
+    messages = relationship("Message", back_populates="conversation",
+                            cascade="all, delete-orphan", order_by="Message.id")
 
 
 class Message(Base):

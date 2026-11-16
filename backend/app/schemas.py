@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Literal, Optional
 
 
 class RegisterIn(BaseModel):
@@ -39,9 +39,9 @@ class BirthProfileIn(BaseModel):
     place_name: str
     place_state: str = ""
     place_country: str
-    latitude: float
-    longitude: float
-    birth_time_precision: str = "exact"  # exact | approximate | unknown
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    birth_time_precision: Literal["exact", "approximate", "unknown"] = "exact"
 
 
 class BirthProfileOut(BirthProfileIn):

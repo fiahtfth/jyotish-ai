@@ -99,7 +99,8 @@ def generate(messages: list[dict], facts: dict | None = None,
 def _facts_brief(facts: dict) -> str:
     p = facts["planets"]
     lag = facts["lagna"]
-    lines = [f"Lagna: {lag['sign_name']} ({lag['degree']:.1f}°), lord {lag['lord']}"]
+    # degrees are withheld even from the model — it interprets, never states them
+    lines = [f"Lagna: {lag['sign_name']}, lord {lag['lord']}"]
     for name, rec in p.items():
         extra = []
         if rec["retrograde"]:
@@ -158,7 +159,7 @@ def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
     if facts is not None and ("lagna" in user_msg or "ascendant" in user_msg
                               or "rising" in user_msg):
         lag = facts["lagna"]
-        return (f"Your lagna is {lag['sign_name']} ({lag['degree']:.1f}°), ruled by "
+        return (f"Your lagna is {lag['sign_name']}, ruled by "
                 f"{lag['lord']}. It's a {lag['nakshatra']['name']} rising nakshatra. "
                 "What would you like to look at next?")
     if facts is not None and ("moon" in user_msg or "rashi" in user_msg):

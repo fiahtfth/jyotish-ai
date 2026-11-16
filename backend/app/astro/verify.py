@@ -16,9 +16,11 @@ _SIGN_PAT = "|".join(K.SIGN_NAMES)
 
 
 def _claims_planet_sign(text: str):
+    # natal-position claims only — transit claims are time-dependent and
+    # cannot be checked against the natal chart, so 'transiting' is excluded
     out = []
     for m in re.finditer(
-            rf"({ _PLANET_PAT })\s+(?:is\s+)?(?:in|placed in|occupying|sits in|transiting)\s+({_SIGN_PAT})",
+            rf"({ _PLANET_PAT })\s+(?:is\s+)?(?:in|placed in|occupying|sits in)\s+({_SIGN_PAT})",
             text, re.I):
         out.append((m.group(1).title(), m.group(2).title()))
     return out

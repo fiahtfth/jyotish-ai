@@ -156,7 +156,15 @@ def put_profile(body: BirthProfileIn, user: User = Depends(current_user),
         p.calc_fingerprint = calc_fp({"birth_time_precision": p.birth_time_precision})
         p.calibration_state = "pending"
         p.predictions_allowed = False
-        # mark old calibration events for re-issue on next conversation start
+        # the old calibration answers no longer apply to the new chart —
+        # retire them and send the conversation back to calibration, else
+        # a user who edits birth details gets permanently locked out
+        if p.id is not None:
+            db.query(CalibrationEvent).filter(
+                CalibrationEvent.profile_id == p.id).delete()
+            conv = _user_conversation(db, user)
+            conv.state = "cal_intro"
+            conv.pending_event_id = ""
     db.commit()
     return _profile_out(p)
 

@@ -168,6 +168,33 @@ def test_failed_calibration_locks_predictions():
     r = send("show me my D9 chart", h)
     assert any(m["kind"] == "chart" for m in r)
 
+def test_profile_edit_retriggers_calibration():
+    """Editing birth details after calibration must retire the old answers and
+    re-open the calibration flow — never leave predictions dead-locked."""
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    for a in ["Yes, that happened", "Yes, that happened", "Yes, that happened"]:
+        send(a, h)
+    prof = client.get("/api/profile", headers=h).json()
+    assert prof["predictions_allowed"] is True
+    # a material birth-data change locks the gate and resets the conversation
+    edited = {k: prof[k] for k in (
+        "display_name","year","month","day","hour","minute","second","place_name",
+        "place_state","place_country","latitude","longitude","birth_time_precision")}
+    edited["hour"] = 10
+    prof = client.put("/api/profile", json=edited, headers=h).json()
+    assert prof["calibration_state"] == "pending"
+    assert prof["predictions_allowed"] is False
+    r = send("tell me my future", h)
+    # fresh calibration questions are re-issued (options), not a dead end
+    assert any(m["kind"] == "options" for m in r)
+    # and completing it again re-opens the gate
+    for a in ["Yes, that happened", "Yes, that happened", "Yes, that happened"]:
+        send(a, h)
+    prof = client.get("/api/profile", headers=h).json()
+    assert prof["predictions_allowed"] is True
+
+
 def test_unauthenticated_rejected():
     assert client.get("/api/chat/history").status_code in (401, 403)
     assert client.post("/api/chat/send", json={"text": "hi"}).status_code in (401, 403)

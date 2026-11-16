@@ -15,7 +15,14 @@ async function req(path: string, opts: RequestInit = {}) {
       ...(opts.headers || {}),
     },
   });
-  if (r.status === 401) { clearToken(); if (typeof window !== "undefined") location.href = "/login"; throw new Error("unauthorized"); }
+  if (r.status === 401) {
+    // a failed login shouldn't bounce the page — show the server's message
+    if (typeof window !== "undefined" && location.pathname !== "/login") {
+      clearToken(); location.href = "/login";
+    }
+    const e = await r.json().catch(() => ({}));
+    throw new Error(e.detail || "unauthorized");
+  }
   if (r.status === 428) { if (typeof window !== "undefined") location.href = "/birth"; throw new Error("profile needed"); }
   if (!r.ok) { const e = await r.json().catch(() => ({})); throw new Error(e.detail || `error ${r.status}`); }
   return r.json();

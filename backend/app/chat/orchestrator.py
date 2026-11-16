@@ -151,6 +151,31 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
 
 # ------------------------------------------------------------------ entry
 
+def _ensure_events(db: Session, profile: BirthProfile, facts: dict):
+    """Seed calibration events when none exist or the fingerprint changed
+    (e.g. after the birth details were edited mid-conversation)."""
+    existing = (db.query(CalibrationEvent)
+                .filter(CalibrationEvent.profile_id == profile.id).all())
+    if existing and existing[0].calc_fingerprint == profile.calc_fingerprint:
+        return
+    for e in existing:
+        db.delete(e)
+    db.flush()
+    stmts = calibration.generate_statements(facts, birth_input(profile),
+                                            profile.calc_fingerprint)
+    for s in stmts:
+        db.add(CalibrationEvent(
+            profile_id=profile.id, event_id=s["event_id"], domain=s["domain"],
+            predicted_event=s["predicted_event"],
+            predicted_window_start=s["predicted_window"]["start"],
+            predicted_window_end=s["predicted_window"]["end"],
+            rules_evaluated=json.dumps(s["rules_evaluated"]),
+            pillars_json=json.dumps(s["pillars"]),
+            chat_text=s["chat_text"],
+            calc_fingerprint=s["calculation_fingerprint"]))
+    db.flush()
+
+
 def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -> list[Message]:
     """Called once when the chat opens for a fresh profile."""
     facts = chart_facts(profile)
@@ -161,26 +186,7 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
              f"({facts['planets']['Moon']['nakshatra']['name']} nakshatra).")
     _add_msg(db, conv, "assistant", hello)
 
-    # (re)generate calibration events if fingerprint changed or none exist
-    existing = (db.query(CalibrationEvent)
-                .filter(CalibrationEvent.profile_id == profile.id).all())
-    if not existing or existing[0].calc_fingerprint != profile.calc_fingerprint:
-        for e in existing:
-            db.delete(e)
-        db.flush()
-        stmts = calibration.generate_statements(facts, birth_input(profile),
-                                                profile.calc_fingerprint)
-        for s in stmts:
-            db.add(CalibrationEvent(
-                profile_id=profile.id, event_id=s["event_id"], domain=s["domain"],
-                predicted_event=s["predicted_event"],
-                predicted_window_start=s["predicted_window"]["start"],
-                predicted_window_end=s["predicted_window"]["end"],
-                rules_evaluated=json.dumps(s["rules_evaluated"]),
-                pillars_json=json.dumps(s["pillars"]),
-                chat_text=s["chat_text"],
-                calc_fingerprint=s["calculation_fingerprint"]))
-        db.flush()
+    _ensure_events(db, profile, facts)
     ev = _next_pending_event(db, conv, profile)
     if ev is None:
         conv.state = "open"
@@ -267,6 +273,7 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
         return new_msgs
 
     if conv.state == "cal_intro":
+        _ensure_events(db, profile, facts)
         ev = _next_pending_event(db, conv, profile)
         if ev:
             _ask_event(db, conv, ev, first=True)
@@ -288,9 +295,14 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
                      f"Convergence: {json.loads(ev.pillars_json)}. "
                      "Does the event ring true?")
             return conv.messages[-2:]
+        # keep the quick-reply buttons alive on the re-ask
         _add_msg(db, conv, "assistant",
                  "Take your time — was anything like that happening for you in that period? "
-                 "A rough 'yes', 'something similar', 'no' or 'not sure' is all I need.")
+                 "A rough 'yes', 'something similar', 'no' or 'not sure' is all I need.",
+                 kind="options",
+                 meta={"options": ["Yes, that happened", "Something similar, different time",
+                                   "No, that didn't happen", "Not sure / doesn't apply"],
+                       "event_id": ev.event_id})
         return conv.messages[-2:]
 
     if feedback == "partial":
@@ -386,6 +398,7 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
     if is_future and not profile.predictions_allowed:
         if profile.calibration_state == "pending":
             conv.state = "cal_ask"
+            _ensure_events(db, profile, facts)
             ev = _next_pending_event(db, conv, profile)
             if ev:
                 _add_msg(db, conv, "assistant",
