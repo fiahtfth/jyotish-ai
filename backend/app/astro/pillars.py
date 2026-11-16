@@ -109,13 +109,14 @@ def pillar_jaimini(facts, birth: BirthInput, domain: str, start: date, end: date
         return {"verdict": "unavailable", "evidence": ["karaka not computed"], "rules": []}
     karaka_sign = facts["planets"][karaka_planet]["sign"]
 
-    a10 = facts["jaimini"].get("A10", {}).get("sign")
-    ul = facts["jaimini"].get("upapada_lagna", {}).get("sign")
+    arudhas = facts["jaimini"].get("arudhas", {})
     target_signs = {karaka_sign}
-    if domain == "career" and a10 is not None:
-        target_signs.add(a10)
-    if domain == "relationship" and ul is not None:
-        target_signs.add(ul)
+    target_labels = {karaka_sign: karaka_name}
+    for a_name in spec.get("arudhas", []):
+        a_sign = arudhas.get(a_name)
+        if a_sign is not None:
+            target_signs.add(a_sign)
+            target_labels[a_sign] = f"{target_labels.get(a_sign, '')}+{a_name}".lstrip("+")
 
     mid = _mid(start, end)
     runs = engine.running_chara(birth, (mid.year, mid.month, mid.day))
@@ -137,8 +138,8 @@ def pillar_jaimini(facts, birth: BirthInput, domain: str, start: date, end: date
     hits = {s for s in target_signs if s == md_sign or s in _aspects(md_sign)}
     if hits:
         verdict = "support"
-        evidence.append(f"Chara dasha of {md_sign_name} directly touches "
-                        f"{', '.join(K.SIGN_NAMES[s] for s in hits)} "
+        evidence.append(f"Chara dasha of {md_sign_name} touches "
+                        f"{', '.join(f'{K.SIGN_NAMES[s]} ({target_labels[s]})' for s in hits)} "
                         f"(karaka={karaka_planet} in {K.SIGN_NAMES[karaka_sign]})")
     else:
         # conflict if dasha sign is 6/8/12 from karaka sign
@@ -177,20 +178,32 @@ def pillar_tajika(facts, birth: BirthInput, domain: str, start: date, end: date)
         elif house in (6, 8, 12):
             conflicts += 1
             evidence.append(f"Muntha in dusthana (house {house})")
+        # Muntha lord's natal dignity qualifies the year's promise
+        mlord = K.SIGN_LORD[ms]
+        mrec = facts["planets"].get(K.PLANET_NAMES[mlord])
+        if mrec:
+            dign = mrec.get("dignity", [])
+            if "debilitated" in dign:
+                conflicts += 1
+                evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} debilitated in D1 — weakens the year's promise")
+            elif any(t in dign for t in ("exalted", "own sign", "moolatrikona")):
+                supports += 1
+                evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} dignified ({'/'.join(dign)}) — strengthens the year")
     verdict = "support" if supports and not conflicts else ("conflict" if conflicts and not supports else "neutral")
     return {"verdict": verdict, "evidence": evidence, "rules": rules,
             "method_note": "simplified Muntha progression, not the full Tajika return chart"}
 
 
 def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
-    """P4 — slow transits (Jupiter/Saturn) over domain houses + SAV bindus."""
+    """P4 — double transit + fast transits, SAV/BAV bindus, nakshatra sub-period."""
     lagna_sign = facts["lagna"]["sign"]
-    houses = K.DOMAINS[domain]["houses"]
+    spec = K.DOMAINS[domain]
+    houses = spec["houses"]
     place = drik.Place(birth.place_label, birth.lat, birth.lon, birth.tz_offset)
     evidence, rules = [], []
     supports, conflicts = 0, 0
     months = _month_samples(start, end)
-    ju_hits, sa_hits = set(), set()
+    ju_hits, sa_hits, fast_hits = set(), set(), set()
     for t in months:
         pos = engine.transit_positions((t.year, t.month, t.day), place)
         for name in ("Jupiter", "Saturn"):
@@ -200,6 +213,12 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
             if h in houses:
                 (ju_hits if name == "Jupiter" else sa_hits).add((t.year, t.month))
                 rules.append(f"transit {name} in house {h} at {t}")
+        for name in ("Sun", "Mars"):
+            if name in pos:
+                h = _house_of(pos[name]["sign"], lagna_sign)
+                if h in houses:
+                    fast_hits.add(name)
+                    rules.append(f"fast transit {name} in house {h} at {t}")
         if "Saturn" in pos:
             moon_house = _house_of(pos["Saturn"]["sign"], facts["planets"]["Moon"]["sign"])
             if moon_house == 8:
@@ -213,10 +232,43 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
         supports += 1
         who = "Jupiter" if ju_hits else "Saturn"
         evidence.append(f"{who} transited {domain}-relevant houses during the window")
+    if fast_hits:
+        evidence.append(f"fast transit trigger ({'/'.join(sorted(fast_hits))}) crossing {domain} houses")
+        supports += 1
     if sav is not None and supports:
         strong = [K.SIGN_NAMES[s] for s, b in enumerate(sav) if b >= 28 and _house_of(s, lagna_sign) in houses]
         if strong:
             evidence.append(f"SAV ≥28 bindus in {', '.join(strong)}")
+    # BAV: the domain karaka's own bindus in domain-house signs (>=4 is strong)
+    karaka_planet = facts["jaimini"]["karakas"].get(spec["karaka"])
+    bav = facts.get("binnashtakavarga")
+    if bav and karaka_planet:
+        pid = {v: k for k, v in K.PLANET_NAMES.items()}.get(karaka_planet)
+        if pid is not None and pid < len(bav):
+            strong_bav = [K.SIGN_NAMES[s] for s in range(12)
+                          if bav[pid][s] >= 4 and _house_of(s, lagna_sign) in houses]
+            weak_bav = [K.SIGN_NAMES[s] for s in range(12)
+                        if bav[pid][s] <= 2 and _house_of(s, lagna_sign) in houses]
+            if strong_bav:
+                supports += 1
+                evidence.append(f"{karaka_planet} BAV ≥4 bindus in {', '.join(strong_bav)}")
+            elif weak_bav:
+                conflicts += 1
+                evidence.append(f"{karaka_planet} BAV thin (≤2 bindus) in {', '.join(weak_bav)}")
+    # nakshatra micro-timing: pratyantar (sub-sub) lord at window mid
+    mid = _mid(start, end)
+    run = engine.running_vimshottari(birth, (mid.year, mid.month, mid.day))
+    if len(run) >= 3:
+        pd_lord = run[2]["lords"][2]
+        prec = facts["planets"].get(pd_lord)
+        if prec:
+            nak = prec["nakshatra"]
+            rules.append(f"sub-period lord {pd_lord}, natal {nak['name']} pada {nak['pada']}")
+            owned = [h for h in range(1, 13) if facts["houses"][h]["lord"] == pd_lord]
+            if prec["house"] in houses or any(h in houses for h in owned):
+                supports += 1
+                evidence.append(f"sub-period lord {pd_lord} ({nak['name']} pada {nak['pada']}) "
+                                f"activates {domain} houses")
     verdict = "support" if supports >= 2 or (supports and not conflicts) else \
         ("conflict" if conflicts and not supports else "neutral")
     return {"verdict": verdict, "evidence": evidence, "rules": rules}
@@ -249,14 +301,10 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
     support = sum(1 for v in pillars.values() if v == "support")
     conflict = sum(1 for v in pillars.values() if v == "conflict")
     unavail = sum(1 for v in pillars.values() if v == "unavailable")
-    if support == 4:
-        label = "strong traditional convergence"
-    elif support == 3:
-        label = "substantial traditional convergence"
-    elif support == 2:
-        label = "mixed or conditional convergence"
+    if support >= 3:
+        label = f"{support}/4 Confirmed"
     else:
-        label = "weak traditional convergence"
+        label = f"{support}/4 Conditional" + (" — weak signal" if support <= 1 else "")
     if conflict or unavail:
         label += f" ({conflict} conflicting, {unavail} unavailable)"
     return {

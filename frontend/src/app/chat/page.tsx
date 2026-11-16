@@ -21,11 +21,16 @@ export default function Chat() {
   useEffect(() => {
     if (!token()) { router.replace("/login"); return; }
     if (localStorage.getItem("jyotish_dark") === "1") { setDark(true); document.documentElement.classList.add("dark"); }
-    Promise.all([
+    const load = () => Promise.all([
       api.me().then(setMe).catch(() => {}),
       api.history().then((h: any) => setMsgs(Array.isArray(h) ? h : h.messages || [])),
     ]).catch((e) => { if (e.message === "profile needed") router.replace("/birth"); })
       .finally(() => setLoading(false));
+    load();
+    // token may have been replaced in another tab — reload the right account's chat
+    const onFocus = () => { if (token()) load(); };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
   }, [router]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
@@ -128,6 +133,13 @@ export default function Chat() {
                 {m.kind === "analysis" && (
                   <div className="mt-2 text-xs text-muted border-t border-bord pt-2">
                     convergence: {m.meta.convergence || "—"} · support {m.meta.support_count ?? "—"}
+                  </div>
+                )}
+                {m.meta?.analysis?.convergence && (
+                  <div className="mt-2 text-xs text-muted border-t border-bord pt-2">
+                    <span className="inline-block rounded-md bg-accentsoft text-accent px-2 py-0.5 font-medium">
+                      {m.meta.analysis.convergence}
+                    </span>
                   </div>
                 )}
               </div>

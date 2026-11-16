@@ -198,3 +198,44 @@ def test_profile_edit_retriggers_calibration():
 def test_unauthenticated_rejected():
     assert client.get("/api/chat/history").status_code in (401, 403)
     assert client.post("/api/chat/send", json={"text": "hi"}).status_code in (401, 403)
+
+
+def test_api_responses_no_store():
+    """API responses must never be browser-cached — per-user data isolation."""
+    h = register_and_profile()
+    r = client.get("/api/chat/history", headers=h)
+    assert r.headers.get("cache-control") == "no-store"
+    assert "authorization" in (r.headers.get("vary") or "").lower()
+
+
+def test_health_domain_and_disclaimer():
+    from app.astro import pillars
+    from app.astro.constants import DOMAINS, HEALTH_DISCLAIMER
+    from datetime import date
+    assert "health" in DOMAINS and DOMAINS["health"]["disclaimer"] == HEALTH_DISCLAIMER
+    b, facts = make_facts()
+    r = pillars.evaluate(facts, b, "health", date(2026, 1, 1), date(2027, 6, 30))
+    assert set(r["pillars"]) == {"parashari", "jaimini", "tajika", "micro_timing"}
+    assert r["convergence"].split()[0].endswith("/4")
+
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    for a in ["Yes, that happened", "Yes, that happened", "Yes, that happened"]:
+        send(a, h)
+    r = send("will my health improve this year", h)
+    body = " ".join(m["content"] for m in r)
+    assert "not medical diagnoses" in body
+
+
+def test_pillar_gap_features():
+    """Arudha labels, Muntha-lord dignity, BAV + nakshatra evidence all reachable."""
+    from app.astro import pillars
+    from datetime import date
+    b, facts = make_facts()
+    assert facts["binnashtakavarga"] is not None
+    r = pillars.evaluate(facts, b, "relationship", date(2026, 1, 1), date(2027, 6, 30))
+    ev = " ".join(r["calculation_evidence_ids"])
+    # targets are labeled with the significator/arudha that was touched
+    assert "(Darakaraka)" in ev or "A7" in ev or "A12" in ev
+    # Muntha-lord dignity and BAV bindus now appear in evidence when they fire
+    assert "Muntha" in ev

@@ -55,6 +55,7 @@ DOMAIN_KEYWORDS = {
     "relocation": ["move", "relocate", "relocating", "abroad", "foreign", "city", "house shift", "settle"],
     "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest"],
     "direction": ["direction", "purpose", "path in life", "meaning"],
+    "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical"],
 }
 
 FUTURE_PAT = re.compile(
@@ -75,6 +76,13 @@ ANSWER_MAP = {"yes": "yes", "confirmed": "yes", "that happened": "yes",
               "no": "no", "didn't": "no", "not really": "no", "nope": "no",
               "not sure": "unknown", "unknown": "unknown", "don't know": "unknown",
               "don't remember": "unknown", "n/a": "unknown"}
+
+
+def _apply_disclaimer(reply: str, domain: str | None) -> str:
+    note = DOMAINS.get(domain or "", {}).get("disclaimer")
+    if note and note.split()[0] not in reply:
+        return reply.rstrip() + "\n\n" + note
+    return reply
 
 
 def detect_domain(text: str) -> str | None:
@@ -446,6 +454,7 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
         vr = verify.verify_response(reply, facts, {"running_dasha": run})
         if not vr["ok"]:
             reply = verify.repair_response(reply, vr["issues"])
+        reply = _apply_disclaimer(reply, domain)
         _add_msg(db, conv, "assistant", reply,
                  meta={"analysis": analysis, "provider": provider})
         return conv.messages[-2:]
@@ -465,6 +474,7 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
     vr = verify.verify_response(reply, facts, {"running_dasha": run})
     if not vr["ok"]:
         reply = verify.repair_response(reply, vr["issues"])
+    reply = _apply_disclaimer(reply, domain)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, **({"analysis": analysis} if analysis else {})})
     return conv.messages[-2:]

@@ -1,0 +1,19 @@
+[
+  "tests/test_jyotish.py::test_api_responses_no_store",
+  "tests/test_jyotish.py::test_birth_time_sensitivity",
+  "tests/test_jyotish.py::test_engine_deterministic",
+  "tests/test_jyotish.py::test_failed_calibration_locks_predictions",
+  "tests/test_jyotish.py::test_full_calibration_flow_and_gate",
+  "tests/test_jyotish.py::test_gate_blocks_before_calibration",
+  "tests/test_jyotish.py::test_health_domain_and_disclaimer",
+  "tests/test_jyotish.py::test_known_positions",
+  "tests/test_jyotish.py::test_locked_facts_shape",
+  "tests/test_jyotish.py::test_pillar_gap_features",
+  "tests/test_jyotish.py::test_profile_edit_retriggers_calibration",
+  "tests/test_jyotish.py::test_unauthenticated_rejected",
+  "tests/test_jyotish.py::test_verifier_bans_injected_degrees",
+  "tests/test_jyotish.py::test_verifier_bans_probabilities",
+  "tests/test_jyotish.py::test_verifier_catches_wrong_sign",
+  "tests/test_jyotish.py::test_verifier_passes_truth",
+  "tests/test_jyotish.py::test_vimshottari_covers_120_years"
+]
