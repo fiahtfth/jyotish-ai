@@ -106,7 +106,7 @@ self.__SERVER_FILES_MANIFEST={
         "transform": "lodash/{{member}}"
       }
     },
-    "outputFileTracingRoot": "/home/ubuntu/jyotish-ai/frontend",
+    "outputFileTracingRoot": "/home/ubuntu/jyotish-ai",
     "enablePrerenderSourceMaps": true,
     "cacheComponents": false,
     "cacheLife": {
@@ -344,13 +344,13 @@ self.__SERVER_FILES_MANIFEST={
           "as": "*.css"
         }
       },
-      "root": "/home/ubuntu/jyotish-ai/frontend"
+      "root": "/home/ubuntu/jyotish-ai"
     },
-    "repoRoot": "/home/ubuntu/jyotish-ai/frontend",
+    "repoRoot": "/home/ubuntu/jyotish-ai",
     "distDirRoot": ".next"
   },
   "appDir": "/home/ubuntu/jyotish-ai/frontend",
-  "relativeAppDir": "",
+  "relativeAppDir": "frontend",
   "files": [
     ".next/package.json",
     ".next/routes-manifest.json",

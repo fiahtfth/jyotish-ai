@@ -5,8 +5,14 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 from .config import settings
 
-_connect_args = {"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {}
-engine_db = create_engine(settings.DATABASE_URL, connect_args=_connect_args)
+_url = settings.DATABASE_URL
+# normalize postgres URLs to the psycopg2 driver
+if _url.startswith("postgres://"):
+    _url = "postgresql+psycopg2://" + _url.split("://", 1)[1]
+elif _url.startswith("postgresql://") and "+psycopg2" not in _url:
+    _url = "postgresql+psycopg2://" + _url.split("://", 1)[1]
+_connect_args = {"check_same_thread": False} if _url.startswith("sqlite") else {}
+engine_db = create_engine(_url, connect_args=_connect_args, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine_db, autoflush=False)
 Base = declarative_base()
 
