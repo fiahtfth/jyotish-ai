@@ -6,12 +6,12 @@ The prediction gate is enforced HERE — server-side — never by the LLM.
 """
 import json
 import re
-from datetime import date, datetime
+from datetime import date
 
 from sqlalchemy.orm import Session
 
 from ..astro import calibration, pillars, verify
-from ..astro.constants import DOMAINS, SIGN_NAMES
+from ..astro.constants import DOMAINS
 from ..astro.engine import BirthInput, engine
 from ..db import BirthProfile, CalibrationEvent, Conversation, Message
 from ..llm import providers

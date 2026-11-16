@@ -8,7 +8,6 @@ documented heuristics, never probability claims.
 from datetime import date, datetime
 
 from jhora.panchanga import drik
-from jhora import utils
 
 from . import constants as K
 from .engine import BirthInput, engine
