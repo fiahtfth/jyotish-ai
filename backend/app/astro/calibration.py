@@ -6,7 +6,8 @@ window derived from real dasha periods. Predictions are locked before
 feedback; matching rules are objective and partial matches never count
 as full confirmations.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import re
 import itertools
 
 from . import constants as K
@@ -182,3 +183,79 @@ def calibration_outcome(statements: list[dict]) -> dict:
     return {"state": state, "label": label, "confirmed": confirmed,
             "partial": partial, "unknown": unknown,
             "predictions_allowed": predictions_allowed}
+
+
+def _win_date(s: str, end=False) -> date:
+    y, m = int(s[:4]), int(s[5:7])
+    return date(y, m, 28 if end else 1)
+
+
+def _actual_year(actual: str | None) -> int | None:
+    if not actual:
+        return None
+    m = re.search(r"(19|20)\d\d", actual)
+    return int(m.group(0)) if m else None
+
+
+def _score_candidate(birth: BirthInput, facts: dict, events: list) -> float:
+    """Score a candidate birth against recorded feedback: events the user
+    confirmed should gain pillar support; rejected ones should not."""
+    total = 0.0
+    for e in events:
+        fb = e.user_feedback
+        if fb not in ("confirmed", "rejected", "partial"):
+            continue
+        r = pillars.evaluate(facts, birth, e.domain,
+                             _win_date(e.predicted_window_start),
+                             _win_date(e.predicted_window_end, end=True))
+        s = r["support_count"] - r["conflict_count"]
+        if fb == "confirmed":
+            total += s
+        elif fb == "rejected":
+            total -= s
+        else:
+            yr = _actual_year(e.actual_date)
+            if yr and int(e.predicted_window_start[:4]) - 1 <= yr <= int(e.predicted_window_end[:4]) + 1:
+                total += 0.5 * s
+    return total
+
+
+# candidate window per stated precision: how far the stated time may be off
+_RECTIFY_SPAN = {"exact": 30, "approximate": 60, "unknown": 120}
+_RECTIFY_MAX_CANDIDATES = 5
+
+
+def try_rectify(birth: BirthInput, stated_facts: dict, events: list,
+                engine) -> dict | None:
+    """Search birth times around the stated time for a better fit to the
+    recorded calibration feedback. Returns {'birth', 'facts', 'delta_minutes',
+    'stated_score', 'best_score'} or None when nothing clearly improves."""
+    span = _RECTIFY_SPAN.get(birth.birth_time_precision, 30)
+    step = max(10, (2 * span) // (_RECTIFY_MAX_CANDIDATES - 1))
+    base = datetime(birth.year, birth.month, birth.day,
+                    birth.hour, birth.minute, birth.second)
+    stated_score = _score_candidate(birth, stated_facts, events)
+    best = {"score": stated_score, "delta": 0, "birth": birth, "facts": stated_facts}
+    for off in range(-span, span + 1, step):
+        if off == 0:
+            continue
+        t = base + timedelta(minutes=off)
+        cand = BirthInput(
+            name=birth.name, year=t.year, month=t.month, day=t.day,
+            hour=t.hour, minute=t.minute, second=t.second,
+            lat=birth.lat, lon=birth.lon, tz_offset=birth.tz_offset,
+            place_label=birth.place_label,
+            birth_time_precision=birth.birth_time_precision)
+        try:
+            cf = engine.compute(cand)
+            s = _score_candidate(cand, cf, events)
+        except Exception:
+            continue
+        if s > best["score"]:
+            best = {"score": s, "delta": off, "birth": cand, "facts": cf}
+    # adopt only on a clearly better fit — noise shouldn't move the clock
+    if best["delta"] == 0 or best["score"] < stated_score + 3:
+        return None
+    return {"birth": best["birth"], "facts": best["facts"],
+            "delta_minutes": best["delta"],
+            "stated_score": stated_score, "best_score": best["score"]}

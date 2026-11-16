@@ -373,6 +373,32 @@ def _advance_calibration(db, conv, profile, new_msgs, note=None):
     profile.calibration_state = outcome["state"]
     profile.predictions_allowed = outcome["predictions_allowed"]
     if outcome["state"] == "uncalibrated":
+        # try rectification: a slightly different birth time may fit the
+        # recorded feedback better — only adopt on a clearly better score
+        rect = calibration.try_rectify(birth_input(profile), chart_facts(profile), evs, engine)
+        if rect:
+            nb = rect["birth"]
+            profile.year, profile.month, profile.day = nb.year, nb.month, nb.day
+            profile.hour, profile.minute, profile.second = nb.hour, nb.minute, nb.second
+            profile.chart_json = None
+            for e in evs:
+                db.delete(e)
+            db.flush()
+            conv.state = "cal_intro"
+            conv.pending_event_id = ""
+            profile.calibration_state = "pending"
+            sign = "+" if rect["delta_minutes"] > 0 else ""
+            new_msgs.append(_add_msg(
+                db, conv, "assistant",
+                f"The past checks didn't line up, so I re-ran them against slightly "
+                f"different birth times — {nb.hour:02d}:{nb.minute:02d} "
+                f"({sign}{rect['delta_minutes']} min) fits your history much better. "
+                "I've adjusted the chart to that time. Let's re-verify quickly."))
+            _ensure_events(db, profile, chart_facts(profile))
+            ev = _next_pending_event(db, conv, profile)
+            if ev:
+                _ask_event(db, conv, ev, first=False)
+            return
         conv.state = "rectify"
     else:
         conv.state = "open"
