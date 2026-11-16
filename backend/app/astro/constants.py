@@ -75,14 +75,19 @@ FUNCTIONAL = {
 # Combustion orbs (degrees from Sun)
 COMBUST_ORB = {1: 12.0, 2: 17.0, 3: 14.0, 4: 11.0, 5: 10.0, 6: 15.0}
 
+HEALTH_DISCLAIMER = ("These windows are preventive traditional risk indicators from the "
+                     "chart — not medical diagnoses, and not a substitute for "
+                     "professional medical advice.")
+
 # Domain -> (relevant natal houses, primary varga, jaimini significator key)
 DOMAINS = {
-    "career":     {"houses": [10, 6, 2, 11], "varga": "D10", "karaka": "Amatyakaraka", "label": "career or professional direction"},
-    "education":  {"houses": [4, 5, 9], "varga": "D24", "karaka": "Matrukaraka", "label": "education or studies"},
-    "relationship": {"houses": [7, 5, 8], "varga": "D9", "karaka": "Darakaraka", "label": "an important relationship or family milestone"},
-    "relocation": {"houses": [4, 3, 9, 12], "varga": "D4", "karaka": "Matrukaraka", "label": "a change of residence or relocation"},
-    "finance":    {"houses": [2, 11, 5, 9], "varga": "D2", "karaka": "Amatyakaraka", "label": "a significant financial or professional responsibility"},
-    "direction":  {"houses": [1, 5, 9], "varga": "D1", "karaka": "Atmakaraka", "label": "a major change in personal direction"},
+    "career":     {"houses": [10, 6, 2, 11], "varga": "D10", "karaka": "Amatyakaraka", "arudhas": ["A10"], "label": "career or professional direction"},
+    "education":  {"houses": [4, 5, 9], "varga": "D24", "karaka": "Matrukaraka", "arudhas": ["A5"], "label": "education or studies"},
+    "relationship": {"houses": [7, 5, 8], "varga": "D9", "karaka": "Darakaraka", "arudhas": ["A7", "A12"], "label": "an important relationship or family milestone"},
+    "relocation": {"houses": [4, 3, 9, 12], "varga": "D4", "karaka": "Matrukaraka", "arudhas": ["A4"], "label": "a change of residence or relocation"},
+    "finance":    {"houses": [2, 11, 5, 9], "varga": "D2", "karaka": "Amatyakaraka", "arudhas": ["A2", "A11"], "label": "a significant financial or professional responsibility"},
+    "direction":  {"houses": [1, 5, 9], "varga": "D1", "karaka": "Atmakaraka", "arudhas": ["A1"], "label": "a major change in personal direction"},
+    "health":     {"houses": [1, 6, 8, 12], "varga": "D30", "karaka": "Gnatikaraka", "arudhas": ["A6", "A8"], "label": "health or physical resilience", "disclaimer": HEALTH_DISCLAIMER},
 }
 MIN_CALIBRATION_AGE_FOR_DOMAIN = {"relationship": 21, "career": 16, "finance": 16}
 

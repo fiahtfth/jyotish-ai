@@ -9,6 +9,7 @@ export function clearToken() { localStorage.removeItem("jyotish_token"); }
 
 async function req(path: string, opts: RequestInit = {}) {
   const r = await fetch(API + path, {
+    cache: "no-store",
     ...opts,
     headers: {
       "content-type": "application/json",

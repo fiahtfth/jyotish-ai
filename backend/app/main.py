@@ -31,6 +31,15 @@ app.add_middleware(
     allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def no_store_api(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Vary"] = "Authorization"
+    return response
+
 _rate: dict[int, deque] = defaultdict(deque)
 
 

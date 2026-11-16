@@ -285,6 +285,7 @@ class ChartEngine:
             "vimshottari": {"periods": md},
             "jaimini": jaimini,
             "sarvastakavarga": sav,
+            "binnashtakavarga": bav,
             "vargas": vargas,
         }
         self._cache[key] = facts
