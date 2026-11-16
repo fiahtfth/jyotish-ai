@@ -13,7 +13,7 @@ import swisseph as swe
 
 from jhora import const, utils
 from jhora.panchanga import drik
-from jhora.horoscope.chart import charts, arudhas, ashtakavarga
+from jhora.horoscope.chart import charts, arudhas, ashtakavarga, strength
 from jhora.horoscope.chart import house as house_mod
 from jhora.horoscope.dhasa.graha import vimsottari
 from jhora.horoscope.dhasa.raasi import chara as chara_dhasa
@@ -261,6 +261,22 @@ class ChartEngine:
             sav = None
             bav = None
 
+        # shadbala (planetary strength) + bhava chalit houses — best effort
+        try:
+            shad = strength.shad_bala(jd, place)
+        except Exception:
+            shad = None
+        try:
+            # rows: [bhava_start_sign, (start, mid, end) longitudes, planet ids]
+            # entries are ordered from the lagna bhava — index+1 is the chalit house
+            bhava = {}
+            for i, entry in enumerate(charts.bhava_chart(jd, place)):
+                for pid in entry[2]:
+                    if isinstance(pid, int) and pid in K.PLANET_NAMES:
+                        bhava[K.PLANET_NAMES[pid]] = i + 1
+        except Exception:
+            bhava = None
+
         facts = {
             "meta": {
                 "place": b.place_label, "lat": b.lat, "lon": b.lon,
@@ -286,6 +302,8 @@ class ChartEngine:
             "jaimini": jaimini,
             "sarvastakavarga": sav,
             "binnashtakavarga": bav,
+            "shadbala": shad,
+            "bhava": bhava,
             "vargas": vargas,
         }
         self._cache[key] = facts

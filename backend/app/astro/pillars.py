@@ -43,6 +43,11 @@ def _lord_of_house(facts, h):
 
 # ---------------------------------------------------------------- pillars
 
+# Minimum required shadbala strength (rupas) per Parashara
+_SHADBALA_MIN = {"Sun": 5.0, "Moon": 6.0, "Mars": 5.0, "Mercury": 7.0,
+                 "Jupiter": 6.5, "Venus": 5.5, "Saturn": 5.0}
+
+
 def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
     """P1 — Vimshottari MD/AD/PD lordship + relevant varga."""
     spec = K.DOMAINS[domain]
@@ -50,6 +55,9 @@ def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: da
     evidence, rules = [], []
     weights = 0
     conflicts = 0
+    bhava = facts.get("bhava") or {}
+    shad = facts.get("shadbala") or []
+    shad_rupas = shad[7] if len(shad) > 7 else None
 
     for t in [start, _mid(start, end), end]:
         run = engine.running_vimshottari(birth, (t.year, t.month, t.day))
@@ -86,6 +94,25 @@ def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: da
             if lord in facts["planets"] and "debilitated" in facts["planets"][lord]["dignity"]:
                 conflicts += 1
                 evidence.append(f"{lord} debilitated in D1")
+            # bhava chalit: a planet that slips into/out of a domain house by
+            # cusp position changes its delivery
+            bh = bhava.get(lord)
+            if bh and lord in facts["planets"] and bh != facts["planets"][lord]["house"]:
+                if bh in houses:
+                    weights += 1
+                    evidence.append(f"{lord} moves into house {bh} by bhava-chalit — supports {domain}")
+                elif bh in (6, 8, 12) and facts["planets"][lord]["house"] in houses:
+                    conflicts += 1
+                    evidence.append(f"{lord} slips to dusthana {bh} in bhava-chalit — support is diluted")
+            # shadbala: dasha lords must be strong enough to deliver
+            pid = {v: k for k, v in K.PLANET_NAMES.items()}.get(lord)
+            if shad_rupas is not None and pid is not None and pid < len(shad_rupas):
+                req = _SHADBALA_MIN.get(lord, 6.0)
+                if shad_rupas[pid] >= req * 1.3:
+                    evidence.append(f"{lord} strong in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas)")
+                elif shad_rupas[pid] < req:
+                    conflicts += 1
+                    evidence.append(f"{lord} weak in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas) — delivers less than promised")
 
     if weights >= 3:
         verdict = "support"
