@@ -127,7 +127,7 @@ def _migrate_token_nonce():
     with engine_db.begin() as conn:
         ids = conn.execute(text("SELECT id FROM users WHERE token_nonce IS NULL")).scalars().all()
         for uid in ids:
-            conn.execute(text("UPDATE users SET token_nonce = :n WHERE id = :i"),
+            conn.execute(text("UPDATE users SET token_nonce = :n WHERE id = :i AND token_nonce IS NULL"),
                          {"n": new_token_nonce(), "i": uid})
 
 
