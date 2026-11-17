@@ -111,3 +111,9 @@ def test_duplicate_forecasts_do_not_multiply_hits():
     r = Q.scorecard([row('happened'), row('happened')],today=date(2027,3,1))
     assert r['hits'] == 1 and r['duplicate_forecasts_excluded'] == 1
     assert r['observed_hit_rate_wilson95'][0] < 0.3
+
+
+def test_past_intervals_are_never_issued_as_future_forecasts():
+    a=analysis()
+    a['analysis_window']={'start':'2000-01-01','end':'2000-12-31'}
+    assert Q.decide('Will I get a promotion?',a)['disposition'] == 'abstain'

@@ -30,6 +30,8 @@ def decide(question, analysis):
     spec = event_spec(question, analysis["domain"])
     reasons = []
     prec, sens = analysis.get("precision", {}), analysis.get("sensitivity", {})
+    if date.fromisoformat(analysis["analysis_window"]["end"]) < date.today():
+        reasons.append("This is a retrospective interval, not a future event forecast.")
     if not spec:
         reasons.append("The question needs one observable event before it can be scored.")
     if analysis["unavailable_count"]:
