@@ -1,5 +1,11 @@
-// empty = same origin (production: FastAPI serves this frontend + the API)
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// API base: same-origin ("") anywhere that isn't localhost, so a dev
+// NEXT_PUBLIC_API_URL left in .env.local can never leak into a prod build.
+// Only on localhost do we consult the env / fall back to the dev backend.
+const API = (typeof window !== "undefined" &&
+             window.location.hostname !== "localhost" &&
+             window.location.hostname !== "127.0.0.1")
+  ? ""
+  : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
 
 export function token() {
   return typeof window === "undefined" ? "" : localStorage.getItem("jyotish_token") || "";
