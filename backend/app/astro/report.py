@@ -11,8 +11,10 @@ from datetime import date, timedelta
 from jhora.panchanga import drik
 
 from . import constants as K
-from . import precision, sensitivity, prediction
+from . import panchang, precision, sensitivity, prediction
 from .engine import BirthInput, engine
+
+_MANGAL_HOUSES = {1, 2, 4, 7, 8, 12}   # Kuja dosha houses from lagna/Moon
 
 _OUTLOOK_DAYS = 365
 
@@ -39,6 +41,28 @@ def _strength_summary(facts) -> dict:
             "all_rupas": {k: round(v, 2) for k, v in rows.items()}}
 
 
+def _mangal_dosha(facts) -> dict:
+    """Kuja (Mangal) dosha — Mars in 1/2/4/7/8/12 from the lagna; the
+    wider school also counts it from the Moon."""
+    mars = facts["planets"]["Mars"]
+    from_moon = (mars["sign"] - facts["planets"]["Moon"]["sign"]) % 12 + 1
+    return {"present": mars["house"] in _MANGAL_HOUSES,
+            "house_from_lagna": mars["house"],
+            "also_from_moon": from_moon in _MANGAL_HOUSES}
+
+
+def _today_section(facts, birth: BirthInput, today: date) -> dict:
+    try:
+        return panchang.daily_panchang(
+            today, panchang.place_of(birth), facts).get("personal") or {}
+    except Exception:
+        return {}
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'st' if n == 1 else 'nd' if n == 2 else 'rd' if n == 3 else 'th'}"
+
+
 def _chart_section(facts) -> dict:
     lagna = facts["lagna"]
     moon = facts["planets"]["Moon"]
@@ -59,6 +83,7 @@ def _chart_section(facts) -> dict:
                     "amatyakaraka": kar.get("Amatyakaraka"),
                     "darakaraka": kar.get("Darakaraka")},
         "strength": _strength_summary(facts),
+        "mangal_dosha": _mangal_dosha(facts),
     }
 
 
@@ -78,7 +103,7 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
         analysis["sensitivity"] = sens
         analysis["decision"] = prediction.decide("general outlook", analysis)
         windows = [{"start": w["start"], "end": w["end"],
-                    "peak_score": w.get("peak_score")}
+                    "fast_trigger": w.get("fast_trigger")}
                    for w in prec["timing"]["windows"]]
         out.append({
             "analysis": analysis, "sensitivity": sens,
@@ -115,11 +140,13 @@ def build_report(facts, birth: BirthInput, *, calibrated: bool,
     today = today or date.today()
     run = _running_vimshottari(birth, today)
     chart = _chart_section(facts)
+    today_personal = _today_section(facts, birth, today)
     who = subject or "you"
 
     sections = {"generated_for": subject or "self", "date": today.isoformat(),
                 "calibrated": calibrated, "chart": chart,
                 "current_periods": {"vimshottari": run[:3]},
+                "today": today_personal,
                 "predictions_allowed": predictions_allowed}
 
     lines = [f"{f'{who}’s' if subject else 'Your'} chart — computed from "
@@ -139,6 +166,28 @@ def build_report(facts, birth: BirthInput, *, calibrated: bool,
         lines.append(f"Shadbala — strongest: {s['strongest']['planet']} "
                      f"({s['strongest']['rupas']} rupas); weakest: "
                      f"{s['weakest']['planet']} ({s['weakest']['rupas']}).")
+    md = chart["mangal_dosha"]
+    if md["present"]:
+        lines.append(
+            f"Kuja (Mangal) dosha: Mars sits in the "
+            f"{_ordinal(md['house_from_lagna'])} from the lagna"
+            + (" — a dosha house from the Moon too."
+               if md["also_from_moon"] else "."))
+    if today_personal:
+        t = today_personal.get("tara") or {}
+        sfm = today_personal.get("saturn_from_moon") or {}
+        mh = today_personal.get("moon_house_from_janma")
+        line = f"Today: {t.get('name')} tara"
+        if mh:
+            line += f", Moon in the {_ordinal(mh)} from the natal Moon"
+        if sfm.get("sade_sati"):
+            line += (f"; Saturn transits the {_ordinal(sfm['house'])} "
+                     "from the natal Moon — sade sati period")
+        elif sfm.get("ashtama"):
+            line += "; ashtama shani (Saturn in the 8th from the Moon)"
+        elif sfm.get("kantaka"):
+            line += "; kantaka shani (Saturn in the 4th from the Moon)"
+        lines.append(line + ".")
     if run:
         lines.append("Current Vimshottari: " + " / ".join(
             r["lords"][0] for r in run[:2])

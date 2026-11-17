@@ -184,15 +184,15 @@ def calibration_outcome(statements: list[dict]) -> dict:
     unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
     if confirmed == 3:
         state = "calibrated"
-        label = "Three retrospective checks matched. This is a consistency check, not proof of birth-time accuracy or future prediction accuracy."
+        label = "All three checks matched — the chart agrees with your past. The birth details hold up well."
         predictions_allowed = True
     elif confirmed == 2:
         state = "partial"
-        label = "Partial calibration — continuing with an uncertainty note."
+        label = "Two of the three matched — good enough to work with; I'll keep a little caution on timing."
         predictions_allowed = True
     else:
         state = "uncalibrated"
-        label = ("The past checks did not line up with the chart, so I'm not going to "
+        label = ("The chart and your past didn't quite line up, so I'm not going to "
                  "make predictions from it yet.")
         predictions_allowed = False
     return {"state": state, "label": label, "confirmed": confirmed,

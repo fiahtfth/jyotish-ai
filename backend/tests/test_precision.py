@@ -12,6 +12,18 @@ from app.astro import constants as K  # noqa: E402
 from app.astro.engine import engine, BirthInput  # noqa: E402
 
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_throttle():
+    """Many tests register users from the same TestClient IP."""
+    from app.main import reset_auth_throttle
+    reset_auth_throttle()
+    yield
+    reset_auth_throttle()
+
+
 def make_facts(precision="exact"):
     b = BirthInput(name="Arjun", year=1990, month=5, day=15, hour=6, minute=15,
                    second=0, lat=13.0827, lon=80.2707, tz_offset=5.5,

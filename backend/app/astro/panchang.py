@@ -14,13 +14,15 @@ Two entry points, both deterministic and LLM-free:
     days for an activity. All scoring rules below are frozen — fixed
     before inspecting output, never tuned after.
 """
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 
-from jhora import utils
+from jhora import const, utils
 from jhora.panchanga import drik
 
+from .. import geo
 from . import constants as K
-from .engine import BirthInput, engine
+from .engine import BirthInput
 from .precision import ADVERSE_TARAS, TARA_NAMES, nak_index, tara_of
 
 # ------------------------------------------------------------------ name tables
@@ -45,6 +47,11 @@ VAARA_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday",
                "Friday", "Saturday"]
 VAARA_LORDS = ["Sun", "Moon", "Mars", "Mercury", "Jupiter", "Venus",
                "Saturn"]
+
+# Gauri choghadiya slot types — index matches drik's table
+CHOGHADIYA_NAMES = ["Udveg", "Chara", "Laabha", "Amrit", "Kaala",
+                    "Shubha", "Rog"]
+CHOGHADIYA_GOOD = {1, 2, 3, 5}          # Chara, Laabha, Amrit, Shubha
 
 # ------------------------------------------------------------------ frozen rules
 # Weights and exclusions were fixed before seeing any results — do not
@@ -88,22 +95,24 @@ ACTIVITY_PREFERENCES = {
 }
 
 # keyword -> activity bucket (first match wins; specific contexts like
-# house/vehicle/health come before the generic finance verb "buy")
+# house/vehicle/health come before the generic finance verb "buy").
+# A trailing "*" marks an intentional prefix ("renovat*" -> renovate,
+# renovation); other keywords match whole words plus a plural 's'.
 ACTIVITY_KEYWORDS = [
-    ("home", ["house", "home", "property", "construct", "vehicle", "car",
-              "flat", "griha", "renovat"]),
-    ("relationship", ["marriage", "wedding", "engag", "propose", "partner",
+    ("home", ["house", "home", "property", "construct*", "vehicle", "car",
+              "flat", "griha", "renovat*"]),
+    ("relationship", ["marriage", "wedding", "engag*", "propose", "partner",
                       "relationship", "spouse", "marry"]),
-    ("health", ["surgery", "medical", "treatment", "doctor", "health",
+    ("health", ["surgery", "medical", "treat*", "doctor", "health",
                 "operation", "therapy"]),
     ("education", ["exam", "study", "admission", "interview", "course",
-                   "learn", "college", "school", "degree"]),
-    ("travel", ["travel", "journey", "trip", "flight", "abroad", "relocat",
+                   "learn*", "college", "school", "degree"]),
+    ("travel", ["travel*", "journey", "trip", "flight", "abroad", "relocat*",
                 "move", "shift"]),
-    ("new_work", ["start", "new job", "join", "launch", "begin", "venture",
-                  "business", "found", "open a", "inaugurat"]),
-    ("finance", ["invest", "money", "loan", "contract", "sign a", "deal",
-                 "buy", "purchase", "sell", "financ", "bank", "payment"]),
+    ("new_work", ["start*", "new job", "join", "launch", "begin", "venture",
+                  "business", "found", "open a", "inaugurat*", "career"]),
+    ("finance", ["invest*", "money", "loan", "contract", "sign a", "deal",
+                 "buy", "purchas*", "sell", "financ*", "bank", "payment"]),
 ]
 
 _TOP_DAYS = 3
@@ -124,13 +133,21 @@ def place_of(birth: BirthInput):
 
 def _hhmm(hours: float) -> str:
     """Float hours from local midnight -> 'HH:MM' (mod 24)."""
-    h = hours % 24
-    return f"{int(h):02d}:{round((h % 1) * 60):02d}"
+    m = round(hours * 60)
+    return f"{(m // 60) % 24:02d}:{m % 60:02d}"
 
 
 def _dms_to_hours(s: str) -> float:
-    h, m, sec = s.split(":")
-    return int(h) + int(m) / 60 + int(sec) / 3600
+    """'HH:MM:SS' or drik's 'HH:MM:SS (±n)' (day offset) -> float hours."""
+    parts = s.split()
+    h, m, sec = parts[0].split(":")
+    val = int(h) + int(m) / 60 + int(sec) / 3600
+    if len(parts) > 1:
+        try:
+            val += int(parts[1].strip("()")) * 24
+        except ValueError:
+            pass
+    return val
 
 
 def _slot(hours: float) -> dict:
@@ -159,16 +176,32 @@ def _karana_name(idx: int) -> str:
     return KARANA_MOVABLE[(idx - 2) % 7]
 
 
-def _moon_abs_at(when: date, place) -> float | None:
-    pos = engine.transit_positions((when.year, when.month, when.day), place)
-    rec = pos.get("Moon")
-    return (rec["sign"] * 30 + rec["degree"]) % 360 if rec else None
+def _place_for_day(place, when: date):
+    """`place` carries the UTC offset at birth — re-derive it for `when`
+    so DST-observing locations get correct local times."""
+    noon = datetime(when.year, when.month, when.day, 12)
+    tz = geo.historical_utc_offset(place.latitude, place.longitude, noon,
+                                 place.timezone)
+    return drik.Place(place.name, place.latitude, place.longitude, tz)
+
+
+def _choghadiya(jd: float, place) -> dict:
+    """Gauri choghadiya — 8 day slots + 8 night slots, each typed
+    Amrit/Shubha/Laabha/Chara (good) or Udveg/Kaala/Rog (avoid)."""
+    day, night = [], []
+    for i, (gtype, start, end) in enumerate(drik.gauri_choghadiya(jd, place)):
+        entry = {"type": gtype, "name": CHOGHADIYA_NAMES[gtype],
+                 "good": gtype in CHOGHADIYA_GOOD,
+                 "start": start[:5], "end": end[:5]}
+        (day if i < 8 else night).append(entry)
+    return {"day": day, "night": night}
 
 
 # ------------------------------------------------------------------ panchang
 
 def daily_panchang(when: date, place, facts=None) -> dict:
     """Five limbs at local sunrise + day windows; personalized if `facts`."""
+    place = _place_for_day(place, when)
     jd = _jd_noon(when)
     sr = drik.sunrise(jd, place)
     ss = drik.sunset(jd, place)
@@ -178,22 +211,30 @@ def daily_panchang(when: date, place, facts=None) -> dict:
     nak_res = drik.nakshatra(sr_jd, place)
     yg_res = drik.yogam(sr_jd, place)
     k_idx, k_start, k_end = drik.karana(sr_jd, place)
-    vaara = drik.vaara(sr_jd, place)
+    # drik can emit index 0 at an exact phase boundary — wrap to the last
+    t_idx = (t_res[0] - 1) % 30 + 1
+    n_idx = (nak_res[0] - 1) % 27 + 1
+    y_idx = (yg_res[0] - 1) % 27 + 1
+    k_idx = (k_idx - 1) % 60 + 1
+    # the sunrise jd is second-rounded, which flips vedic_weekday's
+    # before-sunrise comparison on ~half of all days — noon is unambiguous
+    vaara = drik.vaara(jd, place)
 
-    moon_abs = _moon_abs_at(when, place)
+    moon_abs = drik.sidereal_longitude(sr_jd, const._MOON) % 360
+    sat_sign = int(drik.sidereal_longitude(sr_jd, const._SATURN) // 30)
 
     out = {
         "date": when.isoformat(),
         "vaara": {"index": vaara, "name": VAARA_NAMES[vaara],
                   "lord": VAARA_LORDS[vaara]},
-        "tithi": {"index": t_res[0], "name": _tithi_name(t_res[0]),
-                  "paksha": "Shukla" if t_res[0] <= 15 else "Krishna",
-                  "class": _tithi_class(t_res[0]),
+        "tithi": {"index": t_idx, "name": _tithi_name(t_idx),
+                  "paksha": "Shukla" if t_idx <= 15 else "Krishna",
+                  "class": _tithi_class(t_idx),
                   "start": _slot(t_res[1]), "end": _slot(t_res[2])},
-        "nakshatra": {"index": nak_res[0], "name": K.NAKSHATRAS[nak_res[0] - 1],
+        "nakshatra": {"index": n_idx, "name": K.NAKSHATRAS[n_idx - 1],
                       "pada": nak_res[1],
                       "start": _slot(nak_res[2]), "end": _slot(nak_res[3])},
-        "yoga": {"index": yg_res[0], "name": YOGA_NAMES[yg_res[0] - 1],
+        "yoga": {"index": y_idx, "name": YOGA_NAMES[y_idx - 1],
                  "start": _slot(yg_res[1]), "end": _slot(yg_res[2])},
         "karana": {"index": k_idx, "name": _karana_name(k_idx),
                    "start": _slot(k_start), "end": _slot(k_end)},
@@ -205,29 +246,47 @@ def daily_panchang(when: date, place, facts=None) -> dict:
             "durmuhurta": drik.durmuhurtam(jd, place),
             "abhijit": drik.abhijit_muhurta(jd, place),
         },
-        "moon": ({"sign": int(moon_abs // 30),
-                  "sign_name": K.SIGN_NAMES[int(moon_abs // 30)]}
-                 if moon_abs is not None else None),
+        "moon": {"sign": int(moon_abs // 30),
+                 "sign_name": K.SIGN_NAMES[int(moon_abs // 30)]},
+        "choghadiya": _choghadiya(jd, place),
     }
 
     if facts:
         janma = facts["planets"]["Moon"]["nakshatra"]["index"]
         natal_sign = facts["planets"]["Moon"]["sign"]
-        day_nak = nak_res[0]
-        ti, tn = tara_of(day_nak, janma)
+        ti, tn = tara_of(n_idx, janma)
+        moon_house = (int(moon_abs // 30) - natal_sign) % 12 + 1
+        sat_house = (sat_sign - natal_sign) % 12 + 1
         out["personal"] = {
             "janma_nakshatra": facts["planets"]["Moon"]["nakshatra"]["name"],
             "tara": {"index": ti, "name": tn, "adverse": ti in ADVERSE_TARAS},
-            "chandrashtama": (moon_abs is not None and
-                              (int(moon_abs // 30) - natal_sign) % 12 == 7),
+            "moon_house_from_janma": moon_house,
+            "chandrashtama": moon_house == 8,
+            "saturn_from_moon": {"house": sat_house,
+                                 "sade_sati": sat_house in (12, 1, 2),
+                                 "ashtama": sat_house == 8,
+                                 "kantaka": sat_house == 4},
         }
     return out
 
 
+def _kw_re(keywords: list[str]) -> "re.Pattern":
+    parts = []
+    for k in keywords:
+        if k.endswith("*"):                        # intentional prefix
+            parts.append(re.escape(k[:-1]))
+        else:                                      # whole word + plural s
+            parts.append(re.escape(k) + r"s?\b")
+    return re.compile(r"\b(?:" + "|".join(parts) + r")")
+
+
+_ACTIVITY_RES = [(a, _kw_re(keys)) for a, keys in ACTIVITY_KEYWORDS]
+
+
 def detect_activity(text: str) -> str:
     t = text.lower()
-    for activity, keys in ACTIVITY_KEYWORDS:
-        if any(k in t for k in keys):
+    for activity, rx in _ACTIVITY_RES:
+        if rx.search(t):
             return activity
     return "general"
 
@@ -241,7 +300,7 @@ def _avoid_intervals(pan: dict) -> list[tuple[float, float]]:
         s, e = pan["windows"][key]
         out.append((_dms_to_hours(s), _dms_to_hours(e)))
     dm = pan["windows"]["durmuhurta"]
-    for i in range(0, len(dm), 2):
+    for i in range(0, len(dm) - 1, 2):
         out.append((_dms_to_hours(dm[i]), _dms_to_hours(dm[i + 1])))
     return out
 
@@ -258,6 +317,17 @@ def _clean_window(pan: dict) -> dict | None:
 
     if not overlaps(ab_s, ab_e):
         return {"start": _hhmm(ab_s), "end": _hhmm(ab_e), "kind": "abhijit"}
+
+    # Next preference: a good choghadiya slot (Amrit/Shubha/Laabha/Chara)
+    # with a clean 60-minute slice inside it.
+    for slot in (pan.get("choghadiya") or {}).get("day", []):
+        if not slot["good"]:
+            continue
+        s = _dms_to_hours(slot["start"] + ":00")
+        e = s + _WINDOW_MINUTES / 60
+        if e <= _dms_to_hours(slot["end"] + ":00") and not overlaps(s, e):
+            return {"start": _hhmm(s), "end": _hhmm(e),
+                    "kind": f"choghadiya:{slot['name']}"}
 
     rise = pan["sunrise"]["time"]; rise_h = _dms_to_hours(rise + ":00" if len(rise) == 5 else rise)
     set_h = _dms_to_hours(pan["sunset"]["time"] + ":00"
@@ -279,10 +349,11 @@ def _score_day(facts, birth: BirthInput, place, when: date,
     pan = daily_panchang(when, place, facts)
     reasons, excluded = [], []
 
-    tara = pan["personal"]["tara"]
-    if tara["adverse"]:
+    personal = pan.get("personal") or {}
+    tara = personal.get("tara")
+    if tara and tara["adverse"]:
         excluded.append(f"{tara['name']} tara")
-    if pan["personal"]["chandrashtama"]:
+    if personal.get("chandrashtama"):
         excluded.append("Moon in the 8th from the natal Moon (chandrashtama)")
     if pan["karana"]["name"] == VISHTI:
         excluded.append("Vishti (Bhadra) karana at sunrise")
@@ -296,7 +367,7 @@ def _score_day(facts, birth: BirthInput, place, when: date,
         return {"date": when.isoformat(), "excluded": excluded}
 
     score = 0
-    if tara["index"] in _FAVOURABLE_TARAS:
+    if tara and tara["index"] in _FAVOURABLE_TARAS:
         score += 2
         reasons.append(f"{tara['name']} tara")
     if pan["tithi"]["class"] in FAVOURABLE_TITHIS:
@@ -333,13 +404,17 @@ def suggest_days(facts, birth: BirthInput, start: date, days: int = 60,
     preferred weekday +1, preferred nakshatra +1.
     """
     place = place_of(birth)
-    scored, excluded = [], []
+    scored, excluded, failed = [], [], 0
     for i in range(days):
-        r = _score_day(facts, birth, place, start + timedelta(days=i),
-                       activity)
+        try:
+            r = _score_day(facts, birth, place, start + timedelta(days=i),
+                           activity)
+        except Exception:
+            failed += 1                # one bad day must not sink the scan
+            continue
         (excluded if "excluded" in r else scored).append(r)
     scored.sort(key=lambda r: (-r["score"], r["date"]))
     return {"activity": activity, "scanned_days": days,
             "from": start.isoformat(),
             "days": scored[:_TOP_DAYS],
-            "excluded_days": len(excluded)}
+            "excluded_days": len(excluded), "failed_days": failed}

@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import calibration, panchang, precision, report, verify, sensitivity, prediction
+from ..astro import calibration, panchang, precision, report, sensitivity, prediction
 from ..astro.constants import DOMAINS
 from .. import geo
 from ..policy import TERMS_VERSION
@@ -164,16 +164,27 @@ CHART_PAT = re.compile(
 GREET_PAT = re.compile(r"^\s*(hi|hello|hey|namaste|good (morning|evening|afternoon)|hare krishna)\b", re.I)
 # panchang: the day's limbs — factual almanac, not a prediction
 PANCHANG_PAT = re.compile(
-    r"\b(panchang|panchanga|today'?s tithi|tithi today|nakshatra (of|today)|"
-    r"vaara today)\b", re.I)
-# electional timing: "best/suitable/good time or day to do X"
+    r"\b(panchang|panchanga|"
+    r"(today|tomorrow|day after)'?s?\s+(tithi|nakshatra|yoga|karana|vaara)|"
+    r"(tithi|nakshatra|yoga|karana)\s+(today|tomorrow|of today|of tomorrow|on)\b|"
+    r"what('?s| is)( the)? (tithi|nakshatra|yoga|karana))\b", re.I)
+# electional timing: "best/suitable/good time or day TO do X" — the
+# trailing connector keeps "have a good day"/"the right time" out
 TIMING_PAT = re.compile(
-    r"(best|suitable|good|right|auspicious|favou?rable|ideal)\s+(time|day|date|moment|days)|"
+    r"(best|suitable|good|right|auspicious|favou?rable|ideal)\s+"
+    r"(time|day|date|moment|days)\s+(to|for|of|in)\b|"
     r"when\s+(should|shall)\s+i\b|muhurt|shubh|auspicious\s+(day|time)|"
-    r"which\s+(day|date)\b", re.I)
+    r"which\s+(day|date)\s+(is\s+)?(best|suitable|good|right|auspicious|favou?rable)\b", re.I)
 REPORT_PAT = re.compile(
-    r"\b(report|full reading|complete reading|whole chart|chart summary|"
-    r"summary of (my |the )?chart)\b", re.I)
+    r"\b((my|full|detailed|complete|chart|birth|astro\w*|jyotish)\s+report|"
+    r"report\s+(on|of|about)\s+(my|the|this)\s+(chart|kundli|horoscope)|"
+    r"full reading|complete reading|whole chart|chart summary|"
+    r"summary of (my |the )?(chart|kundli))\b", re.I)
+# "how is today for me" — the daily view is the personalised panchang
+DAILY_PAT = re.compile(
+    r"\bhow('?s| is| will be| was)\b[^?]{0,25}\b(today|tomorrow|the day|my day)\b|"
+    r"\b(daily|today'?s|tomorrow'?s)\s+(reading|forecast|rashifal|horoscope)\b|"
+    r"\baaj ka\b", re.I)
 
 ANSWER_MAP = {"yes": "yes", "confirmed": "yes", "that happened": "yes",
               "partial": "partial", "similar": "partial", "close": "partial",
@@ -253,8 +264,12 @@ def _target_window(text: str) -> tuple[date, date]:
 
 
 def _today_at(birth: BirthInput) -> date:
-    """'Today' in the chart's own timezone."""
-    return (_utcnow() + timedelta(hours=birth.tz_offset)).date()
+    """'Today' in the chart's own timezone (DST-aware)."""
+    now = _utcnow()
+    approx_local = now + timedelta(hours=birth.tz_offset)
+    tz = geo.historical_utc_offset(birth.lat, birth.lon, approx_local,
+                                 birth.tz_offset)
+    return (now + timedelta(hours=tz)).date()
 
 
 def _panchang_day(t: str, today: date) -> date:
@@ -272,7 +287,7 @@ def _timing_horizon(t: str) -> tuple[int, int]:
     """(start offset, days to scan) for a timing question."""
     m = re.search(r"next (\d{1,3}) days", t)
     if m:
-        return 0, min(180, int(m.group(1)))
+        return 0, max(1, min(180, int(m.group(1))))
     if "next week" in t:
         return 7, 7
     if "this week" in t:
@@ -288,7 +303,7 @@ def _format_panchang(pan: dict, place_label: str) -> str:
     t, n, y, k, v = (pan["tithi"], pan["nakshatra"], pan["yoga"],
                      pan["karana"], pan["vaara"])
     lines = [
-        f"Panchang for {pan['date']} ({place_label}):",
+        f"Here is the panchang for {pan['date']}, beta ({place_label}):",
         f"{v['name']} ({v['lord']}'s day) · {t['name']} tithi, {t['paksha']} "
         f"paksha · {n['name']} nakshatra pada {n['pada']} · {y['name']} yoga · "
         f"{k['name']} karana.",
@@ -301,32 +316,67 @@ def _format_panchang(pan: dict, place_label: str) -> str:
             day += " (a tara to be careful with)"
         if per["chandrashtama"]:
             day += " · chandrashtama — the Moon is 8th from your natal Moon"
+        elif per.get("moon_house_from_janma"):
+            day += (f" · Moon in the {_ordinal(per['moon_house_from_janma'])} "
+                    "from your natal Moon")
+        sfm = per.get("saturn_from_moon") or {}
+        if sfm.get("sade_sati"):
+            day += (f" · Saturn in the {_ordinal(sfm['house'])} from your Moon "
+                    "— sade sati period")
+        elif sfm.get("ashtama"):
+            day += " · ashtama shani"
+        elif sfm.get("kantaka"):
+            day += " · kantaka shani"
         lines.append(day + ".")
     w = pan["windows"]
-    avoid = [f"Rahu Kaalam {w['rahu_kaalam'][0]}–{w['rahu_kaalam'][1]}",
-             f"Yamaganda {w['yamaganda'][0]}–{w['yamaganda'][1]}",
-             f"Gulika {w['gulika'][0]}–{w['gulika'][1]}"]
+    avoid = [f"Rahu Kaalam {w['rahu_kaalam'][0][:5]}–{w['rahu_kaalam'][1][:5]}",
+             f"Yamaganda {w['yamaganda'][0][:5]}–{w['yamaganda'][1][:5]}",
+             f"Gulika {w['gulika'][0][:5]}–{w['gulika'][1][:5]}"]
     dm = w["durmuhurta"]
-    for i in range(0, len(dm), 2):
-        avoid.append(f"Durmuhurta {dm[i]}–{dm[i + 1]}")
+    for i in range(0, len(dm) - 1, 2):
+        avoid.append(f"Durmuhurta {dm[i][:5]}–{dm[i + 1][:5]}")
     lines.append("Avoid: " + "; ".join(avoid) + ".")
-    lines.append(f"Abhijit muhurta {w['abhijit'][0]}–{w['abhijit'][1]} — "
+    lines.append(f"Abhijit muhurta {w['abhijit'][0][:5]}–{w['abhijit'][1][:5]} — "
                  "the day's clean midday window.")
+    good = [c for c in (pan.get("choghadiya") or {}).get("day", [])
+            if c["good"]]
+    if good:
+        lines.append("Good choghadiya (day): " + "; ".join(
+            f"{c['name']} {c['start']}–{c['end']}" for c in good) + ".")
     return "\n".join(lines)
+
+
+def _ordinal(n: int) -> str:
+    return f"{n}{'st' if n == 1 else 'nd' if n == 2 else 'rd' if n == 3 else 'th'}"
+
+
+def _panchang_reply(db, conv, profile, facts, birth, t) -> Message:
+    try:
+        pan = panchang.daily_panchang(_panchang_day(t, _today_at(birth)),
+                                      panchang.place_of(birth), facts)
+    except Exception:
+        return _add_msg(db, conv, "assistant",
+                        "I couldn't compute the panchang for that day — "
+                        "try a nearby date.")
+    return _add_msg(db, conv, "assistant",
+                    _format_panchang(pan, birth.place_label),
+                    kind="panchang", meta={"panchang": pan})
 
 
 def _format_timing(sug: dict, horizon: int, who: str = "you") -> str:
     act = sug["activity"].replace("_", " ")
     head = (f"For {('your' if who == 'you' else who + chr(0x2019) + 's')} "
-            f"{act}, scanning the next {horizon} days, these are the dates "
-            "where the traditional indicators line up best. Days carrying a "
-            "classical exclusion — adverse tara, chandrashtama, Vishti karana, "
+            f"{act}, beta, I scanned the next {horizon} days — these are the "
+            "dates where the traditional indications gather best. Days carrying "
+            "a classical exclusion — adverse tara, chandrashtama, Vishti karana, "
             f"a harsh yoga, Amavasya or a Rikta tithi — were screened out "
-            f"({sug['excluded_days']} dropped).")
+            f"({sug['excluded_days']} dropped"
+            + (f", {sug['failed_days']} couldn't be computed"
+               if sug.get("failed_days") else "") + ").")
     if not sug["days"]:
-        return (head + "\n\nEvery day in that span hit an exclusion — widen "
-                "the range (try 'best time in the next 90 days') or treat it "
-                "as a stretch for extra care rather than new beginnings.")
+        return (head + "\n\nEvery day in that span carries an exclusion, beta — "
+                "widen the range (try 'best time in the next 90 days') or treat "
+                "it as a stretch for extra care rather than new beginnings.")
     lines = [head]
     for d in sug["days"]:
         limb = d["limbs"]
@@ -336,9 +386,14 @@ def _format_timing(sug: dict, horizon: int, who: str = "you") -> str:
         win = d.get("suggested_window")
         if win:
             line += f". Suggested window ~{win['start']}–{win['end']}"
-            line += " (abhijit)" if win["kind"] == "abhijit" else " (open daylight)"
+            if win["kind"] == "abhijit":
+                line += " (abhijit)"
+            elif win["kind"].startswith("choghadiya"):
+                line += f" ({win['kind'].split(':')[1]} choghadiya)"
+            else:
+                line += " (open daylight)"
         rk = d["avoid"]["rahu_kaalam"]
-        line += f". Keep clear of Rahu Kaalam {rk[0]}–{rk[1]}."
+        line += f". Keep clear of Rahu Kaalam {rk[0][:5]}–{rk[1][:5]}."
         lines.append(line)
     return "\n".join(lines)
 
@@ -382,19 +437,19 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
 # ------------------------------------------------------------------ entry
 
 INSUFFICIENT_MSG = (
-    "I can't verify your chart yet — there isn't enough past timeline for me to form "
-    "three reliable checks against it. Until I can, I won't make predictions. I'm happy "
-    "to answer factual questions about your chart, and if you update your birth details "
-    "I'll try again.")
+    "Beta, I can't verify your chart yet — there isn't enough past timeline for me to form "
+    "three reliable checks against it. Until I can, I won't look ahead for you. Ask me "
+    "anything factual about the chart meanwhile — and if the birth details change, "
+    "tell me and I'll try again.")
 
 
 def insufficient_msg(profile: BirthProfile) -> str:
     if not _is_other(profile):
         return INSUFFICIENT_MSG
-    return (f"I can't verify {_words(profile)['poss']} chart yet — there isn't enough past "
-            "timeline for me to form three reliable checks against it. Until I can, I won't "
-            "make predictions. I'm happy to answer factual questions about the chart, and if "
-            "you update the birth details I'll try again.")
+    return (f"Beta, I can't verify {_words(profile)['poss']} chart yet — there isn't enough "
+            "past timeline for me to form three reliable checks against it. Until I can, "
+            "I won't look ahead. Ask me anything factual about the chart meanwhile — and "
+            "if the birth details change, tell me and I'll try again.")
 
 
 def _mark_insufficient(db: Session, conv: Conversation, profile: BirthProfile) -> Message:
@@ -459,13 +514,13 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
     facts = chart_facts(profile)
     lagna = facts["lagna"]
     if _is_other(profile):
-        hello = (f"This is {_words(profile)['poss']} chart ({profile.relation}) — "
-                 f"{lagna['sign_name']} rising, Moon in "
+        hello = (f"Namaste. This is {_words(profile)['poss']} kundli ({profile.relation}) — "
+                 f"{lagna['sign_name']} lagna rising, Moon in "
                  f"{facts['planets']['Moon']['sign_name']} "
                  f"({facts['planets']['Moon']['nakshatra']['name']} nakshatra).")
     else:
-        hello = (f"Hello{', ' + profile.display_name if profile.display_name else ''}. "
-                 f"I've cast your chart — {lagna['sign_name']} rising, Moon in "
+        hello = (f"Namaste{', ' + profile.display_name if profile.display_name else ''}. "
+                 f"I've drawn up your kundli — {lagna['sign_name']} lagna rising, Moon in "
                  f"{facts['planets']['Moon']['sign_name']} "
                  f"({facts['planets']['Moon']['nakshatra']['name']} nakshatra).")
     _add_msg(db, conv, "assistant", hello)
@@ -542,6 +597,15 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
     ev = (db.query(CalibrationEvent)
           .filter(CalibrationEvent.event_id == conv.pending_event_id,
                   CalibrationEvent.profile_id == profile.id).first())
+
+    # panchang/daily are factual — answer in any calibration sub-state,
+    # then re-ask the pending check
+    if ev and (PANCHANG_PAT.search(text.lower())
+               or DAILY_PAT.search(text.lower())):
+        _panchang_reply(db, conv, profile, facts, birth_input(profile),
+                        text.lower())
+        _ask_event(db, conv, ev, first=False)
+        return conv.messages[-3:]
 
     if conv.state == "cal_followup" and ev:
         # expect a month/year
@@ -760,30 +824,30 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
     if _is_other(profile):
         w = _words(profile)
         if not profile.milestone_search_done:
-            return ("I won't make predictions from this chart yet. Two things can help: "
-                    f"you can check {w['poss']} birth time against a birth certificate or "
-                    f"hospital record and use \"{EDIT_BIRTH}\" in the menu, or share 2–3 "
-                    f"significant events from {w['poss']} life with the month and year — like "
+            return ("I won't read ahead from this chart yet, beta. Two things can help: "
+                    f"check {w['poss']} birth time against a birth certificate or "
+                    f"hospital record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 "
+                    f"big events from {w['poss']} life with the month and year — like "
                     "\"started the first job in July 2012\", \"got married March 2016\" or "
-                    "\"moved to Pune in 2019\" — and I'll test nearby birth times against "
-                    "them. Meanwhile I'm happy to explain anything in the chart.",
+                    "\"moved to Pune in 2019\" — and I'll try nearby birth times against "
+                    "them. Meanwhile, ask me anything in the chart.",
                     [SHARE_EVENTS, EDIT_BIRTH])
-        return ("I won't make predictions from this chart yet. The best next step is to "
-                f"check {w['poss']} birth time against a birth certificate or hospital "
-                f"record and use \"{EDIT_BIRTH}\" in the menu. Meanwhile I'm happy to "
-                "explain anything in the chart.", [EDIT_BIRTH])
+        return ("I won't read ahead from this chart yet, beta. Best next step: check "
+                f"{w['poss']} birth time against a birth certificate or hospital "
+                f"record and use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me "
+                "anything in the chart.", [EDIT_BIRTH])
     if not profile.milestone_search_done:
-        return ("I won't make predictions from this chart yet. Two things can help: "
-                "you can check your birth time against a birth certificate or hospital "
-                f"record and use \"{EDIT_BIRTH}\" in the menu, or share 2–3 significant "
+        return ("I won't read ahead from your chart yet, beta. Two things can help: "
+                "check your birth time against a birth certificate or hospital "
+                f"record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 big "
                 "life events with the month and year — like \"started my first job in "
                 "July 2012\", \"got married March 2016\" or \"moved to Pune in 2019\" — "
-                "and I'll test nearby birth times against them. Meanwhile I'm happy to "
-                "explain anything in your chart.",
+                "and I'll try nearby birth times against them. Meanwhile, ask me "
+                "anything in your chart.",
                 [SHARE_EVENTS, EDIT_BIRTH])
-    return ("I won't make predictions from this chart yet. The best next step is to "
-            "check your birth time against a birth certificate or hospital record and "
-            f"use \"{EDIT_BIRTH}\" in the menu. Meanwhile I'm happy to explain anything "
+    return ("I won't read ahead from your chart yet, beta. Best next step: check "
+            "your birth time against a birth certificate or hospital record and "
+            f"use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me anything "
             "in your chart.", [EDIT_BIRTH])
 
 
@@ -1007,6 +1071,12 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
             _add_msg(db, conv, "assistant", "I need at least two dated events first.")
         return
 
+    # panchang is factual — answer before the milestone parse so a dated
+    # panchang question can't be swallowed as a life-event entry
+    if PANCHANG_PAT.search(text.lower()) or DAILY_PAT.search(text.lower()):
+        _panchang_reply(db, conv, profile, facts, birth, text.lower())
+        return
+
     if conv.state == "rectify_domain":
         mid = conv.pending_event_id[2:] if conv.pending_event_id.startswith("m:") else ""
         m = next((x for x in profile.milestones if str(x.id) == mid), None)
@@ -1052,21 +1122,13 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
                      f"confirmed {_words(profile)['poss']} birth time is exact — keep that in mind.",
                      kind="chart", meta={"varga": varga, "chart": data})
             return
-    # panchang is factual — the day's limbs are allowed even while gated
-    if PANCHANG_PAT.search(text.lower()):
-        pan = panchang.daily_panchang(_panchang_day(text.lower(),
-                                                  _today_at(birth)),
-                                      panchang.place_of(birth), facts)
-        _add_msg(db, conv, "assistant",
-                 _format_panchang(pan, birth.place_label),
-                 kind="panchang", meta={"panchang": pan})
-        return
     if (FUTURE_PAT.search(text) or TIMING_PAT.search(text.lower())
             or REPORT_PAT.search(text.lower())):
         text_, options = rectify_invite(profile)
         _add_msg(db, conv, "assistant",
-                 "Since the past checks didn't match, the honest thing is to fix the birth "
-                 "time before I say anything about the future. " + text_.split(". ", 1)[1],
+                 "Since the past checks didn't match, beta, the honest thing is to set "
+                 "the birth time right before I say anything about what's ahead. "
+                 + text_.split(". ", 1)[1],
                  kind="options", meta={"options": options, "actions": _ACTIONS})
         return
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
@@ -1074,11 +1136,8 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
     reply, provider = providers.generate(
         history, facts=facts,
         context_note=_context_prefix(profile)
-        + "Calibration failed; explain chart facts only, no predictions.",
+        + "The past checks did not line up; explain chart facts only, no predictions.",
         allow_external=_external_ok(profile), on_delta=on_delta)
-    vr = verify.verify_response(reply, facts, {"running_dasha": run})
-    if not vr["ok"]:
-        reply = verify.repair_response(reply, vr["issues"])
     _add_msg(db, conv, "assistant", reply, meta={"provider": provider})
 
 
@@ -1099,13 +1158,8 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         return conv.messages[-2:]
 
     # panchang — the day's limbs; factual almanac, allowed at any gate
-    if PANCHANG_PAT.search(t):
-        today = _today_at(birth)
-        pan = panchang.daily_panchang(_panchang_day(t, today),
-                                      panchang.place_of(birth), facts)
-        _add_msg(db, conv, "assistant",
-                 _format_panchang(pan, birth.place_label),
-                 kind="panchang", meta={"panchang": pan})
+    if PANCHANG_PAT.search(t) or DAILY_PAT.search(t):
+        _panchang_reply(db, conv, profile, facts, birth, t)
         return conv.messages[-2:]
 
     wants_report = bool(REPORT_PAT.search(t))
@@ -1138,6 +1192,23 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                         pretty += "\n\n" + "\n".join(extra)
                     _add_msg(db, conv, "assistant", pretty, kind="analysis", meta=a)
                     return conv.messages[-2:]
+                if "timing" in meta:
+                    sug = meta["timing"]
+                    parts = [
+                        f"How the days were ranked for "
+                        f"{sug['activity'].replace('_', ' ')} — the tara is "
+                        "personal; the rest are classical day-quality rules.",
+                        "Scored: favourable tara +2, favourable tithi class +1, "
+                        "preferred weekday +1, preferred nakshatra +1. Excluded "
+                        "outright: adverse tara, chandrashtama, Vishti karana, "
+                        "a harsh yoga, Amavasya, Rikta tithi.",
+                    ]
+                    for d in sug["days"]:
+                        parts.append(f"- {d['date']} (score {d['score']}): "
+                                     + "; ".join(d["reasons"]))
+                    _add_msg(db, conv, "assistant", "\n".join(parts),
+                             kind="analysis", meta=meta)
+                    return conv.messages[-2:]
         # Without a computed trail, answer conversationally using the history.
 
     domain = detect_domain(text)
@@ -1152,27 +1223,29 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             ev = _next_pending_event(db, conv, profile)
             if ev:
                 _add_msg(db, conv, "assistant",
-                         "I want to answer that properly, so let's finish checking your "
-                         "chart against your past first — it takes three quick questions.")
+                         "I want to answer that properly, beta — so let me first finish "
+                         "checking your chart against your past. Three quick questions.")
                 _ask_event(db, conv, ev, first=False)
                 return conv.messages[-3:]
         if profile.calibration_state == "insufficient_history":
             _add_msg(db, conv, "assistant", insufficient_msg(profile))
             return conv.messages[-2:]
         _add_msg(db, conv, "assistant",
-                 f"I don't want to guess at {_words(profile)['poss']} future before the chart has earned some "
-                 "trust. The earlier checks didn't line up — let's fix the birth data "
-                 "first, then I'll happily look ahead with you.")
+                 f"Beta, I don't want to guess at {_words(profile)['poss']} future before the "
+                 "chart has earned some trust — the earlier checks didn't line up. Let's "
+                 "set the birth data right first, then I'll gladly look ahead with you.")
         return conv.messages[-2:]
 
-    # report — computed chart + 12-month outlook, deterministic text
+    # report — computed chart + 12-month outlook, deterministic text.
+    # Domain outlooks are abstaining "general outlook" verdicts, not
+    # predictions made to the user — they stay in meta, not PredictionRecord,
+    # so they don't dilute the forecast scorecard.
     if wants_report:
         rep = report.build_report(facts, birth, calibrated=_calibrated(profile),
                                   predictions_allowed=True,
-                                  subject=_subject(profile))
+                                  subject=_subject(profile),
+                                  today=_today_at(birth))
         reply = "\n\n".join(rep["reading"])
-        for item in rep["domains"]:
-            _save_prediction(db, profile, text, item["analysis"], reply)
         if any(d["domain"] == "health" for d in rep["domains"]):
             reply = _apply_disclaimer(reply, "health")
         _add_msg(db, conv, "assistant", reply, kind="report",
@@ -1184,8 +1257,14 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         today = _today_at(birth)
         offset, horizon = _timing_horizon(t)
         activity = panchang.detect_activity(t)
-        sug = panchang.suggest_days(facts, birth, today + timedelta(days=offset),
-                                  days=horizon, activity=activity)
+        try:
+            sug = panchang.suggest_days(facts, birth,
+                                        today + timedelta(days=offset),
+                                        days=horizon, activity=activity)
+        except Exception:
+            _add_msg(db, conv, "assistant",
+                     "I couldn't compute the day ranking — try a shorter range.")
+            return conv.messages[-2:]
         _add_msg(db, conv, "assistant",
                  _format_timing(sug, horizon, _subject(profile) or "you"),
                  kind="timing", meta={"timing": sug})
@@ -1203,10 +1282,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                          f"The user's calibration is '{profile.calibration_state}'. "
                          f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
             allow_external=_external_ok(profile), on_delta=None)
-        vr = verify.verify_response(reply, facts, {"running_dasha": run})
-        if not vr["ok"]:
-            reply = verify.repair_response(reply, vr["issues"])
-        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts, _conversation_history(conv)), domain)
+        reply = _apply_disclaimer(reply, domain)
         _add_msg(db, conv, "assistant", reply,
                  meta={"analysis": analysis, "provider": provider})
         _save_prediction(db, profile, text, analysis, reply)
@@ -1230,12 +1306,8 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                                          f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
                                          allow_external=_external_ok(profile),
                                          on_delta=None if analysis else on_delta)
-    vr = verify.verify_response(reply, facts, {"running_dasha": run})
-    if not vr["ok"]:
-        reply = verify.repair_response(reply, vr["issues"])
     reply = _apply_disclaimer(reply, domain)
     if analysis:
-        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts, _conversation_history(conv)), domain)
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, **({"analysis": analysis} if analysis else {})})

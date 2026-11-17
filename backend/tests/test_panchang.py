@@ -17,6 +17,17 @@ B = BirthInput(name="Arjun", year=1990, month=5, day=15, hour=6, minute=15,
 PLACE = PA.place_of(B)
 DAY = date(2027, 3, 1)
 
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_throttle():
+    """Many tests register users from the same TestClient IP."""
+    from app.main import reset_auth_throttle
+    reset_auth_throttle()
+    yield
+    reset_auth_throttle()
+
 
 def make_facts():
     return engine.compute(B)
@@ -75,6 +86,65 @@ def test_personal_layer():
     assert per["chandrashtama"] == expected_cs
 
 
+def test_personal_moon_and_saturn_layers():
+    facts = make_facts()
+    pan = PA.daily_panchang(DAY, PLACE, facts)
+    per = pan["personal"]
+    assert 1 <= per["moon_house_from_janma"] <= 12
+    assert per["chandrashtama"] == (per["moon_house_from_janma"] == 8)
+    sfm = per["saturn_from_moon"]
+    assert 1 <= sfm["house"] <= 12
+    assert sfm["sade_sati"] == (sfm["house"] in (12, 1, 2))
+    assert sfm["ashtama"] == (sfm["house"] == 8)
+    assert sfm["kantaka"] == (sfm["house"] == 4)
+
+
+def test_choghadiya_structure():
+    pan = PA.daily_panchang(DAY, PLACE)
+    ch = pan["choghadiya"]
+    assert len(ch["day"]) == 8 and len(ch["night"]) == 8
+    for slot in ch["day"] + ch["night"]:
+        assert slot["name"] == PA.CHOGHADIYA_NAMES[slot["type"]]
+        assert slot["good"] == (slot["type"] in PA.CHOGHADIYA_GOOD)
+        assert ":" in slot["start"] and ":" in slot["end"]
+    # every day offers at least two good slots
+    assert sum(s["good"] for s in ch["day"]) >= 2
+
+
+def test_vaara_matches_civil_weekday():
+    """Regression: drik.vaara at the second-rounded sunrise jd flips the
+    weekday on ~half of all days — it must be read at the noon jd."""
+    for d in range(1, 8):
+        when = date(2027, 3, d)
+        pan = PA.daily_panchang(when, PLACE)
+        assert pan["vaara"]["index"] == (when.weekday() + 1) % 7
+
+
+def test_dms_to_hours_day_offset_suffix():
+    # drik emits 'HH:MM:SS (+1)' past midnight / '(-1)' before — parse both
+    assert PA._dms_to_hours("01:30:00 (+1)") == 25.5
+    assert PA._dms_to_hours("23:00:00 (-1)") == -1.0
+    assert PA._dms_to_hours("10:15:00") == 10.25
+
+
+def test_hhmm_never_emits_60():
+    assert PA._hhmm(6.9999) == "07:00"      # round() used to give '06:60'
+    assert PA._hhmm(25.5) == "01:30"
+
+
+def test_suggest_days_isolates_failures(monkeypatch):
+    facts = make_facts()
+    real = PA._score_day
+    def flaky(f, b, p, when, a):
+        if when == DAY:
+            raise ValueError("simulated drik failure")
+        return real(f, b, p, when, a)
+    monkeypatch.setattr(PA, "_score_day", flaky)
+    sug = PA.suggest_days(facts, B, DAY, days=10)
+    assert sug["failed_days"] == 1
+    assert sug["scanned_days"] == 10
+
+
 # ---------- timing suggestions ----------
 
 def test_detect_activity():
@@ -83,6 +153,16 @@ def test_detect_activity():
     assert PA.detect_activity("good time to travel") == "travel"
     assert PA.detect_activity("suitable time for the exam") == "education"
     assert PA.detect_activity("best time this month") == "general"
+
+
+def test_detect_activity_word_boundaries():
+    # substring bugs: "car" ⊂ "career", "trip" ⊂ "strip", "move" ⊂ "remove"
+    assert PA.detect_activity("best day for a career change") == "new_work"
+    assert PA.detect_activity("good time to strip the walls") != "travel"
+    assert PA.detect_activity("best day to remove old files") != "travel"
+    assert PA.detect_activity("best day to deal with the paperwork") == "finance"
+    assert PA.detect_activity("best day for dealing with paperwork") != "finance"
+    assert PA.detect_activity("the foundation of the plan") != "new_work"
 
 
 def test_suggest_days_structure():
@@ -115,6 +195,46 @@ def test_suggest_days_deterministic():
     assert [d["score"] for d in a["days"]] == [d["score"] for d in b["days"]]
 
 
+def _fake_pan(**over):
+    pan = {
+        "windows": {"rahu_kaalam": ("10:00:00", "11:30:00"),
+                    "yamaganda": ("14:00:00", "15:00:00"),
+                    "gulika": ("16:00:00", "17:00:00"),
+                    "durmuhurta": ["12:00:00", "12:30:00"],
+                    "abhijit": ("11:50:00", "12:35:00")},   # overlaps durmuhurta
+        "sunrise": {"time": "06:00"}, "sunset": {"time": "18:00"},
+        "choghadiya": {"day": [
+            {"type": 3, "name": "Amrit", "good": True,
+             "start": "07:30", "end": "09:00"},
+            {"type": 0, "name": "Udveg", "good": False,
+             "start": "09:00", "end": "10:30"},
+            {"type": 5, "name": "Shubha", "good": True,
+             "start": "10:30", "end": "12:00"}],
+            "night": []}}
+    pan.update(over)
+    return pan
+
+
+def test_clean_window_prefers_good_choghadiya():
+    win = PA._clean_window(_fake_pan())
+    # abhijit is dirty -> first clean GOOD choghadiya wins
+    assert win == {"start": "07:30", "end": "08:30",
+                   "kind": "choghadiya:Amrit"}
+
+
+def test_clean_window_falls_back_without_choghadiya():
+    pan = _fake_pan()
+    del pan["choghadiya"]
+    win = PA._clean_window(pan)
+    assert win["kind"] == "open" and win["start"] == "06:00"
+
+
+def test_score_day_tolerates_missing_facts():
+    # suggest_days on a chart-less call must not KeyError on "personal"
+    r = PA._score_day(None, B, PLACE, DAY, "general")
+    assert r["date"] == DAY.isoformat()
+
+
 # ---------- report ----------
 
 def test_report_structure_with_predictions():
@@ -144,6 +264,46 @@ def test_report_paused_predictions():
     assert any("paused" in l for l in rep["reading"])
     # chart facts are still fully present even when predictions are off
     assert rep["chart"]["moon"]["nakshatra"]["name"]
+
+
+def test_report_mangal_dosha_and_today_section():
+    facts = make_facts()
+    rep = RP.build_report(facts, B, calibrated=True,
+                          predictions_allowed=False)
+    md = rep["chart"]["mangal_dosha"]
+    assert set(md) == {"present", "house_from_lagna", "also_from_moon"}
+    assert 1 <= md["house_from_lagna"] <= 12
+    t = rep["today"]
+    assert t["tara"]["name"] and 1 <= t["moon_house_from_janma"] <= 12
+    if md["present"]:
+        assert any("Mangal" in l for l in rep["reading"])
+    assert json.dumps(rep)                       # whole section JSON-safe
+
+
+def test_report_pattern_ignores_bug_reports():
+    from app.chat import orchestrator as O
+    assert not O.REPORT_PAT.search("i want to report a bug")
+    assert not O.REPORT_PAT.search("report a problem with the chart")
+    assert O.REPORT_PAT.search("give me my report")
+    assert O.REPORT_PAT.search("full reading please")
+
+
+def test_daily_pattern():
+    from app.chat import orchestrator as O
+    assert O.DAILY_PAT.search("how is today for me")
+    assert O.DAILY_PAT.search("how's my day tomorrow")
+    assert O.DAILY_PAT.search("daily horoscope")
+    assert not O.DAILY_PAT.search("how is my career going")
+
+
+def test_timing_pattern_false_positives():
+    from app.chat import orchestrator as O
+    assert not O.TIMING_PAT.search("have a good day")
+    assert not O.TIMING_PAT.search("we had a good time at the party")
+    assert not O.TIMING_PAT.search("which day is it today")
+    assert O.TIMING_PAT.search("good day to invest")
+    assert O.TIMING_PAT.search("which day is best for the exam")
+    assert O.TIMING_PAT.search("when should I travel")
 
 
 # ---------- chat integration ----------
@@ -241,3 +401,45 @@ def test_report_chat_gated():
                json={"text": "show me my report"}, headers=h)
     body = " ".join(m["content"] for m in r.json()).lower()
     assert "twelve-month outlook" not in body
+
+
+def test_panchang_during_calibration_keeps_event_pending():
+    """Mid-calibration, a panchang question is answered factually and the
+    pending check is re-asked — not swallowed or treated as an answer."""
+    c, h = _new_user()
+    c.get("/api/chat/history", headers=h)
+    r = c.post("/api/chat/send", json={"text": "what's today's panchang?"},
+               headers=h)
+    assert r.status_code == 200
+    kinds = [m.get("kind") for m in r.json()]
+    assert "panchang" in kinds, [(m.get("kind"), m.get("content"))
+                                 for m in r.json()]
+    assert "options" in kinds                    # the check is re-asked
+    assert c.get("/api/profile",
+                headers=h).json()["calibration_state"] == "pending"
+
+
+def test_daily_reading_gate_free():
+    c, h = _new_user()
+    c.get("/api/chat/history", headers=h)
+    for _ in range(8):
+        if c.get("/api/profile",
+                 headers=h).json()["calibration_state"] != "pending":
+            break
+        c.post("/api/chat/send", json={"text": "No, that didn't happen"},
+               headers=h)
+    r = c.post("/api/chat/send", json={"text": "how is today for me?"},
+               headers=h)
+    m = next((m for m in reversed(r.json()) if m.get("kind") == "panchang"),
+             None)
+    assert m is not None, [(m.get("kind"), m.get("content"))
+                           for m in r.json()]
+
+
+def test_why_after_timing_shows_reasoning():
+    c, h = _calibrated_client()
+    c.post("/api/chat/send", json={"text": "when should I buy a car?"},
+           headers=h)
+    r = c.post("/api/chat/send", json={"text": "why"}, headers=h)
+    body = " ".join(m["content"] for m in r.json()).lower()
+    assert "ranked" in body or "scored" in body, body
