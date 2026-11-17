@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from ..astro import calibration, panchang, precision, report, verify
 from ..astro.constants import DOMAINS
 from .. import geo
+from ..policy import TERMS_VERSION
 from ..astro.engine import BirthInput, birth_fingerprint, engine
 from ..db import (
     BirthProfile, CalibrationEvent, Conversation, Message, PredictionRecord, UserMilestone,
@@ -62,8 +63,8 @@ def _context_prefix(profile: BirthProfile) -> str:
 
 
 def _external_ok(profile: BirthProfile) -> bool:
-    """Per-user opt-in to third-party LLM providers (see User.llm_consent)."""
-    return bool(profile.user is not None and profile.user.llm_consent)
+    """External AI is included after accepting the current service terms."""
+    return bool(profile.user is not None and profile.user.terms_version == TERMS_VERSION)
 
 
 def _calibrated(profile: BirthProfile) -> bool:

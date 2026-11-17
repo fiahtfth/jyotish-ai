@@ -175,7 +175,7 @@ def _calibrated_client():
     c = _client()
     email = f"p_{uuid.uuid4().hex[:8]}@test.dev"
     tok = c.post("/api/auth/register",
-                 json={"email": email, "password": "password123"}).json()["access_token"]
+                 json={"terms_accepted": True, "email": email, "password": "password123"}).json()["access_token"]
     h = {"authorization": f"Bearer {tok}"}
     c.put("/api/profile", json=ARJUN, headers=h)
     c.get("/api/chat/history", headers=h)

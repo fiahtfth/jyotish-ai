@@ -40,10 +40,11 @@ class User(Base):
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     display_name = Column(String, default="")
-    # explicit per-user opt-in to sending chart data and chats to third-party
-    # LLM providers (Gemini/Groq/OpenRouter); NULL/False means offline only
+    # Retained for audit/compatibility; enabled when service terms are accepted.
     llm_consent = Column(Boolean, default=False)
     llm_consent_at = Column(DateTime, nullable=True)
+    terms_version = Column(String, nullable=True)
+    terms_accepted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, default=_utcnow)
     # the birth profile (person) the chat/chart/calibration endpoints act on;

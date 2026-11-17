@@ -6,6 +6,7 @@ import type { ChartData } from "@/components/Chart";
 import type { PredictionsResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import NorthChart from "@/components/Chart";
+import ServiceAgreement from "@/components/ServiceAgreement";
 
 // chart messages carry either the chart map directly or {varga, chart: map}
 const chartOf = (c: unknown) => ((c as { chart?: ChartData }).chart ?? (c as ChartData));
@@ -38,6 +39,9 @@ export default function Chat() {
   const sending = useRef(false);
   const loadVersion = useRef(0);
   const [chatError, setChatError] = useState("");
+  const [termsAgreed, setTermsAgreed] = useState(false);
+  const [termsBusy, setTermsBusy] = useState(false);
+  const [termsError, setTermsError] = useState("");
 
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
@@ -74,7 +78,7 @@ export default function Chat() {
 
   async function send(text: string) {
     text = text.trim();
-    if (!text || sending.current || loading || chatError) return;
+    if (!text || sending.current || loading || chatError || me?.ai_terms_required) return;
     sending.current = true;
     ++loadVersion.current;
     setInput(""); setBusy(true); setChatError("");
@@ -105,12 +109,14 @@ export default function Chat() {
     try { setPreds(await api.predictions()); } catch (e) { setPredErr(errMsg(e)); }
   }
 
-  async function toggleConsent() {
-    setMenu(false);
+  async function acceptTerms() {
+    if (!termsAgreed || termsBusy) return;
+    setTermsBusy(true); setTermsError("");
     try {
-      const r = await api.setConsent(!me?.llm_consent);
-      setMe(m => (m ? { ...m, llm_consent: r.llm_consent } : m));
-    } catch {}
+      const accepted = await api.acceptTerms();
+      setMe(m => m ? { ...m, ...accepted } : m);
+    } catch (e) { setTermsError(errMsg(e)); }
+    finally { setTermsBusy(false); }
   }
 
   async function downloadData() {
@@ -169,10 +175,8 @@ export default function Chat() {
                 <button onClick={openPreds} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("myPredictions")}</button>
                 <button onClick={() => { setLang(lang === "en" ? "hi" : "en"); setMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("language")}</button>
                 <button onClick={() => { setMenu(false); reset(); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("restart")}</button>
-                <button onClick={toggleConsent} className="w-full text-left px-3 py-2 hover:bg-bgsoft">
-                  {me?.llm_consent ? t("stopAI") : t("allowAI")}
-                </button>
                 <button onClick={downloadData} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("download")}</button>
+                <a href="/terms" className="block px-3 py-2 hover:bg-bgsoft">{t("termsLink")}</a>
                 <a href="/privacy" className="block px-3 py-2 hover:bg-bgsoft">{t("privacyPolicy")}</a>
                 <button onClick={deleteAccount} className="w-full text-left px-3 py-2 hover:bg-bgsoft text-red-500">{t("deleteAccount")}</button>
                 <button onClick={() => { clearToken(); router.replace("/login"); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft text-red-500">{t("signOut")}</button>
@@ -257,6 +261,17 @@ export default function Chat() {
         <div ref={endRef} />
       </div>
 
+      {me?.ai_terms_required && (
+        <section className="border-t border-bord bg-card px-4 py-4 space-y-3" aria-label={t("updatedTerms")}>
+          <h2 className="font-semibold">{t("updatedTerms")}</h2>
+          <p className="text-sm text-muted">{t("updatedTermsNote")}</p>
+          <ServiceAgreement checked={termsAgreed} onChange={setTermsAgreed} />
+          {termsError && <p role="alert" className="text-sm text-red-500">{termsError}</p>}
+          <button onClick={acceptTerms} disabled={!termsAgreed || termsBusy} className="bg-accent text-white rounded-lg px-4 py-2 disabled:opacity-40">
+            {termsBusy ? t("loading") : t("acceptContinue")}
+          </button>
+        </section>
+      )}
       {chatError && (
         <div role="alert" className="px-4 py-3 text-sm border-t border-bord">
           <p>{chatError}</p>
@@ -269,10 +284,10 @@ export default function Chat() {
         <div className="flex gap-2">
           <input value={input} onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
-            aria-label={t("askPh")} disabled={loading || !!chatError}
+            aria-label={t("askPh")} disabled={loading || !!chatError || !!me?.ai_terms_required}
             placeholder={t("askPh")}
             className="flex-1 border border-bord rounded-full px-4 py-2.5 bg-transparent text-[15px] outline-none focus:border-accent" />
-          <button onClick={() => send(input)} disabled={busy || loading || !!chatError || !input.trim()}
+          <button onClick={() => send(input)} disabled={busy || loading || !!chatError || !!me?.ai_terms_required || !input.trim()}
             className="bg-accent text-white rounded-full px-5 py-2.5 font-medium disabled:opacity-40">{t("send")}</button>
         </div>
       </div>

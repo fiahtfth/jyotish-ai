@@ -25,7 +25,7 @@ services:
         sync: false        # Neon Postgres URL — REQUIRED, see note above
       - key: JYOTISH_LLM_PROVIDER
         value: gemini
-      # server-level switch; each user must ALSO opt in (User.llm_consent)
+      # server-level switch; account terms disclose external AI processing
       - key: JYOTISH_LLM_EXTERNAL_CONSENT
         value: "true"
       - key: GEMINI_API_KEY

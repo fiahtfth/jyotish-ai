@@ -24,7 +24,7 @@ export default function Privacy() {
         <p>Only to provide the service: calculating your chart, checking it against your past, and answering your questions. We do not sell your data or use it for advertising.</p>
 
         <h2 className="text-xl font-semibold">{t("privAI")}</h2>
-        <p>If — and only if — you opt in, your chart summary and recent messages are sent to an external AI provider (currently Google Gemini, with Groq or OpenRouter as fallbacks) to write replies. Those providers process the data under their own terms. If you don&apos;t opt in, replies are produced by our built-in responder and nothing leaves our server. You can change this any time from the menu in the chat.</p>
+        <p>{t("aiDisclosure")} External AI replies are included in the service terms accepted at signup. Existing accounts are asked to accept the updated terms before continuing with AI chat. This is not a separate optional setting.</p>
 
         <h2 className="text-xl font-semibold">{t("privStorage")}</h2>
         <p>Data is stored in our database ([HOSTING PROVIDER, REGION]) for as long as your account exists. Deleting your account removes your account, birth details, calibration answers and conversations.</p>
@@ -32,7 +32,7 @@ export default function Privacy() {
         <h2 className="text-xl font-semibold">{t("privRights")}</h2>
         <ul className="list-disc pl-6 space-y-1">
           <li>Download everything we hold about you: chat menu → “Download my data”.</li>
-          <li>Withdraw consent to external AI at any time: chat menu.</li>
+          <li>You may stop using AI chat at any time. If you no longer agree to external AI processing, you can download your data and delete your account from the chat menu.</li>
           <li>Delete your account: chat menu → “Delete account”.</li>
           <li>For anything else, contact [EMAIL].</li>
         </ul>

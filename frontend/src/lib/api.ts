@@ -32,7 +32,7 @@ export type Msg = {
 };
 export type Me = {
   id: number; email: string; display_name: string; has_profile: boolean;
-  llm_consent: boolean; email_verified: boolean;
+  llm_consent: boolean; email_verified: boolean; ai_terms_required: boolean; terms_version: string | null;
 };
 export type Place = {
   name: string; state: string; country: string; latitude: number; longitude: number;
@@ -164,10 +164,10 @@ async function readStream(body: ReadableStream<Uint8Array>, onDelta: (t: string)
 }
 
 export const api = {
-  register: (email: string, password: string, display_name: string, llm_consent: boolean) =>
-    req<TokenOut>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name, llm_consent }) }),
-  setConsent: (llm_consent: boolean) =>
-    req<{ llm_consent: boolean }>("/api/auth/consent", { method: "PUT", body: JSON.stringify({ llm_consent }) }),
+  register: (email: string, password: string, display_name: string, terms_accepted: boolean) =>
+    req<TokenOut>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name, terms_accepted }) }),
+  acceptTerms: () => req<{ llm_consent: boolean; ai_terms_required: boolean; terms_version: string }>(
+    "/api/auth/terms", { method: "POST", body: JSON.stringify({ terms_accepted: true }) }),
   exportMe: () => req("/api/auth/me/export"),
   login: (email: string, password: string) =>
     req<TokenOut>("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),

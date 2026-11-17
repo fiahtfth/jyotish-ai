@@ -298,9 +298,8 @@ def generate(messages: list[dict], facts: dict | None = None,
         text = offline_response(messages, facts, analysis, context_note)
         if provider != "offline":
             if not allow_external and provider in EXTERNAL_PROVIDERS:
-                notice = ("External AI replies are off for this account. To enable them, choose "
-                          "'Allow external AI replies' in the account menu. This sends your "
-                          "chat and chart data to an external AI service.")
+                notice = ("Accept the updated service terms to use AI chat. "
+                          "AI replies use your chart summary and recent messages with external providers.")
             elif not providers_to_try:
                 notice = "AI chat is not configured or enabled on the server."
             else:

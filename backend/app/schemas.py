@@ -8,13 +8,12 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     display_name: str = ""
-    # opt-in to third-party AI providers; without it replies come from the
-    # built-in offline responder and no chart data leaves the server
-    llm_consent: bool = False
+    # External AI is included in the service terms, not a separate option.
+    terms_accepted: Literal[True]
 
 
-class ConsentIn(BaseModel):
-    llm_consent: bool
+class TermsIn(BaseModel):
+    terms_accepted: Literal[True]
 
 
 class ForgotIn(BaseModel):

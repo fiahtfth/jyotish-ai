@@ -216,7 +216,7 @@ def test_openrouter_rejects_paid_model(monkeypatch):
 
 def register_and_profile():
     email = f"t_{uuid.uuid4().hex[:8]}@test.dev"
-    r = client.post("/api/auth/register", json={"email": email, "password": "password123"})
+    r = client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": "password123"})
     assert r.status_code == 200, r.text
     tok = r.json()["access_token"]
     h = {"authorization": f"Bearer {tok}"}
@@ -353,14 +353,14 @@ def test_token_revoked_after_account_deletion():
     from app.config import settings
     email_a = f"a_{uuid.uuid4().hex[:8]}@test.dev"
     tok_a = client.post("/api/auth/register",
-                        json={"email": email_a, "password": "password123"}).json()["access_token"]
+                        json={"terms_accepted": True, "email": email_a, "password": "password123"}).json()["access_token"]
     ha = {"authorization": f"Bearer {tok_a}"}
     uid_a = client.get("/api/auth/me", headers=ha).json()["id"]
     assert client.delete("/api/auth/me", headers=ha).status_code == 200
 
     email_b = f"b_{uuid.uuid4().hex[:8]}@test.dev"
     tok_b = client.post("/api/auth/register",
-                        json={"email": email_b, "password": "password123"}).json()["access_token"]
+                        json={"terms_accepted": True, "email": email_b, "password": "password123"}).json()["access_token"]
     uid_b = client.get("/api/auth/me", headers={"authorization": f"Bearer {tok_b}"}).json()["id"]
     assert uid_b != uid_a
     assert client.get("/api/auth/me", headers=ha).status_code == 401
@@ -559,7 +559,7 @@ def test_domain_detection_word_boundaries():
 
 def test_successful_logins_do_not_consume_email_budget():
     email = f"ok_{uuid.uuid4().hex[:8]}@test.dev"
-    assert client.post("/api/auth/register", json={"email": email, "password": "password123"}).status_code == 200
+    assert client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": "password123"}).status_code == 200
     from app import main as M
     for _ in range(9):
         assert client.post("/api/auth/login", json={"email": email, "password": "password123"}).status_code == 200
@@ -591,40 +591,54 @@ def test_generate_without_user_consent_never_calls_external(monkeypatch):
     assert provider == "gemini"
 
 
-def test_consent_defaults_off_and_can_be_toggled():
+def test_ai_enabled_by_accepting_signup_terms():
     h = register_and_profile()
-    assert client.get("/api/auth/me", headers=h).json()["llm_consent"] is False
-    r = client.put("/api/auth/consent", json={"llm_consent": True}, headers=h)
-    assert r.status_code == 200 and r.json()["llm_consent"] is True
-    assert client.get("/api/auth/me", headers=h).json()["llm_consent"] is True
-    client.put("/api/auth/consent", json={"llm_consent": False}, headers=h)
-    assert client.get("/api/auth/me", headers=h).json()["llm_consent"] is False
+    account = client.get("/api/auth/me", headers=h).json()
+    assert account["llm_consent"] is True
+    assert account["ai_terms_required"] is False
+    exported = client.get("/api/auth/me/export", headers=h).json()["account"]
+    assert exported["terms_version"] == "2026-11-17"
+    assert exported["terms_accepted_at"]
+    assert client.put("/api/auth/consent", json={"llm_consent": False}, headers=h).status_code in (404, 405)
 
 
 def test_register_records_consent():
     email = f"c_{uuid.uuid4().hex[:8]}@test.dev"
     r = client.post("/api/auth/register",
-                    json={"email": email, "password": "password123", "llm_consent": True})
+                    json={"terms_accepted": True, "email": email, "password": "password123", "llm_consent": True})
     h = {"authorization": f"Bearer {r.json()['access_token']}"}
     assert client.get("/api/auth/me", headers=h).json()["llm_consent"] is True
 
 
-def test_chat_uses_offline_without_consent(monkeypatch):
+def test_legacy_accounts_accept_terms_once_before_ai(monkeypatch):
     from app.llm import providers
-    seen = []
-    real = providers.generate
-
-    def spy(*a, **kw):
-        seen.append(kw.get("allow_external"))
-        return real(*a, **kw)
-    monkeypatch.setattr(providers, "generate", spy)
     h = register_and_profile()
     client.get("/api/chat/history", headers=h)
-    db, conv, _ = _db_profile_and_conv(h)
-    conv.state = "open"           # past calibration, so the LLM path runs
+    db, conv, prof = _db_profile_and_conv(h)
+    conv.state = "open"
+    prof.user.terms_version = None
+    prof.user.terms_accepted_at = None
+    prof.user.llm_consent = False
     db.commit(); db.close()
+    seen = []
+    def generate(*a, **kw):
+        seen.append(kw.get("allow_external"))
+        return "AI is answering.", "groq"
+    monkeypatch.setattr(providers, "generate", generate)
+    assert client.get("/api/auth/me", headers=h).json()["ai_terms_required"] is True
+    for endpoint in ("send", "stream"):
+        assert client.post(f"/api/chat/{endpoint}", json={"text":"hello"}, headers=h).status_code == 403
+    assert seen == []
+    assert client.post("/api/auth/terms", json={"terms_accepted": False}, headers=h).status_code == 422
+    assert client.post("/api/auth/terms", json={"terms_accepted": True}, headers=h).status_code == 200
+    exported = client.get("/api/auth/me/export", headers=h).json()["account"]
+    timestamp = exported["terms_accepted_at"]
+    assert timestamp and exported["llm_consent"] is True
+    assert exported["terms_version"] == "2026-11-17"
     send("tell me about my moon", h)
-    assert seen and all(v is False for v in seen)
+    assert seen == [True]
+    client.post("/api/auth/terms", json={"terms_accepted": True}, headers=h)
+    assert client.get("/api/auth/me/export", headers=h).json()["account"]["terms_accepted_at"] == timestamp
 
 
 def test_data_export_contains_everything():
@@ -665,7 +679,7 @@ def _token_from(mail, path):
 
 def _register(email=None, password="password123"):
     email = email or f"r_{uuid.uuid4().hex[:8]}@test.dev"
-    r = client.post("/api/auth/register", json={"email": email, "password": password})
+    r = client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": password})
     assert r.status_code == 200, r.text
     return email, {"authorization": f"Bearer {r.json()['access_token']}"}
 
@@ -815,7 +829,7 @@ def test_init_db_fresh_sqlite_reaches_head(tmp_path):
     assert {"users", "auth_tokens", "prediction_records", "alembic_version"} <= set(insp.get_table_names())
     assert "email_verified" in {c["name"] for c in insp.get_columns("users")}
     with eng.connect() as c:
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0007"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
 
 
 def test_init_db_upgrades_pre_alembic_database(tmp_path):
@@ -852,7 +866,7 @@ def test_init_db_upgrades_pre_alembic_database(tmp_path):
     with eng.connect() as c:
         row = c.exec_driver_sql("select token_nonce, email_verified from users").one()
         assert row[0] and not row[1]          # nonce backfilled, unverified
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0007"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
 
 
 # ---------- 8. Streaming chat ----------
@@ -1409,7 +1423,7 @@ def test_migration_0006_preserves_data_and_allows_many_profiles(tmp_path):
         assert c.exec_driver_sql("select profile_id from calibration_events").scalar() == 7
         # a second profile for the same user is now legal
         c.exec_driver_sql("INSERT INTO birth_profiles (id, user_id, relation) VALUES (10, 1, 'mother')")
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0007"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
     D.init_db(eng)       # idempotent
 
 
@@ -1661,6 +1675,26 @@ def test_offline_reply_explains_missing_account_consent(monkeypatch):
     monkeypatch.setattr(P.settings, 'LLM_PROVIDER', 'gemini')
     reply, provider = P.generate([{'role':'user','content':'tell me about myself'}], allow_external=False)
     assert provider == 'offline'
-    assert 'External AI replies are off for this account' in reply
-    assert 'Allow external AI replies' in reply
+    assert 'Accept the updated service terms' in reply
+    assert 'external providers' in reply
     assert 'I read the chart, not a script' not in reply
+
+
+def test_signup_requires_affirmative_service_terms():
+    for extra in ({}, {"terms_accepted": False}):
+        r = client.post("/api/auth/register", json={"email": f"terms_{uuid.uuid4().hex[:8]}@test.dev", "password": "password123", **extra})
+        assert r.status_code == 422
+
+
+def test_terms_migration_does_not_invent_acceptance(tmp_path):
+    from sqlalchemy import create_engine
+    from alembic import command
+    from app import db as D
+    eng = create_engine(f"sqlite:///{tmp_path / 'terms.db'}")
+    with eng.begin() as conn:
+        command.upgrade(D._alembic_config(conn), "0007")
+        conn.exec_driver_sql("INSERT INTO users (id, token_nonce, email, password_hash, llm_consent) VALUES (1, 'n', 'x@test.dev', 'h', 0)")
+    D.init_db(eng)
+    D.init_db(eng)
+    with eng.connect() as conn:
+        assert conn.exec_driver_sql("SELECT terms_version, terms_accepted_at, llm_consent FROM users WHERE id=1").one() == (None, None, 0)

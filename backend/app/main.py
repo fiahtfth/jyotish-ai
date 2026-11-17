@@ -22,6 +22,7 @@ from .auth import (
 )
 from .chat import orchestrator
 from .config import settings
+from .policy import TERMS_VERSION
 from .db import (
     BirthProfile, CalibrationEvent, Conversation, Message, MessageFeedback, PredictionRecord,
     ProblemReport, SessionLocal, UserMilestone,
@@ -29,7 +30,7 @@ from .db import (
 )
 from .astro.engine import BirthInput, engine, birth_fingerprint
 from .schemas import (
-    MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, ConsentIn, FeedbackIn, ForgotIn,
+    MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, TermsIn, FeedbackIn, ForgotIn,
     LoginIn, MessageOut, PlaceSearchOut, ProfileListItem, RegisterIn, ReportIn, ResetIn,
     TokenIn, TokenOut,
 )
@@ -124,8 +125,8 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks,
     if db.query(User).filter(User.email == body.email.lower()).first():
         raise HTTPException(409, "account already exists")
     u = User(email=body.email.lower(), password_hash=hash_password(body.password),
-             display_name=body.display_name, llm_consent=body.llm_consent,
-             llm_consent_at=_now() if body.llm_consent else None)
+             display_name=body.display_name, llm_consent=True,
+             llm_consent_at=_now(), terms_version=TERMS_VERSION, terms_accepted_at=_now())
     db.add(u)
     db.flush()
     raw = issue_auth_token(db, u, "verify")
@@ -227,18 +228,26 @@ def me(user: User = Depends(current_user)):
             "active_profile_id": p.id if p else None,
             "is_admin": _is_admin(user),
             "llm_consent": bool(user.llm_consent),
+            "ai_terms_required": user.terms_version != TERMS_VERSION,
+            "terms_version": user.terms_version,
             "email_verified": bool(user.email_verified)}
 
 
-@app.put("/api/auth/consent")
-def set_consent(body: ConsentIn, user: User = Depends(current_user),
-                db: Session = Depends(get_db)):
-    """Grant or withdraw consent to third-party AI providers. Withdrawal takes
-    effect on the next message (replies fall back to the offline responder)."""
-    user.llm_consent = body.llm_consent
-    user.llm_consent_at = _now()
+@app.post("/api/auth/terms")
+def accept_terms(body: TermsIn, user: User = Depends(current_user),
+                 db: Session = Depends(get_db)):
+    if user.terms_version != TERMS_VERSION:
+        user.terms_version = TERMS_VERSION
+        user.terms_accepted_at = _now()
+    user.llm_consent = True
+    user.llm_consent_at = user.terms_accepted_at
     db.commit()
-    return {"llm_consent": bool(user.llm_consent)}
+    return {"llm_consent": True, "ai_terms_required": False, "terms_version": TERMS_VERSION}
+
+
+def _require_ai_terms(user: User):
+    if user.terms_version != TERMS_VERSION:
+        raise HTTPException(403, "Please accept the updated service terms to continue chatting.")
 
 
 def _iso(d):
@@ -271,7 +280,9 @@ def export_me(user: User = Depends(current_user), db: Session = Depends(get_db))
                     "created_at": _iso(user.created_at),
                     "llm_consent": bool(user.llm_consent),
                     "email_verified": bool(user.email_verified),
-                    "llm_consent_at": _iso(user.llm_consent_at)},
+                    "llm_consent_at": _iso(user.llm_consent_at),
+                    "terms_version": user.terms_version,
+                    "terms_accepted_at": _iso(user.terms_accepted_at)},
         # legacy key: the active profile
         "birth_profile": ({**_profile_out(active), "rectified_from": active.rectified_from}
                           if active else None),
@@ -557,6 +568,7 @@ def chat_history(user: User = Depends(current_user), db: Session = Depends(get_d
 @app.post("/api/chat/send", response_model=list[MessageOut])
 def chat_send(body: ChatIn, user: User = Depends(current_user),
               db: Session = Depends(get_db)):
+    _require_ai_terms(user)
     p = _require_profile(user)
     _rate_limit(user.id)
     conv = _profile_conversation(db, p)
@@ -592,6 +604,7 @@ def chat_stream(body: ChatIn, user: User = Depends(current_user)):
     """Server-sent events variant of /api/chat/send: zero or more
     {"type":"delta"}, then one {"type":"done","messages":[...]} (authoritative;
     may differ from the streamed text) or {"type":"error"}."""
+    _require_ai_terms(user)
     p = _require_profile(user)
     _rate_limit(user.id)
     user_id, profile_id, text = user.id, p.id, body.text

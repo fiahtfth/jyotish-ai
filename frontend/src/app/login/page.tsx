@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import ServiceAgreement from "@/components/ServiceAgreement";
 import { api, errMsg, setToken, token } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 
@@ -12,7 +13,6 @@ export default function Login() {
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
-  const [consent, setConsent] = useState(false);
   const [agreed, setAgreed] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
@@ -25,7 +25,7 @@ export default function Login() {
     try {
       const r = mode === "login"
         ? await api.login(email, password)
-        : await api.register(email, password, name, consent);
+        : await api.register(email, password, name, agreed);
       setToken(r.access_token);
       router.replace(mode === "login" ? "/chat" : "/birth");
     } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
@@ -60,16 +60,7 @@ export default function Login() {
           <input value={password} onChange={e => setPassword(e.target.value)} type="password" placeholder={t("password")} required
             className="w-full border border-bord rounded-lg px-3 py-2 bg-transparent" />
           {mode === "register" && (
-            <div className="space-y-2 text-xs text-muted">
-              <label className="flex gap-2 items-start">
-                <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} required className="mt-0.5" />
-                <span>{t("agreePrefix")} <a href="/privacy" className="underline">{t("privacyPolicy")}</a>. {t("agreeSuffix")}</span>
-              </label>
-              <label className="flex gap-2 items-start">
-                <input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} className="mt-0.5" />
-                <span>{t("llmConsent")}</span>
-              </label>
-            </div>
+            <ServiceAgreement checked={agreed} onChange={setAgreed} />
           )}
           {err && <div className="text-red-500 text-sm">{err}</div>}
           <button disabled={busy || (mode === "register" && !agreed)}
