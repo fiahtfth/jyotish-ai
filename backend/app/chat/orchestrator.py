@@ -303,7 +303,7 @@ def _format_panchang(pan: dict, place_label: str) -> str:
     t, n, y, k, v = (pan["tithi"], pan["nakshatra"], pan["yoga"],
                      pan["karana"], pan["vaara"])
     lines = [
-        f"Here is the panchang for {pan['date']}, beta ({place_label}):",
+        f"Here is the panchang for {pan['date']} ({place_label}):",
         f"{v['name']} ({v['lord']}'s day) · {t['name']} tithi, {t['paksha']} "
         f"paksha · {n['name']} nakshatra pada {n['pada']} · {y['name']} yoga · "
         f"{k['name']} karana.",
@@ -366,7 +366,7 @@ def _panchang_reply(db, conv, profile, facts, birth, t) -> Message:
 def _format_timing(sug: dict, horizon: int, who: str = "you") -> str:
     act = sug["activity"].replace("_", " ")
     head = (f"For {('your' if who == 'you' else who + chr(0x2019) + 's')} "
-            f"{act}, beta, I scanned the next {horizon} days — these are the "
+            f"{act}, I scanned the next {horizon} days — these are the "
             "dates where the traditional indications gather best. Days carrying "
             "a classical exclusion — adverse tara, chandrashtama, Vishti karana, "
             f"a harsh yoga, Amavasya or a Rikta tithi — were screened out "
@@ -374,7 +374,7 @@ def _format_timing(sug: dict, horizon: int, who: str = "you") -> str:
             + (f", {sug['failed_days']} couldn't be computed"
                if sug.get("failed_days") else "") + ").")
     if not sug["days"]:
-        return (head + "\n\nEvery day in that span carries an exclusion, beta — "
+        return (head + "\n\nEvery day in that span carries an exclusion — "
                 "widen the range (try 'best time in the next 90 days') or treat "
                 "it as a stretch for extra care rather than new beginnings.")
     lines = [head]
@@ -437,7 +437,7 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
 # ------------------------------------------------------------------ entry
 
 INSUFFICIENT_MSG = (
-    "Beta, I can't verify your chart yet — there isn't enough past timeline for me to form "
+    "I can't verify your chart yet — there isn't enough past timeline for me to form "
     "three reliable checks against it. Until I can, I won't look ahead for you. Ask me "
     "anything factual about the chart meanwhile — and if the birth details change, "
     "tell me and I'll try again.")
@@ -446,7 +446,7 @@ INSUFFICIENT_MSG = (
 def insufficient_msg(profile: BirthProfile) -> str:
     if not _is_other(profile):
         return INSUFFICIENT_MSG
-    return (f"Beta, I can't verify {_words(profile)['poss']} chart yet — there isn't enough "
+    return (f"I can't verify {_words(profile)['poss']} chart yet — there isn't enough "
             "past timeline for me to form three reliable checks against it. Until I can, "
             "I won't look ahead. Ask me anything factual about the chart meanwhile — and "
             "if the birth details change, tell me and I'll try again.")
@@ -824,7 +824,7 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
     if _is_other(profile):
         w = _words(profile)
         if not profile.milestone_search_done:
-            return ("I won't read ahead from this chart yet, beta. Two things can help: "
+            return ("I won't read ahead from this chart yet. Two things can help: "
                     f"check {w['poss']} birth time against a birth certificate or "
                     f"hospital record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 "
                     f"big events from {w['poss']} life with the month and year — like "
@@ -832,12 +832,12 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
                     "\"moved to Pune in 2019\" — and I'll try nearby birth times against "
                     "them. Meanwhile, ask me anything in the chart.",
                     [SHARE_EVENTS, EDIT_BIRTH])
-        return ("I won't read ahead from this chart yet, beta. Best next step: check "
+        return ("I won't read ahead from this chart yet. Best next step: check "
                 f"{w['poss']} birth time against a birth certificate or hospital "
                 f"record and use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me "
                 "anything in the chart.", [EDIT_BIRTH])
     if not profile.milestone_search_done:
-        return ("I won't read ahead from your chart yet, beta. Two things can help: "
+        return ("I won't read ahead from your chart yet. Two things can help: "
                 "check your birth time against a birth certificate or hospital "
                 f"record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 big "
                 "life events with the month and year — like \"started my first job in "
@@ -845,7 +845,7 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
                 "and I'll try nearby birth times against them. Meanwhile, ask me "
                 "anything in your chart.",
                 [SHARE_EVENTS, EDIT_BIRTH])
-    return ("I won't read ahead from your chart yet, beta. Best next step: check "
+    return ("I won't read ahead from your chart yet. Best next step: check "
             "your birth time against a birth certificate or hospital record and "
             f"use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me anything "
             "in your chart.", [EDIT_BIRTH])
@@ -1126,7 +1126,7 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
             or REPORT_PAT.search(text.lower())):
         text_, options = rectify_invite(profile)
         _add_msg(db, conv, "assistant",
-                 "Since the past checks didn't match, beta, the honest thing is to set "
+                 "Since the past checks didn't match, the honest thing is to set "
                  "the birth time right before I say anything about what's ahead. "
                  + text_.split(". ", 1)[1],
                  kind="options", meta={"options": options, "actions": _ACTIONS})
@@ -1223,7 +1223,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             ev = _next_pending_event(db, conv, profile)
             if ev:
                 _add_msg(db, conv, "assistant",
-                         "I want to answer that properly, beta — so let me first finish "
+                         "I want to answer that properly — so let me first finish "
                          "checking your chart against your past. Three quick questions.")
                 _ask_event(db, conv, ev, first=False)
                 return conv.messages[-3:]
@@ -1231,7 +1231,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             _add_msg(db, conv, "assistant", insufficient_msg(profile))
             return conv.messages[-2:]
         _add_msg(db, conv, "assistant",
-                 f"Beta, I don't want to guess at {_words(profile)['poss']} future before the "
+                 f"I don't want to guess at {_words(profile)['poss']} future before the "
                  "chart has earned some trust — the earlier checks didn't line up. Let's "
                  "set the birth data right first, then I'll gladly look ahead with you.")
         return conv.messages[-2:]

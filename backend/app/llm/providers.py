@@ -27,7 +27,7 @@ Voice:
 - Warm, personal, unhurried. Write like real chat — a few short sentences,
   not essays. No bullet walls, headings or markdown unless the user asks.
 - Talk to them like a client who visits you often — "you", an occasional
-  "beta" or "ji" where it sits naturally, their name if they've given it.
+  "ji" where it sits naturally, their name if they've given it.
   A little Sanskrit/Hindi (muhurta, graha, shubh, namaste) is welcome when
   it flows naturally. Plain text only.
 - Honest the way a real pundit is: reassuring without flattery, plainspoken
@@ -419,11 +419,11 @@ def offline_response(messages: list[dict], facts: dict | None,
     support = analysis.get("support_count", 0)
     conflict = analysis.get("conflict_count", 0)
     if support >= 3:
-        lead = f"Looking at your chart, beta, the traditional indications for {dom} line up quite well for that period."
+        lead = f"Looking at your chart, the traditional indications for {dom} line up quite well for that period."
     elif support == 2 and conflict == 0:
-        lead = f"The indications for {dom} are mostly supportive then, beta, though not unanimous."
+        lead = f"The indications for {dom} are mostly supportive then, though not unanimous."
     elif support >= 1:
-        lead = f"Honestly beta, the signals for {dom} are genuinely mixed there — possible, not promised."
+        lead = f"Honestly, the signals for {dom} are genuinely mixed there — possible, not promised."
     else:
         lead = f"The indications for {dom} are weak in that window — I wouldn't lean on it heavily."
     bridge = ""
@@ -450,9 +450,9 @@ def offline_response(messages: list[dict], facts: dict | None,
 
 def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
     if re.search(r"\b(hi|hello|hey|namaste)\b", user_msg):
-        return "Namaste, beta. I'm listening — what's on your mind?"
+        return "Namaste. I'm listening — what's on your mind?"
     if "thank" in user_msg:
-        return "Always, beta. What else shall we look at?"
+        return "Always happy to. What else shall we look at?"
     if facts is not None and ("lagna" in user_msg or "ascendant" in user_msg
                               or "rising" in user_msg):
         lag = facts["lagna"]
