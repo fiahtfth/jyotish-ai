@@ -24,7 +24,7 @@ import threading
 from collections import OrderedDict
 from datetime import date, datetime, timedelta
 
-from jhora import utils
+from jhora import utils, const
 from jhora.panchanga import drik
 from jhora.horoscope.chart import charts, ashtakavarga, strength
 from jhora.horoscope.dhasa.graha import yogini
@@ -224,7 +224,7 @@ def _yogini_at(facts, birth: BirthInput, domain: str, when: date) -> dict:
     rows = yogini.get_running_dhasa_for_given_date(
         _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
     if not rows:
-        return {"score": 0, "evidence": ["yogini dasha unavailable"], "lords": []}
+        raise ValueError("yogini dasha unavailable")
     lords = [K.PLANET_NAMES[p] for row in rows for p in row[0]]
     score, ev = _yogini_score(facts, domain, lords)
     return {"score": score, "evidence": ev, "lords": lords}
@@ -241,7 +241,7 @@ def _sudarshana_at(facts, birth: BirthInput, domain: str, when: date,
     rows = sudharsana_chakra.get_running_dhasa_for_given_date(
         _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
     if not rows:
-        return {"score": 0, "evidence": ["sudarshana chakra unavailable"]}
+        raise ValueError("sudarshana chakra unavailable")
     leaf = rows[-1][0][-1]
     refs = [facts["lagna"]["sign"], facts["planets"]["Moon"]["sign"],
             facts["planets"]["Sun"]["sign"]]
@@ -320,8 +320,8 @@ def confirmation(facts, birth: BirthInput, domain: str,
     votes = [v for v in (yv, sv) if v != "unavailable"]
     if not votes:
         label = "Unavailable"
-    elif sum(v == "support" for v in votes) == len(votes):
-        label = "High conviction"
+    elif yv == sv == "support":
+        label = "Both confirmation methods support"
     elif "conflict" in votes and "support" not in votes:
         label = "Hidden friction"
     elif "support" in votes:
@@ -342,6 +342,8 @@ def _week_scores(facts, birth: BirthInput, domain_signs: set,
                  start: date, end: date, calibrated: bool) -> list[dict]:
     """Weekly sample of slow-kakshya + fast-trigger scores over the window."""
     prastara = _prastara(facts, birth)
+    if prastara is None:
+        raise ValueError("contributor-level Ashtakavarga unavailable")
     place = _place(birth)
     pid_of = {v: k for k, v in K.PLANET_NAMES.items()}
     weeks = []
@@ -451,6 +453,8 @@ def timing_windows(facts, birth: BirthInput, domain: str,
         if len(windows) >= max_windows:
             break
         c = _trim(c, _WINDOW_MAX_DAYS)
+        c["start"] = max(start, c["start"])
+        c["end"] = min(end, c["end"])
         tara = _adverse_tara_days(facts, birth, c["start"], c["end"])
         span_days = max(1, (c["end"] - c["start"]).days + 1)
         if tara["adverse_days"] * 2 > span_days:
@@ -466,7 +470,7 @@ def timing_windows(facts, birth: BirthInput, domain: str,
         windows.append({"start": c["start"].isoformat(), "end": c["end"].isoformat(),
                         "why": reasons,
                         "fast_trigger": not fallback})
-    return {"reference": ref, "windows": windows, "excluded": excluded,
+    return {"status": "applied", "reference": ref, "windows": windows, "excluded": excluded,
             "note": ("top weeks where traditional indicators concentrate — "
                      "not a claim the event must occur then")}
 
@@ -528,10 +532,10 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
         while found < _MAX_ECLIPSES_PER_WINDOW:
             try:
                 ret = fn(jd, place)
-            except Exception:
-                break
+            except Exception as exc:
+                raise ValueError(f"{kind} eclipse calculation unavailable") from exc
             if not ret or ret[0] == -1:
-                break
+                raise ValueError(f"{kind} eclipse search failed")
             ecl_jd = ret[1][0]
             if ecl_jd > jd1:
                 break
@@ -542,8 +546,10 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
                 pmap = {p: (s * 30 + d) % 360 for p, (s, d) in pos
                         if isinstance(p, int)}
                 ecl_long = pmap.get(0 if kind == "solar" else 1)
-            except Exception:
-                ecl_long = None
+            except Exception as exc:
+                raise ValueError("eclipse longitude unavailable") from exc
+            if ecl_long is None:
+                raise ValueError("eclipse longitude unavailable")
             touches = []
             if ecl_long is not None:
                 for name, along in natal.items():
@@ -554,57 +560,82 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
     return hits
 
 
-def _ithasala_triggers(facts, birth: BirthInput, start: date, end: date) -> dict:
-    """Ithasala from the year lord in each annual chart overlapping the
-    window. Lagna-dependent — calibrated charts only."""
-    jd_birth = _jd_birth(birth)
+def _annual_lord(annual, return_jd, birth, completed_years, natal_lagna):
+    """Traditional seven-planet candidates, evaluated at the actual solar return.
+
+    PyJHora 5's public helper uses a mean-year instant, can nominate nodes,
+    and can return a list index instead of the candidate planet. Keep these
+    compatibility corrections local rather than patching library globals.
+    """
+    pos = dict(annual)
+    asc = pos["L"][0]
     place = _place(birth)
-    out = []
-    by = date(birth.year, birth.month, birth.day)
-    first = start.year - birth.year - ((start.month, start.day) < (birth.month, birth.day))
-    last = end.year - birth.year - ((end.month, end.day) < (birth.month, birth.day))
-    for y in range(max(0, first), last + 1):
+    hour = utils.jd_to_gregorian(return_jd)[3]
+    night = hour < drik.sunrise(return_jd, place)[0] or hour >= drik.sunset(return_jd, place)[0]
+    candidates = list(dict.fromkeys([
+        K.SIGN_LORD[pos[1 if night else 0][0]], K.SIGN_LORD[natal_lagna],
+        K.SIGN_LORD[(natal_lagna + completed_years) % 12], K.SIGN_LORD[asc],
+        (const.tri_rasi_nighttime_lords if night else const.tri_rasi_daytime_lords)[asc],
+    ]))
+    candidates = [p for p in candidates if p in range(7)]
+    houses = utils.get_house_planet_list_from_planet_positions(annual)
+    eligible = [p for p in candidates if tajaka.planet_has_benefic_aspect_on_house(houses, p, asc)]
+    if not eligible:
+        eligible = [p for p in candidates if tajaka.planet_has_malefic_aspect_on_house(houses, p, asc)]
+    if len(eligible) == 1:
+        return eligible[0]
+    pool = eligible or candidates
+    if not pool:
+        raise ValueError("no eligible annual lord")
+    bala = strength.pancha_vargeeya_bala(return_jd, place)
+    strongest = max(pool, key=lambda p: bala[p])
+    return strongest if bala[strongest] > const.pancha_vargeeya_bala_strength_threshold else pool[0]
+
+
+def _ithasala_triggers(facts, birth: BirthInput, start: date, end: date) -> dict:
+    jd_birth, place = _jd_birth(birth), _place(birth)
+    out, errors = [], []
+    # Include the annual chart beginning before the requested window.
+    for age in range(max(0, start.year - birth.year - 1), end.year - birth.year + 1):
         try:
-            varsha_jd = drik.next_solar_date(jd_birth, place, years=y)
-            varsha_date = _ymd(varsha_jd)
-            vd = _to_date(varsha_date)
-            if not (by <= vd and start <= vd <= end + timedelta(days=365)):
+            # PyJHora's years=1 is the natal year, not the first birthday.
+            ret = drik.next_solar_date(jd_birth, place, years=age + 1)
+            nxt = drik.next_solar_date(jd_birth, place, years=age + 2)
+            vd, until = _to_date(_ymd(ret)), _to_date(_ymd(nxt))
+            if vd > end or until <= start:
                 continue
-            loy = tajaka.lord_of_the_year(jd_birth, place, years_from_dob=y)
-            ac, _ret = tajaka.annual_chart(jd_birth, place, years=y)
-            asc_sign = ac[0][1][0]
-            asc_lord = K.SIGN_LORD[asc_sign]
+            annual, _ = tajaka.annual_chart(jd_birth, place, years=age + 1)
+            lord = _annual_lord(annual, ret, birth, age, facts["lagna"]["sign"])
+            asc_lord = K.SIGN_LORD[annual[0][1][0]]
             pairs = []
-            for other, label in ((asc_lord, "varsha lagna lord"),):
-                if other == loy:
-                    continue
-                ok, itype = tajaka_yoga.ithasala_yoga(ac, loy, other)
+            if asc_lord != lord:
+                ok, kind = tajaka_yoga.ithasala_yoga(annual, lord, asc_lord)
                 if ok:
-                    pairs.append({"between": K.PLANET_NAMES[loy],
-                                  "and": K.PLANET_NAMES[other],
-                                  "role": label, "type": itype})
-            out.append({"varsha_year": y, "varsha_start": varsha_date,
-                        "year_lord": K.PLANET_NAMES.get(loy, str(loy)),
-                        "ithasala": pairs})
-        except Exception:
-            continue
-    return {"year_lords": out}
+                    pairs.append({"between": K.PLANET_NAMES[lord], "and": K.PLANET_NAMES[asc_lord],
+                                  "role": "varsha lagna lord", "type": int(kind)})
+            out.append({"varsha_year": age, "varsha_start": vd.isoformat(),
+                        "varsha_end_exclusive": until.isoformat(),
+                        "year_lord": K.PLANET_NAMES[lord], "ithasala": pairs})
+        except Exception as exc:
+            errors.append({"varsha_year": age, "reason": f"{type(exc).__name__}: {exc}"})
+    status = "unavailable" if not out else ("partial" if errors else "applied")
+    return {"applied": status == "applied", "status": status, "year_lords": out,
+            "errors": errors, **({"reason": "annual calculations incomplete"} if status != "applied" else {})}
 
 
 def fast_triggers(facts, birth: BirthInput, start: date, end: date,
                   calibrated: bool) -> dict:
-    """Year-lord Ithasala + eclipse hits on natal points -> watch months."""
-    eclipses = _eclipse_hits(facts, birth, start, end, calibrated)
-    ith = {"applied": False, "reason": "needs a calibrated birth time",
-           "year_lords": []}
+    try:
+        eclipses = _eclipse_hits(facts, birth, start, end, calibrated)
+        eclipse_status, eclipse_error = "applied", None
+    except Exception as exc:
+        eclipses, eclipse_status, eclipse_error = [], "unavailable", str(exc)
+    ith = {"applied": False, "status": "skipped", "reason": "needs a calibrated birth time", "year_lords": []}
     if calibrated:
-        try:
-            ith = {"applied": True, **_ithasala_triggers(facts, birth, start, end)}
-        except Exception as e:
-            ith = {"applied": False, "reason": f"tajika layer error: {e}",
-                   "year_lords": []}
+        ith = _ithasala_triggers(facts, birth, start, end)
     watch = sorted({h["date"][:7] for h in eclipses if h["touches"]})
-    return {"ithasala": ith, "eclipses": eclipses, "watch_months": watch}
+    return {"ithasala": ith, "eclipses": eclipses, "eclipse_status": eclipse_status,
+            "eclipse_error": eclipse_error, "watch_months": watch}
 
 
 # ------------------------------------------------------------------ entry point
@@ -620,7 +651,11 @@ def evaluate(facts, birth: BirthInput, domain: str,
         calibrated = birth.birth_time_precision == "exact"
     core = pillars.evaluate(facts, birth, domain, start, end)
     conf = confirmation(facts, birth, domain, start, end, calibrated)
-    tim = timing_windows(facts, birth, domain, start, end, calibrated)
+    try:
+        tim = timing_windows(facts, birth, domain, start, end, calibrated)
+    except Exception as exc:
+        tim = {"status": "unavailable", "reference": "lagna" if calibrated else "moon",
+               "windows": [], "excluded": [], "reason": str(exc)}
     mag = magnitude(facts, birth, _mid(start, end), calibrated)
     trig = fast_triggers(facts, birth, start, end, calibrated)
     return {
@@ -637,9 +672,9 @@ def evaluate(facts, birth: BirthInput, domain: str,
             "yogini": conf["yogini"]["verdict"],
             "sudarshana": conf["sudarshana"]["verdict"],
             "confirmation": conf["label"],
-            "kakshya_timing": "applied",
+            "kakshya_timing": tim["status"],
             "magnitude": mag["label"] if mag["applied"] else "skipped",
-            "ithasala": "applied" if trig["ithasala"]["applied"] else "skipped",
-            "eclipse": "applied",
+            "ithasala": trig["ithasala"]["status"],
+            "eclipse": trig["eclipse_status"],
         },
     }

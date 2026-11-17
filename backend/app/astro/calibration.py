@@ -184,7 +184,7 @@ def calibration_outcome(statements: list[dict]) -> dict:
     unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
     if confirmed == 3:
         state = "calibrated"
-        label = "Three retrospective checks matched."
+        label = "Three retrospective checks matched. This is a consistency check, not proof of birth-time accuracy or future prediction accuracy."
         predictions_allowed = True
     elif confirmed == 2:
         state = "partial"

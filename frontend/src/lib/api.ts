@@ -94,13 +94,17 @@ export class StreamServerError extends Error {}
 
 export type PredictionRecord = {
   id: number; domain: string; question: string;
+  forecast?: "event_indicated" | "abstain" | null;
+  success_criteria?: string | null;
   window_start: string | null; window_end: string | null;
   convergence: string; created_at: string | null;
-  outcome: "happened" | "partly" | "did_not" | "unsure" | null;
+  outcome: "happened" | "partly" | "did_not" | "unsure" | "outside_window" | null;
   outcome_at: string | null;
 };
 export type PredictionsResponse = {
   predictions: PredictionRecord[];
+  scorecard?: { total_analyses: number; issued_forecasts: number; abstentions: number; prospective_forecasts: number;
+    matured: number; scored: number; hits: number; misses: number; partial: number; unresolved: number; note: string };
   aggregate: { total: number; happened: number; partly: number; did_not: number; unsure: number; pending: number };
 };
 
@@ -188,5 +192,7 @@ export const api = {
   verify: (token: string) =>
     req("/api/auth/verify", { method: "POST", body: JSON.stringify({ token }) }),
   resendVerify: () => req("/api/auth/verify/resend", { method: "POST" }),
+  predictionOutcome: (id: number, outcome: string, event_date?: string) => req(`/api/predictions/${id}/outcome`, {
+    method: "POST", body: JSON.stringify({ outcome, event_date }) }),
   predictions: (): Promise<PredictionsResponse> => req<PredictionsResponse>("/api/predictions"),
 };

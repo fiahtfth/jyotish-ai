@@ -125,7 +125,7 @@ def test_report_structure_with_predictions():
     assert rep["predictions_allowed"] is True
     assert len(rep["domains"]) == 7
     for d in rep["domains"]:
-        assert d["confirmation"] in ("High conviction", "Mostly aligned",
+        assert d["confirmation"] in ("Both confirmation methods support", "Mostly aligned",
                                      "Mixed indications", "Hidden friction",
                                      "Unavailable")
         assert "%" not in json.dumps(d)

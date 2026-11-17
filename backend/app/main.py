@@ -28,11 +28,12 @@ from .db import (
     ProblemReport, SessionLocal, UserMilestone,
     User, get_db, init_db, new_token_nonce,
 )
+from .astro.prediction import scorecard
 from .astro.engine import BirthInput, engine, birth_fingerprint
 from .schemas import (
     MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, TermsIn, FeedbackIn, ForgotIn,
     LoginIn, MessageOut, PlaceSearchOut, ProfileListItem, RegisterIn, ReportIn, ResetIn,
-    TokenIn, TokenOut,
+    TokenIn, TokenOut, PredictionOutcomeIn,
 )
 
 log = logging.getLogger(__name__)
@@ -659,10 +660,38 @@ def list_predictions(user: User = Depends(current_user), db: Session = Depends(g
     recs = _prediction_rows(db, [p.id] if p else [])
     count = lambda o: sum(1 for r in recs if r["outcome"] == o)  # noqa: E731
     return {"predictions": recs,
+            "scorecard": scorecard(recs),
+            "scorecard_by_domain": {d: scorecard([r for r in recs if r["domain"] == d]) for d in sorted({r["domain"] for r in recs})},
             "aggregate": {"total": len(recs), "happened": count("happened"),
                           "partly": count("partly"), "did_not": count("did_not"),
-                          "unsure": count("unsure"),
+                          "unsure": count("unsure"), "outside_window": count("outside_window"),
                           "pending": sum(1 for r in recs if r["outcome"] is None)}}
+
+
+@app.post("/api/predictions/{prediction_id}/outcome")
+def record_prediction_outcome(prediction_id: int, body: PredictionOutcomeIn,
+                              user: User = Depends(current_user), db: Session = Depends(get_db)):
+    rec = (db.query(PredictionRecord).join(BirthProfile)
+           .filter(PredictionRecord.id == prediction_id, BirthProfile.user_id == user.id).first())
+    if rec is None:
+        raise HTTPException(404, "prediction not found")
+    if rec.forecast != "event_indicated":
+        raise HTTPException(409, "Only issued event forecasts can be scored.")
+    today = _now().date()
+    if not rec.window_end or rec.window_end >= today:
+        raise HTTPException(409, "Please report the outcome after the forecast window ends.")
+    outcome = body.outcome
+    if body.event_date:
+        if body.event_date > today:
+            raise HTTPException(422, "The event date cannot be in the future.")
+        if outcome not in ("happened", "outside_window"):
+            raise HTTPException(422, "Only happened/outside-window outcomes take an event date.")
+        outcome = "happened" if rec.window_start <= body.event_date <= rec.window_end else "outside_window"
+    elif outcome == "happened":
+        raise HTTPException(422, "Please provide the event date so its timing can be checked.")
+    rec.outcome, rec.outcome_at, rec.event_date = outcome, _now(), body.event_date
+    db.commit()
+    return {"id": rec.id, "outcome": rec.outcome}
 
 
 def _prediction_rows(db: Session, profile_ids: list[int]) -> list[dict]:
@@ -670,10 +699,13 @@ def _prediction_rows(db: Session, profile_ids: list[int]) -> list[dict]:
         return []
     return [{
         "id": r.id, "profile_id": r.profile_id, "domain": r.domain, "question": r.question,
+        "protocol": r.protocol, "forecast": r.forecast, "event_type": r.event_type,
+        "success_criteria": r.success_criteria,
+        "snapshot": json.loads(r.snapshot_json) if r.snapshot_json else None,
         "window_start": _iso(r.window_start), "window_end": _iso(r.window_end),
         "convergence": r.convergence, "created_at": _iso(r.created_at),
         "layer_verdicts": json.loads(r.layer_verdicts) if r.layer_verdicts else None,
-        "outcome": r.outcome, "outcome_at": _iso(r.outcome_at),
+        "outcome": r.outcome, "outcome_at": _iso(r.outcome_at), "event_date": _iso(r.event_date),
     } for r in db.query(PredictionRecord)
         .filter(PredictionRecord.profile_id.in_(profile_ids))
         .order_by(PredictionRecord.id).all()]

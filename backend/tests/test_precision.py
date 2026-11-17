@@ -76,7 +76,7 @@ def test_confirmation_labels():
     b, facts = make_facts()
     c = P.confirmation(facts, b, "career", date(2027, 1, 1), date(2027, 12, 31),
                        calibrated=True)
-    assert c["label"] in ("High conviction", "Mostly aligned",
+    assert c["label"] in ("Both confirmation methods support", "Mostly aligned",
                           "Mixed indications", "Hidden friction", "Unavailable")
     assert set(c["yogini"]["lords"])  # real lords were seen
 
@@ -204,7 +204,7 @@ def test_prediction_record_stores_layer_verdicts():
     assert lv["core_pillars"].endswith(("Confirmed", "Conditional",
                                       "Conditional — weak signal")) \
         or "/4" in lv["core_pillars"]
-    assert lv["confirmation"] in ("High conviction", "Mostly aligned",
+    assert lv["confirmation"] in ("Both confirmation methods support", "Mostly aligned",
                                   "Mixed indications", "Hidden friction")
     assert "kakshya_timing" in lv and "eclipse" in lv
 
@@ -225,3 +225,40 @@ def test_track_record_endpoint_includes_layer_verdicts():
     rows = c.get("/api/predictions", headers=h).json()
     rec = next(r for r in reversed(rows["predictions"]) if r.get("layer_verdicts"))
     assert "yogini" in rec["layer_verdicts"]
+
+
+def test_annual_records_cover_window_and_use_seven_planet_lords():
+    b, facts = make_facts()
+    result = P.fast_triggers(facts, b, date(2027, 1, 1), date(2027, 12, 31), True)["ithasala"]
+    assert result["status"] == "applied" and result["errors"] == []
+    assert [(r["varsha_start"], r["varsha_end_exclusive"], r["year_lord"]) for r in result["year_lords"]] == [
+        ("2026-05-15", "2027-05-15", "Moon"), ("2027-05-15", "2028-05-15", "Venus")]
+
+
+def test_failed_annual_chart_is_not_reported_as_applied(monkeypatch):
+    b, facts = make_facts()
+    def broken(*a, **kw):
+        raise RuntimeError("annual calculation failed")
+    monkeypatch.setattr(P.tajaka, "annual_chart", broken)
+    r = P.fast_triggers(facts, b, date(2027, 1, 1), date(2027, 12, 31), True)
+    assert r["ithasala"]["status"] == "unavailable"
+    assert not r["ithasala"]["applied"] and r["ithasala"]["errors"]
+
+
+def test_missing_precision_inputs_are_explicitly_unavailable(monkeypatch):
+    b, facts = make_facts()
+    monkeypatch.setattr(P, '_prastara', lambda *a: None)
+    monkeypatch.setattr(P.yogini, 'get_running_dhasa_for_given_date', lambda *a, **kw: [])
+    monkeypatch.setattr(P.drik, 'next_solar_eclipse', lambda *a, **kw: (_ for _ in ()).throw(RuntimeError('failed')))
+    r = P.evaluate(facts, b, 'career', date(2027, 1, 1), date(2027, 12, 31), True)
+    assert r['layer_verdicts']['kakshya_timing'] == 'unavailable'
+    assert r['layer_verdicts']['yogini'] == 'unavailable'
+    assert r['layer_verdicts']['eclipse'] == 'unavailable'
+
+
+def test_strong_agreement_cannot_ignore_a_conflicting_pillar(monkeypatch):
+    for i, name in enumerate(pillars.PILLARS):
+        monkeypatch.setitem(pillars.PILLARS, name, lambda *a, _i=i: {'verdict': 'conflict' if _i == 3 else 'support'})
+    r = pillars.evaluate({}, None, 'career', date(2027, 1, 1), date(2027, 12, 31))
+    assert 'Strong' not in r['convergence'] and 'Confirmed' not in r['convergence']
+    assert r['conflict_count'] == 1

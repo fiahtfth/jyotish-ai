@@ -96,3 +96,36 @@ test("signup includes AI processing in one required terms agreement", async ({ p
   await expect(page.getByRole("link", { name: "terms and conditions" })).toHaveAttribute("href", "/terms");
   await expect(page.locator("form").getByRole("button", { name: "Create account", exact: true }).last()).toBeDisabled();
 });
+
+test("scorecard separates abstentions and records an event outside the window as a miss", async ({ page }) => {
+  await page.route("**/api/chat/history", route => route.fulfill({ json: [message(1, "assistant", "Welcome")] }));
+  let reported = false;
+  const record = { id: 21, domain: "career", question: "Will I get a promotion?", forecast: "event_indicated",
+    success_criteria: "A formal promotion takes effect within 2020-02-01 to 2020-02-28.",
+    window_start: "2020-02-01", window_end: "2020-02-28", convergence: "3/4 Strong rule agreement",
+    created_at: "2020-01-01", outcome_at: null };
+  await page.route("**/api/predictions", route => route.fulfill({ json: {
+    predictions: [{ ...record, outcome: reported ? "outside_window" : null }],
+    aggregate: { total: 1, happened: 0, partly: 0, did_not: 0, unsure: 0, pending: reported ? 0 : 1 },
+    scorecard: { total_analyses: 2, issued_forecasts: 1, abstentions: 1, prospective_forecasts: 1,
+      matured: 1, scored: reported ? 1 : 0, hits: 0, misses: reported ? 1 : 0, partial: 0, unresolved: reported ? 0 : 1 },
+  } }));
+  await page.route("**/api/predictions/21/outcome", route => {
+    expect(route.request().postDataJSON()).toEqual({ outcome: "happened", event_date: "2020-03-01" });
+    reported = true;
+    return route.fulfill({ json: { id: 21, outcome: "outside_window" } });
+  });
+  await page.goto("/chat");
+  await expect(page.getByText("Welcome", { exact: true })).toBeVisible();
+  await page.locator("header button.rounded-full").click();
+  await page.getByRole("button", { name: /my predictions/i }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("region", { name: "Prediction scorecard" })).toBeVisible();
+  await expect(dialog.getByText(record.success_criteria)).toBeVisible();
+  await dialog.getByLabel("Report the outcome").selectOption("happened");
+  await expect(dialog.getByRole("button", { name: "Save outcome" })).toBeDisabled();
+  await dialog.getByLabel("Date the event occurred").fill("2020-03-01");
+  await dialog.getByRole("button", { name: "Save outcome" }).click();
+  await expect(dialog.locator("span").filter({ hasText: /^Outside the window$/ })).toBeVisible();
+  expect(reported).toBe(true);
+});

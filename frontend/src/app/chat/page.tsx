@@ -7,6 +7,7 @@ import type { PredictionsResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import NorthChart from "@/components/Chart";
 import ServiceAgreement from "@/components/ServiceAgreement";
+import PredictionOutcome from "@/components/PredictionOutcome";
 
 // chart messages carry either the chart map directly or {varga, chart: map}
 const chartOf = (c: unknown) => ((c as { chart?: ChartData }).chart ?? (c as ChartData));
@@ -304,6 +305,13 @@ export default function Chat() {
               : !preds ? <div className="text-muted text-sm">{t("loading")}</div>
               : (
                 <>
+                  {preds.scorecard && <section aria-label={t("scorecard")} className="mb-4 space-y-2">
+                    <h3 className="font-semibold text-sm">{t("scorecard")}</h3>
+                    <p className="text-xs text-muted">{t("scorecardNote")}</p>
+                    <dl className="grid grid-cols-3 gap-2 text-center text-xs">
+                      {([["issued_forecasts", "issuedForecasts"], ["abstentions", "abstentions"], ["scored", "scoredOutcomes"], ["hits", "hits"], ["misses", "misses"], ["unresolved", "pending"]] as const).map(([key, label]) => <div key={key} className="bg-bgsoft rounded-lg p-2"><dt>{t(label)}</dt><dd className="text-lg font-semibold">{preds.scorecard![key]}</dd></div>)}
+                    </dl>
+                  </section>}
                   <div className="grid grid-cols-3 gap-2 text-center text-xs mb-4">
                     {([["total", "total"], ["happened", "happened"], ["partly", "partly"], ["did_not", "didNot"], ["unsure", "unsure"], ["pending", "pending"]] as const).map(([k, label]) => (
                       <div key={k} className="bg-bgsoft rounded-lg py-2">
@@ -316,17 +324,20 @@ export default function Chat() {
                   <ul className="space-y-2">
                     {preds.predictions.map(r => {
                       const o = r.outcome;
-                      const label = o === "happened" ? t("happened") : o === "partly" ? t("partly") : o === "did_not" ? t("didNot") : o === "unsure" ? t("unsure") : t("pending");
+                      const label = o === "happened" ? t("happened") : o === "partly" ? t("partly") : o === "did_not" ? t("didNot") : o === "unsure" ? t("unsure") : o === "outside_window" ? t("outsideWindow") : t("pending");
                       return (
                         <li key={r.id} className="border border-bord rounded-lg p-2.5 text-sm">
                           <div><span className="font-medium capitalize">{r.domain}</span>{r.question ? ` — ${r.question}` : ""}</div>
+                          {r.success_criteria && <p className="mt-1 text-xs">{r.success_criteria}</p>}
+                          {r.forecast === "abstain" && <p className="text-xs text-muted">{t("abstentions")}</p>}
                           {r.window_start && r.window_end && (
                             <div className="text-xs text-muted">{r.window_start} → {r.window_end}</div>
                           )}
                           <div className="mt-1 text-xs text-muted flex justify-between">
-                            <span className="inline-block rounded-md bg-accentsoft text-accent px-2 py-0.5 font-medium">{label}</span>
+                            <span className="inline-block rounded-md bg-accentsoft text-accent px-2 py-0.5 font-medium">{r.forecast === "abstain" ? t("abstentions") : label}</span>
                             <span>{(r.created_at || "").slice(0, 10)}</span>
                           </div>
+                          <PredictionOutcome record={r} onSaved={async () => { setPreds(await api.predictions()); }} />
                         </li>
                       );
                     })}

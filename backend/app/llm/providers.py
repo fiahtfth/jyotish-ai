@@ -27,6 +27,10 @@ Style rules (non-negotiable):
   astro fact you mention must come from the CHART FACTS and ANALYSIS blocks.
 - Never claim to be a human. You may be an AI astrologer with a human voice.
 - Admit ambiguity; do not force optimism or fear.
+- Rule agreement is not predictive accuracy. Never describe an event as confirmed.
+- Respect decision.disposition, abstention reasons, missing layers and birth-time sensitivity.
+  When decision.disposition is abstain, state that there is no reliable event forecast.
+  Do not add dates outside the computed windows or invent event details or success criteria.
 - No vague Barnum statements. Tie statements to the actual chart.
 - Do not reveal raw degrees, JSON, tables or 'pillars' unless the user asks
   for the reasoning.
@@ -270,7 +274,7 @@ def generate(messages: list[dict], facts: dict | None = None,
     if facts is not None:
         system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(facts)
     if analysis is not None:
-        system += "\n\nANALYSIS (four-pillar result for the current question):\n" + json.dumps(analysis, indent=1)[:4000]
+        system += "\n\nANALYSIS (four-pillar result for the current question):\n" + json.dumps(analysis, separators=(",", ":"))
     if context_note:
         system += "\n\nCONTEXT: " + context_note
 
@@ -397,6 +401,8 @@ def offline_response(messages: list[dict], facts: dict | None,
     user_msg = messages[-1]["content"].lower() if messages else ""
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
+    if analysis.get("decision", {}).get("disposition") == "abstain":
+        return " ".join(analysis["decision"]["reasons"]) + " These are chart-rule observations, not an event forecast."
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])
@@ -417,7 +423,7 @@ def offline_response(messages: list[dict], facts: dict | None,
             bridge = " " + short[0].split(": ", 1)[-1].rstrip(".") + "."
     prec = analysis.get("precision") or {}
     extras = ""
-    if prec.get("confirmation") in ("High conviction", "Hidden friction"):
+    if prec.get("confirmation") in ("Both confirmation methods support", "Hidden friction"):
         extras += f" The secondary methods give this a '{prec['confirmation'].lower()}' reading."
     if prec.get("timing_windows"):
         w = prec["timing_windows"][0]

@@ -11,7 +11,7 @@ from datetime import date, timedelta
 from jhora.panchanga import drik
 
 from . import constants as K
-from . import precision
+from . import precision, sensitivity, prediction
 from .engine import BirthInput, engine
 
 _OUTLOOK_DAYS = 365
@@ -69,15 +69,24 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
     for domain, spec in K.DOMAINS.items():
         prec = precision.evaluate(facts, birth, domain, today, end,
                                   calibrated=calibrated)
+        sens = sensitivity.evaluate(facts, birth, domain, today, end, calibrated, base=prec)
+        analysis = dict(prec["verdict"])
+        analysis["precision"] = {"confirmation": prec["confirmation"]["label"],
+                                 "yogini": prec["confirmation"]["yogini"]["verdict"],
+                                 "sudarshana": prec["confirmation"]["sudarshana"]["verdict"],
+                                 "layer_verdicts": prec["layer_verdicts"]}
+        analysis["sensitivity"] = sens
+        analysis["decision"] = prediction.decide("general outlook", analysis)
         windows = [{"start": w["start"], "end": w["end"],
                     "peak_score": w.get("peak_score")}
                    for w in prec["timing"]["windows"]]
         out.append({
+            "analysis": analysis, "sensitivity": sens,
             "domain": domain,
             "label": spec["label"],
             "convergence": prec["verdict"]["convergence"],
             "confirmation": prec["confirmation"]["label"],
-            "timing_windows": windows,
+            "timing_windows": windows if sens["timing_stable"] else [],
             "magnitude": prec["magnitude"]["label"],
             "watch_months": prec["fast_triggers"]["watch_months"],
             "layer_verdicts": prec["layer_verdicts"],
@@ -89,7 +98,7 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
 
 def _domain_line(d: dict) -> str:
     parts = [f"{d['domain'].capitalize()}: {d['convergence']}",
-             d["confirmation"]]
+             d["confirmation"], "General outlook only; no specific event forecast"]
     if d["timing_windows"]:
         parts.append("strongest weeks " + "; ".join(
             f"{w['start']} → {w['end']}" for w in d["timing_windows"]))

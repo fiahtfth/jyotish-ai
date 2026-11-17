@@ -5,13 +5,14 @@ State machine:
 The prediction gate is enforced HERE — server-side — never by the LLM.
 """
 import calendar
+from dataclasses import asdict
 import json
 import re
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import calibration, panchang, precision, report, verify
+from ..astro import calibration, panchang, precision, report, verify, sensitivity, prediction
 from ..astro.constants import DOMAINS
 from .. import geo
 from ..policy import TERMS_VERSION
@@ -75,11 +76,15 @@ def _calibrated(profile: BirthProfile) -> bool:
     return profile.calibration_state == "calibrated"
 
 
-def _precision_analysis(facts, birth, domain, start, end, profile):
+def _precision_analysis(facts, birth, domain, start, end, profile, question=""):
     """Run the four pillars plus the precision filters; returns
     (analysis_for_llm, precision_result). The merged analysis keeps every
     key the existing consumers read (pillars/convergence/evidence) and
     adds a compact 'precision' block for the model."""
+    # Elapsed portions of a year cannot be credited as prospective forecasts.
+    today = _today_at(birth)
+    if start <= today <= end:
+        start = min(end, today + timedelta(days=1))
     prec = precision.evaluate(facts, birth, domain, start, end,
                               calibrated=_calibrated(profile))
     analysis = dict(prec["verdict"])
@@ -95,7 +100,33 @@ def _precision_analysis(facts, birth, domain, start, end, profile):
         "eclipse_watch_months": prec["fast_triggers"]["watch_months"],
         "layer_verdicts": prec["layer_verdicts"],
     }
+    analysis["sensitivity"] = sensitivity.evaluate(facts, birth, domain, start, end, _calibrated(profile), base=prec)
+    if not analysis["sensitivity"]["timing_stable"]:
+        analysis["precision"]["timing_windows"] = []
+    analysis["decision"] = prediction.decide(question, analysis)
     return analysis, prec
+
+
+def _save_prediction(db, profile, question, analysis, reply):
+    decision = analysis["decision"]
+    event = decision.get("event") or {}
+    db.add(PredictionRecord(
+        profile_id=profile.id, domain=analysis["domain"], question=question,
+        window_start=date.fromisoformat(analysis["analysis_window"]["start"]),
+        window_end=date.fromisoformat(analysis["analysis_window"]["end"]),
+        convergence=analysis["convergence"], layer_verdicts=json.dumps(analysis["precision"]["layer_verdicts"]),
+        protocol=prediction.VERSION, forecast=decision["disposition"], event_type=event.get("event_type"),
+        success_criteria=decision["success_criteria"],
+        snapshot_json=json.dumps({"analysis": analysis, "reply": reply, "fingerprint": profile.calc_fingerprint,
+                                  "birth_input": asdict(birth_input(profile))})))
+
+
+def _decision_note(analysis):
+    decision = analysis["decision"]
+    if decision["disposition"] == "abstain":
+        return "I can't make a reliable event forecast here. " + " ".join(decision["reasons"])
+    return ("The rules indicate this event, without guaranteeing it. The recorded outcome to check is: "
+            + decision["success_criteria"])
 
 
 def chart_facts(profile: BirthProfile) -> dict:
@@ -573,7 +604,7 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
                      f"This question comes from {_words(profile)['poss']} actual chart — here's the reasoning behind it: "
                      f"{ev.predicted_event} "
                      f"(window {ev.predicted_window_start} → {ev.predicted_window_end}). "
-                     f"Convergence: {json.loads(ev.pillars_json)}. "
+                     f"Rule agreement: {json.loads(ev.pillars_json)}. "
                      "Does the event ring true?")
             return conv.messages[-2:]
         # keep the quick-reply buttons alive on the re-ask
@@ -1147,6 +1178,8 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                                   predictions_allowed=True,
                                   subject=_subject(profile))
         reply = "\n\n".join(rep["reading"])
+        for item in rep["domains"]:
+            _save_prediction(db, profile, text, item["analysis"], reply)
         if any(d["domain"] == "health" for d in rep["domains"]):
             reply = _apply_disclaimer(reply, "health")
         _add_msg(db, conv, "assistant", reply, kind="report",
@@ -1168,7 +1201,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
     # future-domain question with permission → four-pillar + precision analysis
     if is_future and domain:
         start, end = _target_window(text)
-        analysis, prec = _precision_analysis(facts, birth, domain, start, end, profile)
+        analysis, prec = _precision_analysis(facts, birth, domain, start, end, profile, question=text)
         run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
         messages = _conversation_history(conv)
         reply, provider = providers.generate(
@@ -1176,18 +1209,14 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             context_note=_context_prefix(profile) +
                          f"The user's calibration is '{profile.calibration_state}'. "
                          f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
-            allow_external=_external_ok(profile), on_delta=on_delta)
+            allow_external=_external_ok(profile), on_delta=None)
         vr = verify.verify_response(reply, facts, {"running_dasha": run})
         if not vr["ok"]:
             reply = verify.repair_response(reply, vr["issues"])
-        reply = _apply_disclaimer(reply, domain)
+        reply = _decision_note(analysis) + "\n\n" + _apply_disclaimer(prediction.constrain_reply(reply, analysis), domain)
         _add_msg(db, conv, "assistant", reply,
                  meta={"analysis": analysis, "provider": provider})
-        db.add(PredictionRecord(
-            profile_id=profile.id, domain=domain, question=text,
-            window_start=start, window_end=end,
-            convergence=str(analysis.get("convergence", "")),
-            layer_verdicts=json.dumps(prec["layer_verdicts"])))
+        _save_prediction(db, profile, text, analysis, reply)
         return conv.messages[-2:]
 
     # general / factual chat — allowed regardless of gate
@@ -1196,7 +1225,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
     # looking?" is not caught by FUTURE_PAT)
     if domain and profile.predictions_allowed:
         start, end = _target_window(text)
-        analysis, _prec = _precision_analysis(facts, birth, domain, start, end, profile)
+        analysis, _prec = _precision_analysis(facts, birth, domain, start, end, profile, question=text)
     else:
         analysis = None
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
@@ -1207,11 +1236,14 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                                             if not profile.predictions_allowed else "") +
                                          f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
                                          allow_external=_external_ok(profile),
-                                         on_delta=on_delta)
+                                         on_delta=None if analysis else on_delta)
     vr = verify.verify_response(reply, facts, {"running_dasha": run})
     if not vr["ok"]:
         reply = verify.repair_response(reply, vr["issues"])
     reply = _apply_disclaimer(reply, domain)
+    if analysis:
+        reply = _decision_note(analysis) + "\n\n" + _apply_disclaimer(prediction.constrain_reply(reply, analysis), domain)
+        _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, **({"analysis": analysis} if analysis else {})})
     return conv.messages[-2:]
@@ -1219,9 +1251,9 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
 
 # ------------------------------------------------------------ prediction follow-ups
 
-FOLLOWUP_OPTIONS = ["It happened", "Partly", "It didn't happen", "Not sure"]
+FOLLOWUP_OPTIONS = ["It happened", "Partly", "It didn't happen", "Outside the window", "Not sure"]
 _FOLLOWUP_OUTCOME = {"it happened": "happened", "partly": "partly",
-                     "it didn't happen": "did_not", "not sure": "unsure"}
+                     "it didn't happen": "did_not", "outside the window": "outside_window", "not sure": "unsure"}
 
 
 def _norm_reply(text: str) -> str:
@@ -1233,6 +1265,7 @@ def _maybe_ask_followup(db: Session, conv: Conversation, profile: BirthProfile):
     rec = (db.query(PredictionRecord)
            .filter(PredictionRecord.profile_id == profile.id,
                    PredictionRecord.outcome.is_(None),
+                   PredictionRecord.forecast == "event_indicated",
                    PredictionRecord.followup_asked_at.is_(None),
                    PredictionRecord.window_end < date.today())
            .order_by(PredictionRecord.id).first())
@@ -1242,6 +1275,7 @@ def _maybe_ask_followup(db: Session, conv: Conversation, profile: BirthProfile):
     _add_msg(db, conv, "assistant",
              f"A while back you asked me about {rec.domain}"
              f"{' for ' + _subject(profile) if _is_other(profile) else ''}: \"{q}\" "
+             f"The recorded event was: {rec.success_criteria or rec.question}. "
              f"The window we looked at ({rec.window_start} to {rec.window_end}) has now "
              "passed. Did it happen? Your answer helps me see how well the chart is doing "
              "for you.",
@@ -1268,6 +1302,7 @@ def _record_followup_reply(db: Session, conv: Conversation, profile: BirthProfil
     thanks = {"happened": "Thank you — I've noted that it did happen.",
               "partly": "Thank you — noted as partly right.",
               "did_not": "Thank you — I've recorded that honestly as a miss.",
-              "unsure": "No problem — noted as unsure."}[outcome]
+              "unsure": "No problem — noted as unsure.",
+              "outside_window": "Recorded as outside the forecast window; it does not count as a hit."}[outcome]
     _add_msg(db, conv, "assistant", thanks)
     return True

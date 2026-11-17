@@ -829,7 +829,7 @@ def test_init_db_fresh_sqlite_reaches_head(tmp_path):
     assert {"users", "auth_tokens", "prediction_records", "alembic_version"} <= set(insp.get_table_names())
     assert "email_verified" in {c["name"] for c in insp.get_columns("users")}
     with eng.connect() as c:
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0009"
 
 
 def test_init_db_upgrades_pre_alembic_database(tmp_path):
@@ -866,7 +866,7 @@ def test_init_db_upgrades_pre_alembic_database(tmp_path):
     with eng.connect() as c:
         row = c.exec_driver_sql("select token_nonce, email_verified from users").one()
         assert row[0] and not row[1]          # nonce backfilled, unverified
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0009"
 
 
 # ---------- 8. Streaming chat ----------
@@ -1020,6 +1020,8 @@ def _age_predictions(h, days=400):
     db = SessionLocal()
     pid = db.query(BirthProfile).filter(BirthProfile.user_id == uid).first().id
     for r in db.query(PredictionRecord).filter(PredictionRecord.profile_id == pid).all():
+        r.forecast = "event_indicated"
+        r.success_criteria = "A formal promotion takes effect within the recorded window."
         r.window_start = date.today() - timedelta(days=days + 365)
         r.window_end = date.today() - timedelta(days=days)
     db.commit(); db.close()
@@ -1032,7 +1034,7 @@ def test_future_analysis_persists_prediction_record():
     send("Will I get a promotion in my career next year?", h)
     d = client.get("/api/predictions", headers=h).json()
     assert d["aggregate"] == {"total": 1, "happened": 0, "partly": 0, "did_not": 0,
-                              "unsure": 0, "pending": 1}
+                              "unsure": 0, "outside_window": 0, "pending": 1}
     p = d["predictions"][0]
     assert p["domain"] == "career" and "promotion" in p["question"]
     assert p["window_start"] and p["window_end"] and p["convergence"] and p["outcome"] is None
@@ -1048,7 +1050,7 @@ def test_followup_asked_after_window_and_reply_records_outcome():
     msgs = send("tell me about my lagna", h)
     opts = [m for m in msgs if m["kind"] == "options"]
     assert len(opts) == 1 and opts[0]["role"] == "assistant"
-    assert opts[0]["meta"]["options"] == ["It happened", "Partly", "It didn't happen", "Not sure"]
+    assert opts[0]["meta"]["options"] == ["It happened", "Partly", "It didn't happen", "Outside the window", "Not sure"]
     fid = opts[0]["meta"]["followup_id"]
     # asked once only
     assert all(m["kind"] != "options" for m in send("and my moon?", h))
@@ -1423,7 +1425,7 @@ def test_migration_0006_preserves_data_and_allows_many_profiles(tmp_path):
         assert c.exec_driver_sql("select profile_id from calibration_events").scalar() == 7
         # a second profile for the same user is now legal
         c.exec_driver_sql("INSERT INTO birth_profiles (id, user_id, relation) VALUES (10, 1, 'mother')")
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0008"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0009"
     D.init_db(eng)       # idempotent
 
 
@@ -1698,3 +1700,46 @@ def test_terms_migration_does_not_invent_acceptance(tmp_path):
     D.init_db(eng)
     with eng.connect() as conn:
         assert conn.exec_driver_sql("SELECT terms_version, terms_accepted_at, llm_consent FROM users WHERE id=1").one() == (None, None, 0)
+
+
+def test_frozen_prediction_and_dated_outcomes_are_owned_and_window_checked():
+    from datetime import date, datetime, timedelta
+    h = register_and_profile()
+    _open_calibrated(h)
+    send('Will I get a promotion next year?', h)
+    original = client.get('/api/predictions', headers=h).json()['predictions'][0]
+    assert original['protocol'] and original['success_criteria']
+    assert original['snapshot']['analysis']['sensitivity']['samples']
+    assert original['snapshot']['analysis']['decision']['disposition'] == original['forecast']
+    # Isolate reporting behavior using an explicit issued-forecast fixture.
+    from app.db import SessionLocal, PredictionRecord
+    db = SessionLocal(); rec = db.get(PredictionRecord, original['id'])
+    rec.forecast = 'event_indicated'
+    rec.created_at = datetime(2020,1,1)
+    rec.window_start, rec.window_end = date(2020,2,1), date(2020,2,28)
+    db.commit(); db.close()
+    endpoint = f"/api/predictions/{original['id']}/outcome"
+    other = register_and_profile()
+    assert client.post(endpoint, json={'outcome':'happened','event_date':'2020-02-15'},headers=other).status_code == 404
+    assert client.post(endpoint, json={'outcome':'happened'},headers=h).status_code == 422
+    out = client.post(endpoint,json={'outcome':'happened','event_date':'2020-03-01'},headers=h)
+    assert out.json()['outcome'] == 'outside_window'
+    data = client.get('/api/predictions',headers=h).json()
+    assert data['scorecard']['misses'] == 1 and data['scorecard']['hits'] == 0
+    assert data['predictions'][0]['snapshot'] == original['snapshot']
+    client.post(endpoint,json={'outcome':'partly'},headers=h)
+    data = client.get('/api/predictions',headers=h).json()
+    assert data['scorecard']['scored'] == 0 and data['scorecard']['partial'] == 1
+    client.post(endpoint,json={'outcome':'happened','event_date':'2020-02-15'},headers=h)
+    assert client.get('/api/predictions',headers=h).json()['scorecard']['hits'] == 1
+    db=SessionLocal();rec=db.get(PredictionRecord,original['id']);rec.window_end=date.today()+timedelta(days=10);db.commit();db.close()
+    assert client.post(endpoint,json={'outcome':'did_not'},headers=h).status_code == 409
+
+
+def test_general_domain_analysis_is_recorded_as_abstention():
+    h = register_and_profile(); _open_calibrated(h)
+    out=send('How is my career looking?',h)
+    r=client.get('/api/predictions',headers=h).json()
+    assert r['scorecard']['abstentions'] == 1
+    assert r['scorecard']['scored'] == 0
+    assert "can't make a reliable event forecast" in out[-1]['content']

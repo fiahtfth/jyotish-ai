@@ -130,3 +130,8 @@ class ChartOut(BaseModel):
     lagna: dict
     planets: dict
     fingerprint: str
+
+
+class PredictionOutcomeIn(BaseModel):
+    outcome: Literal["happened", "partly", "did_not", "unsure", "outside_window"]
+    event_date: Optional[datetime.date] = None

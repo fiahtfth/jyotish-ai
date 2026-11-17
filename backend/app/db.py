@@ -135,10 +135,16 @@ class PredictionRecord(Base):
     window_end = Column(Date)
     convergence = Column(String, default="")
     layer_verdicts = Column(Text, nullable=True)   # JSON: each precision filter's verdict
+    protocol = Column(String, nullable=True)
+    forecast = Column(String, nullable=True)     # event_indicated|abstain; NULL for legacy records
+    event_type = Column(String, nullable=True)
+    success_criteria = Column(Text, nullable=True)
+    snapshot_json = Column(Text, nullable=True)  # frozen calculations, decision and final reply
     created_at = Column(DateTime, default=_utcnow)
     followup_asked_at = Column(DateTime, nullable=True)
     outcome = Column(String, nullable=True)   # happened|partly|did_not|unsure
     outcome_at = Column(DateTime, nullable=True)
+    event_date = Column(Date, nullable=True)
 
 
 class UserMilestone(Base):
