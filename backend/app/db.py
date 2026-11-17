@@ -1,5 +1,7 @@
+import secrets
 from sqlalchemy import (
-    Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, create_engine
+    Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, create_engine,
+    inspect, text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
@@ -17,9 +19,17 @@ SessionLocal = sessionmaker(bind=engine_db, autoflush=False)
 Base = declarative_base()
 
 
+def new_token_nonce() -> str:
+    return secrets.token_hex(16)
+
+
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = {"sqlite_autoincrement": True}
     id = Column(Integer, primary_key=True)
+    # Random per-account value embedded in JWTs; tokens for a deleted account
+    # never match a later account that reuses the same id.
+    token_nonce = Column(String, nullable=False, default=new_token_nonce)
     email = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     display_name = Column(String, default="")
@@ -99,6 +109,18 @@ class Message(Base):
 
 def init_db():
     Base.metadata.create_all(engine_db)
+    _migrate_token_nonce()
+
+
+def _migrate_token_nonce():
+    cols = {c["name"] for c in inspect(engine_db).get_columns("users")}
+    with engine_db.begin() as conn:
+        if "token_nonce" not in cols:
+            conn.execute(text("ALTER TABLE users ADD COLUMN token_nonce VARCHAR"))
+        ids = conn.execute(text("SELECT id FROM users WHERE token_nonce IS NULL")).scalars().all()
+        for uid in ids:
+            conn.execute(text("UPDATE users SET token_nonce = :n WHERE id = :i"),
+                         {"n": new_token_nonce(), "i": uid})
 
 
 def get_db():
