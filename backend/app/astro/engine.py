@@ -21,11 +21,11 @@ from jhora.horoscope.dhasa.raasi import chara as chara_dhasa
 from jhora.horoscope import main as hmain
 
 from . import constants as K
+from ..config import settings
 
 _lock = threading.Lock()
 _configured = False
 PYJHORA_VERSION = "5.0.0"
-CACHE_MAX = 256
 
 VARGA_FUNCS = {
     "D1": charts.rasi_chart, "D2": charts.hora_chart, "D4": charts.chaturthamsa_chart,
@@ -169,9 +169,10 @@ class BirthInput:
 class ChartEngine:
     """Computes and caches locked chart facts per birth input."""
 
-    def __init__(self):
+    def __init__(self, cache_size: int | None = None):
         configure()
-        self._cache: "OrderedDict[tuple, dict]" = OrderedDict()
+        self._cache: OrderedDict = OrderedDict()
+        self._cache_size = max(1, cache_size or settings.CHART_CACHE_SIZE)
         self._cache_lock = threading.Lock()
 
     # ---------- core ----------
@@ -330,7 +331,7 @@ class ChartEngine:
         with self._cache_lock:
             self._cache[key] = facts
             self._cache.move_to_end(key)
-            while len(self._cache) > CACHE_MAX:
+            while len(self._cache) > self._cache_size:
                 self._cache.popitem(last=False)
         return facts
 

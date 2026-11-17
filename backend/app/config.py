@@ -44,6 +44,11 @@ class Settings:
 
     # Rate limiting (chat messages per minute per user)
     CHAT_RATE_LIMIT_PER_MIN: int = int(os.environ.get("JYOTISH_CHAT_RATE_LIMIT", "30"))
+    # Material birth-profile changes (each triggers a full chart recompute)
+    PROFILE_RATE_LIMIT_PER_MIN: int = int(os.environ.get("JYOTISH_PROFILE_RATE_LIMIT", "5"))
+    GEO_RATE_LIMIT_PER_MIN: int = int(os.environ.get("JYOTISH_GEO_RATE_LIMIT", "60"))
+    # Max computed charts kept in the in-process LRU cache
+    CHART_CACHE_SIZE: int = int(os.environ.get("JYOTISH_CHART_CACHE_SIZE", "256"))
 
     FRONTEND_ORIGIN: str = os.environ.get("JYOTISH_FRONTEND_ORIGIN", "http://localhost:3000")
 
