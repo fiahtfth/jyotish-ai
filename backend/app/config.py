@@ -36,6 +36,12 @@ class Settings:
     # Consent gate: whether chart data may be sent to a third-party LLM.
     LLM_EXTERNAL_CONSENT: bool = os.environ.get("JYOTISH_LLM_EXTERNAL_CONSENT", "false").lower() == "true"
 
+    # Bounds on LLM work per chat turn: overall wall-clock budget across all
+    # providers/retries, and max concurrent turns calling an LLM (excess turns
+    # get the offline responder instead of waiting).
+    LLM_TURN_DEADLINE_SECONDS: float = float(os.environ.get("JYOTISH_LLM_TURN_DEADLINE", "30"))
+    LLM_MAX_CONCURRENCY: int = int(os.environ.get("JYOTISH_LLM_MAX_CONCURRENCY", "4"))
+
     # Rate limiting (chat messages per minute per user)
     CHAT_RATE_LIMIT_PER_MIN: int = int(os.environ.get("JYOTISH_CHAT_RATE_LIMIT", "30"))
 

@@ -9,6 +9,7 @@ usable with zero API keys.
 import json
 import os
 import re
+import threading
 import time
 
 import httpx
@@ -34,7 +35,7 @@ Style rules (non-negotiable):
 """
 
 
-def _gemini(system: str, messages: list[dict]) -> str:
+def _gemini(system: str, messages: list[dict], timeout: float = 45) -> str:
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not set")
     if not settings.LLM_EXTERNAL_CONSENT:
@@ -48,13 +49,13 @@ def _gemini(system: str, messages: list[dict]) -> str:
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}")
-    r = httpx.post(url, json=body, timeout=45)
+    r = httpx.post(url, json=body, timeout=timeout)
     r.raise_for_status()
     data = r.json()
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
-def _groq(system: str, messages: list[dict]) -> str:
+def _groq(system: str, messages: list[dict], timeout: float = 45) -> str:
     if not settings.GROQ_API_KEY:
         raise RuntimeError("GROQ_API_KEY not set")
     if not settings.LLM_EXTERNAL_CONSENT:
@@ -68,12 +69,12 @@ def _groq(system: str, messages: list[dict]) -> str:
         payload["reasoning_format"] = "hidden"
     r = httpx.post("https://api.groq.com/openai/v1/chat/completions",
                    headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
-                   json=payload, timeout=45)
+                   json=payload, timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
-def _openrouter(system: str, messages: list[dict]) -> str:
+def _openrouter(system: str, messages: list[dict], timeout: float = 45) -> str:
     if not settings.OPENROUTER_API_KEY:
         raise RuntimeError("OPENROUTER_API_KEY not set")
     if not settings.LLM_EXTERNAL_CONSENT:
@@ -88,31 +89,34 @@ def _openrouter(system: str, messages: list[dict]) -> str:
                    json={"model": model,
                          "messages": [{"role": "system", "content": system}] + messages,
                          "temperature": 0.7, "max_tokens": 1400},
-                   timeout=45)
+                   timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
-def _ollama(system: str, messages: list[dict]) -> str:
+def _ollama(system: str, messages: list[dict], timeout: float = 120) -> str:
     prompt = system + "\n\n" + "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'Astrologer'}: {m['content']}" for m in messages
     ) + "\n\nAstrologer:"
     r = httpx.post(f"{settings.OLLAMA_URL}/api/generate",
                    json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False},
-                   timeout=120)
+                   timeout=timeout)
     r.raise_for_status()
     return r.json()["response"].strip()
 
 
-def _lmstudio(system: str, messages: list[dict]) -> str:
+def _lmstudio(system: str, messages: list[dict], timeout: float = 120) -> str:
     r = httpx.post(f"{settings.LMSTUDIO_URL}/chat/completions",
                    json={"model": settings.LMSTUDIO_MODEL,
                          "messages": [{"role": "system", "content": system}] + messages,
                          "temperature": 0.7, "max_tokens": 600},
-                   timeout=120)
+                   timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
 
+
+_llm_slots = threading.BoundedSemaphore(max(1, settings.LLM_MAX_CONCURRENCY))
+_MIN_CALL_SECONDS = 1.0
 
 PROVIDERS = {"gemini": _gemini, "groq": _groq, "openrouter": _openrouter,
              "ollama": _ollama, "lmstudio": _lmstudio}
@@ -138,16 +142,27 @@ def generate(messages: list[dict], facts: dict | None = None,
             "openrouter": settings.OPENROUTER_API_KEY}
     providers_to_try = [p for p in providers_to_try
                         if p not in keys or (keys[p] and settings.LLM_EXTERNAL_CONSENT)]
-    for p in providers_to_try:
-        for attempt in range(3):
-            try:
-                text = PROVIDERS[p](system, messages)
-                if text:
-                    # the persona demands plain text; strip stray markdown
-                    return re.sub(r"[*_`]{1,2}", "", text), p
-            except Exception:
-                if attempt < 2:
-                    time.sleep(2 * (attempt + 1))
+    if not providers_to_try:
+        return offline_response(messages, facts, analysis, context_note), "offline"
+    # global cap on in-flight LLM turns so slow upstreams can't hold every worker thread
+    if not _llm_slots.acquire(blocking=False):
+        return offline_response(messages, facts, analysis, context_note), "offline"
+    try:
+        deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS
+        for p in providers_to_try:
+            for _attempt in range(3):
+                remaining = deadline - time.monotonic()
+                if remaining < _MIN_CALL_SECONDS:
+                    return offline_response(messages, facts, analysis, context_note), "offline"
+                try:
+                    text = PROVIDERS[p](system, messages, timeout=remaining)
+                    if text:
+                        # the persona demands plain text; strip stray markdown
+                        return re.sub(r"[*_`]{1,2}", "", text), p
+                except Exception:
+                    pass
+    finally:
+        _llm_slots.release()
     return offline_response(messages, facts, analysis, context_note), "offline"
 
 

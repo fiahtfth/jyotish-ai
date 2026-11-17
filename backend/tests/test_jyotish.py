@@ -114,15 +114,14 @@ def test_groq_fallback_after_primary_failure(monkeypatch):
     monkeypatch.setattr(providers.settings, "GROQ_API_KEY", "test")
     monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
 
-    def failing(system, messages):
+    def failing(system, messages, timeout=None):
         raise RuntimeError("primary down")
 
-    def groq_ok(system, messages):
+    def groq_ok(system, messages, timeout=None):
         return "Fallback reply."
 
     monkeypatch.setitem(providers.PROVIDERS, "gemini", failing)
     monkeypatch.setitem(providers.PROVIDERS, "groq", groq_ok)
-    monkeypatch.setattr(providers.time, "sleep", lambda seconds: None)
     text, provider = providers.generate([{"role": "user", "content": "hello"}])
     assert provider == "groq"
     assert text == "Fallback reply."
@@ -136,19 +135,63 @@ def test_openrouter_fallback_after_groq_failure(monkeypatch):
     monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
     monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
 
-    def failing(system, messages):
+    def failing(system, messages, timeout=None):
         raise RuntimeError("provider down")
 
-    def openrouter_ok(system, messages):
+    def openrouter_ok(system, messages, timeout=None):
         return "OpenRouter fallback reply."
 
     monkeypatch.setitem(providers.PROVIDERS, "gemini", failing)
     monkeypatch.setitem(providers.PROVIDERS, "groq", failing)
     monkeypatch.setitem(providers.PROVIDERS, "openrouter", openrouter_ok)
-    monkeypatch.setattr(providers.time, "sleep", lambda seconds: None)
     text, provider = providers.generate([{"role": "user", "content": "hello"}])
     assert provider == "openrouter"
     assert text == "OpenRouter fallback reply."
+
+
+def test_llm_turn_deadline_falls_back_to_offline(monkeypatch):
+    import time as _time
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers.settings, "LLM_TURN_DEADLINE_SECONDS", 3)
+    timeouts = []
+
+    def hanging(system, messages, timeout=None):
+        timeouts.append(timeout)
+        _time.sleep(min(timeout, 1.2))
+        raise RuntimeError("upstream timeout")
+
+    for name in ("gemini", "groq", "openrouter"):
+        monkeypatch.setitem(providers.PROVIDERS, name, hanging)
+    t0 = _time.monotonic()
+    _, provider = providers.generate([{"role": "user", "content": "hello"}])
+    assert provider == "offline"
+    assert _time.monotonic() - t0 < 4
+    assert timeouts and all(t <= 3 for t in timeouts)
+
+
+def test_llm_concurrency_limit_falls_back_to_offline(monkeypatch):
+    import threading
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers, "_llm_slots", threading.BoundedSemaphore(1))
+    calls = []
+    monkeypatch.setitem(providers.PROVIDERS, "gemini",
+                        lambda s, m, timeout=None: calls.append(1) or "LLM reply.")
+    assert providers._llm_slots.acquire(blocking=False)
+    try:
+        _, provider = providers.generate([{"role": "user", "content": "hello"}])
+    finally:
+        providers._llm_slots.release()
+    assert provider == "offline" and not calls
+    _, provider = providers.generate([{"role": "user", "content": "hello"}])
+    assert provider == "gemini"
 
 
 def test_openrouter_rejects_paid_model(monkeypatch):

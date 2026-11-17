@@ -47,6 +47,8 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 | `OPENROUTER_API_KEY` | — | optional OpenRouter key; free models only |
 | `JYOTISH_OPENROUTER_MODEL` | `openrouter/free` | must be `openrouter/free` or end with `:free` |
 | `JYOTISH_LLM_EXTERNAL_CONSENT` | `false` | must be `true` before any external LLM call |
+| `JYOTISH_LLM_TURN_DEADLINE` | `30` | max seconds a chat turn spends on LLM calls (all providers/retries) before the offline reply |
+| `JYOTISH_LLM_MAX_CONCURRENCY` | `4` | max chat turns calling an LLM at once; extra turns get the offline reply |
 
 ## Tests
 
