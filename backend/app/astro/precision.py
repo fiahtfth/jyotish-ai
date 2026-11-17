@@ -130,12 +130,17 @@ def tara_of(transit_nak: int, janma_nak: int) -> tuple[int, str]:
     return t, TARA_NAMES[t - 1]
 
 
-def _prastara(birth: BirthInput):
-    """Contributor-level ashtakavarga, cached per birth fingerprint.
+def _prastara(facts, birth: BirthInput):
+    """Contributor-level ashtakavarga for the chart.
 
     prastara[p][c][s] == 1 when contributor c (0..6 planets, 7 Lagna)
-    gave a bindu to planet p's BAV in sign s.
+    gave a bindu to planet p's BAV in sign s. Comes from the same
+    get_ashtaka_varga call that produced facts["binnashtakavarga"], so
+    summing contributors always matches the BAV; charts persisted before
+    the field existed fall back to a fresh (cached) computation.
     """
+    if cached := facts.get("prastara_ashtakavarga"):
+        return cached
     key = birth_fingerprint(birth)
     with _prastara_lock:
         if key in _prastara_cache:
@@ -336,7 +341,7 @@ def confirmation(facts, birth: BirthInput, domain: str,
 def _week_scores(facts, birth: BirthInput, domain_signs: set,
                  start: date, end: date, calibrated: bool) -> list[dict]:
     """Weekly sample of slow-kakshya + fast-trigger scores over the window."""
-    prastara = _prastara(birth)
+    prastara = _prastara(facts, birth)
     place = _place(birth)
     pid_of = {v: k for k, v in K.PLANET_NAMES.items()}
     weeks = []

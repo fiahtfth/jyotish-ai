@@ -184,12 +184,14 @@ def test_panchang_chat_unauthenticated_gate_free():
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
     for _ in range(3):
-        c.post("/api/chat/send", json={"text": "No, that didn't happen"},
-               headers=h)
+        rr = c.post("/api/chat/send", json={"text": "No, that didn't happen"},
+                    headers=h)
+        assert rr.status_code == 200
     r = c.post("/api/chat/send", json={"text": "what's today's panchang?"},
                headers=h)
     assert r.status_code == 200
-    m = next(m for m in reversed(r.json()) if m.get("kind") == "panchang")
+    m = next((m for m in reversed(r.json()) if m.get("kind") == "panchang"), None)
+    assert m is not None, [(_m.get("kind"), _m.get("content")) for _m in r.json()]
     pan = m["meta"]["panchang"]
     assert pan["tithi"]["name"] and pan["nakshatra"]["name"]
     assert "Rahu Kaalam" in m["content"]

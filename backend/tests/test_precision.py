@@ -44,7 +44,7 @@ def test_tara_sequence():
 def test_prastara_matches_bav():
     """prastara[p][c][s] summed over contributors c must equal bav[p][s]."""
     b, facts = make_facts()
-    pr = P._prastara(b)
+    pr = P._prastara(facts, b)
     assert pr is not None
     bav = facts["binnashtakavarga"]
     for p in range(7):
