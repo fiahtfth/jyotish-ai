@@ -7,3 +7,6 @@ __pycache__/
 .env
 dist/
 .neon
+.pytest_cache/
+*.tsbuildinfo
+.venv/

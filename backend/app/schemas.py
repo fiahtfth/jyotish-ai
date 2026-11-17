@@ -1,4 +1,6 @@
-from pydantic import BaseModel, EmailStr, Field
+import datetime
+
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Literal, Optional
 
 
@@ -42,6 +44,14 @@ class BirthProfileIn(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     birth_time_precision: Literal["exact", "approximate", "unknown"] = "exact"
+
+    @model_validator(mode="after")
+    def _valid_calendar_date(self):
+        try:
+            datetime.date(self.year, self.month, self.day)
+        except ValueError:
+            raise ValueError("invalid calendar date")
+        return self
 
 
 class BirthProfileOut(BirthProfileIn):

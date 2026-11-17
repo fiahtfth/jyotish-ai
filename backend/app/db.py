@@ -55,8 +55,9 @@ class BirthProfile(Base):
     birth_time_precision = Column(String, default="exact")  # exact|approximate|unknown
     chart_json = Column(Text, default="")          # locked facts cache
     calc_fingerprint = Column(String, default="")
-    calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated
+    calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated|insufficient_history
     predictions_allowed = Column(Boolean, default=False)
+    rectified_from = Column(String, nullable=True)  # original "YYYY-MM-DD HH:MM:SS" if rectified
     user = relationship("User", back_populates="profile")
     calibrations = relationship("CalibrationEvent", back_populates="profile",
                                 cascade="all, delete-orphan")
@@ -111,6 +112,20 @@ class Message(Base):
 def init_db():
     Base.metadata.create_all(engine_db)
     _migrate_token_nonce()
+    _migrate_rectified_from()
+
+
+def _migrate_rectified_from():
+    cols = {c["name"] for c in inspect(engine_db).get_columns("birth_profiles")}
+    if "rectified_from" not in cols:
+        try:
+            with engine_db.begin() as conn:
+                conn.execute(text("ALTER TABLE birth_profiles ADD COLUMN rectified_from VARCHAR"))
+        except DBAPIError:
+            # a concurrent worker may have added the column first
+            cols = {c["name"] for c in inspect(engine_db).get_columns("birth_profiles")}
+            if "rectified_from" not in cols:
+                raise
 
 
 def _migrate_token_nonce():

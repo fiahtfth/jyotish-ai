@@ -177,8 +177,8 @@ def calibration_outcome(statements: list[dict]) -> dict:
         predictions_allowed = True
     else:
         state = "uncalibrated"
-        label = "The past checks did not line up with the chart. Before going further "
-        "we should recheck the birth details and calculation settings."
+        label = ("The past checks did not line up with the chart. Before going further "
+                 "we should recheck the birth details and calculation settings.")
         predictions_allowed = False
     return {"state": state, "label": label, "confirmed": confirmed,
             "partial": partial, "unknown": unknown,

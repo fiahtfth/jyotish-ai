@@ -5,7 +5,7 @@ import time
 from collections import defaultdict, deque
 from datetime import datetime
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
@@ -17,7 +17,7 @@ from .config import settings
 from .db import (
     BirthProfile, CalibrationEvent, Conversation, Message, User, get_db, init_db,
 )
-from .astro.engine import BirthInput, engine, fingerprint as calc_fp
+from .astro.engine import BirthInput, engine, birth_fingerprint
 from .schemas import (
     BirthProfileIn, BirthProfileOut, ChatIn, LoginIn, MessageOut,
     PlaceSearchOut, RegisterIn, TokenOut,
@@ -61,8 +61,41 @@ def _rate_limit(user_id: int):
 
 # ------------------------------------------------------------- auth
 
+# in-memory sliding-window throttle for login/register (per process)
+AUTH_MAX_ATTEMPTS = 10
+AUTH_WINDOW_S = 300
+_auth_attempts: dict[str, deque] = {}
+
+
+def reset_auth_throttle():
+    _auth_attempts.clear()
+
+
+def _throttle_check(key: str):
+    """Raise 429 if `key` is at its limit; also prunes expired entries."""
+    now = time.monotonic()
+    for k in list(_auth_attempts):
+        q = _auth_attempts[k]
+        while q and q[0] < now - AUTH_WINDOW_S:
+            q.popleft()
+        if not q:
+            del _auth_attempts[k]
+    if len(_auth_attempts.get(key, ())) >= AUTH_MAX_ATTEMPTS:
+        raise HTTPException(429, "too many attempts — try again in a few minutes")
+
+
+def _throttle_record(key: str):
+    _auth_attempts.setdefault(key, deque()).append(time.monotonic())
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
 @app.post("/api/auth/register", response_model=TokenOut)
-def register(body: RegisterIn, db: Session = Depends(get_db)):
+def register(body: RegisterIn, request: Request, db: Session = Depends(get_db)):
+    ip_key = "ip:" + _client_ip(request)
+    _throttle_check(ip_key)
+    _throttle_record(ip_key)
     if db.query(User).filter(User.email == body.email.lower()).first():
         raise HTTPException(409, "account already exists")
     u = User(email=body.email.lower(), password_hash=hash_password(body.password),
@@ -73,9 +106,17 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login", response_model=TokenOut)
-def login(body: LoginIn, db: Session = Depends(get_db)):
+def login(body: LoginIn, request: Request, db: Session = Depends(get_db)):
+    # IP budget counts every attempt; the per-email budget counts only FAILED
+    # logins, so an attacker can't lock a victim out with successful-looking traffic
+    ip_key = "ip:" + _client_ip(request)
+    email_key = "email:" + body.email.lower()
+    _throttle_check(ip_key)
+    _throttle_check(email_key)
+    _throttle_record(ip_key)
     u = db.query(User).filter(User.email == body.email.lower()).first()
     if not u or not verify_password(body.password, u.password_hash):
+        _throttle_record(email_key)
         raise HTTPException(401, "invalid credentials")
     return TokenOut(access_token=create_token(u),
                     needs_birth_profile=u.profile is None)
@@ -164,7 +205,8 @@ def put_profile(body: BirthProfileIn, user: User = Depends(current_user),
         b = orchestrator.birth_input(p)
         facts = engine.compute(b)
         p.chart_json = json.dumps(facts)
-        p.calc_fingerprint = calc_fp({"birth_time_precision": p.birth_time_precision})
+        p.calc_fingerprint = birth_fingerprint(b)
+        p.rectified_from = None  # user-edited birth details supersede any rectification
         p.calibration_state = "pending"
         p.predictions_allowed = False
         # the old calibration answers no longer apply to the new chart —
@@ -292,7 +334,7 @@ if os.path.isdir(_FRONTEND_DIR):
             return Response(status_code=404)
         root = os.path.abspath(_FRONTEND_DIR)
         cand = os.path.abspath(os.path.join(root, full_path or "index.html"))
-        if not cand.startswith(root):       # path traversal guard
+        if os.path.commonpath([root, cand]) != root:       # path traversal guard
             return Response(status_code=404)
         if os.path.isfile(cand):
             return FileResponse(cand)

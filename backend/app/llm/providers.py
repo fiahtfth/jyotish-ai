@@ -7,6 +7,7 @@ from the locked chart facts and the four-pillar result, so the app is fully
 usable with zero API keys.
 """
 import json
+import logging
 import os
 import re
 import threading
@@ -15,6 +16,8 @@ import time
 import httpx
 
 from ..config import settings
+
+log = logging.getLogger(__name__)
 
 SYSTEM_PERSONA = """You are Jyotish AI — a warm, perceptive, experienced Vedic astrologer.
 Style rules (non-negotiable):
@@ -48,8 +51,9 @@ def _gemini(system: str, messages: list[dict], timeout: float = 45) -> str:
             "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1400,
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
-           f"{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}")
-    r = httpx.post(url, json=body, timeout=timeout)
+           f"{settings.GEMINI_MODEL}:generateContent")
+    r = httpx.post(url, json=body, timeout=timeout,
+                   headers={"x-goog-api-key": settings.GEMINI_API_KEY})
     r.raise_for_status()
     data = r.json()
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
@@ -150,17 +154,34 @@ def generate(messages: list[dict], facts: dict | None = None,
     try:
         deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS
         for p in providers_to_try:
-            for _attempt in range(3):
+            for attempt in range(3):
                 remaining = deadline - time.monotonic()
                 if remaining < _MIN_CALL_SECONDS:
+                    log.warning("LLM turn deadline reached; using offline responder")
                     return offline_response(messages, facts, analysis, context_note), "offline"
                 try:
                     text = PROVIDERS[p](system, messages, timeout=remaining)
                     if text:
                         # the persona demands plain text; strip stray markdown
                         return re.sub(r"[*_`]{1,2}", "", text), p
-                except Exception:
-                    pass
+                    log.warning("LLM provider %s returned empty text", p)
+                    retryable = False
+                except httpx.HTTPStatusError as exc:
+                    code = exc.response.status_code
+                    log.warning("LLM provider %s failed: HTTP %s", p, code)
+                    retryable = code == 429 or code >= 500
+                except (httpx.TimeoutException, httpx.TransportError) as exc:
+                    log.warning("LLM provider %s failed: %s", p, type(exc).__name__)
+                    retryable = True
+                except Exception as exc:  # RuntimeError config errors, bad payloads, ...
+                    log.warning("LLM provider %s failed: %s", p, type(exc).__name__)
+                    retryable = False
+                if not retryable or attempt >= 2:
+                    break
+                delay = 2 * (attempt + 1)
+                if time.monotonic() + delay + _MIN_CALL_SECONDS >= deadline:
+                    break
+                time.sleep(delay)
     finally:
         _llm_slots.release()
     return offline_response(messages, facts, analysis, context_note), "offline"
@@ -200,18 +221,18 @@ def offline_response(messages: list[dict], facts: dict | None,
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
 
-    conv = analysis.get("convergence", "")
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])
-    lead = {
-        "strong traditional convergence":
-            f"Looking at your chart, the traditional indicators for {dom} line up quite well for that period.",
-        "substantial traditional convergence":
-            f"The traditional indicators for {dom} are mostly supportive, though not unanimous.",
-        "mixed or conditional convergence":
-            f"The signals for {dom} are genuinely mixed — I'd describe the period as possible rather than promised.",
-    }.get(conv.split(" (")[0],
-          f"The indications for {dom} are weak in that window — I wouldn't lean on it heavily.")
+    support = analysis.get("support_count", 0)
+    conflict = analysis.get("conflict_count", 0)
+    if support >= 3:
+        lead = f"Looking at your chart, the traditional indicators for {dom} line up quite well for that period."
+    elif support == 2 and conflict == 0:
+        lead = f"The traditional indicators for {dom} are mostly supportive, though not unanimous."
+    elif support >= 1:
+        lead = f"The signals for {dom} are genuinely mixed — I'd describe the period as possible rather than promised."
+    else:
+        lead = f"The indications for {dom} are weak in that window — I wouldn't lean on it heavily."
     bridge = ""
     if evidence:
         short = [e for e in evidence if "rules" not in e.lower()][:2]

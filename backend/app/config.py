@@ -49,3 +49,7 @@ class Settings:
 
 
 settings = Settings()
+
+if (settings.JWT_SECRET == "dev-only-change-me-in-production"
+        and os.environ.get("JYOTISH_ENV") == "prod"):
+    raise RuntimeError("JYOTISH_JWT_SECRET must be set to a non-default value when JYOTISH_ENV=prod")

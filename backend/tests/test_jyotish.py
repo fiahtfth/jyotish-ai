@@ -20,6 +20,15 @@ from app.astro import calibration as C  # noqa: E402
 init_db()
 client = TestClient(app)
 
+
+@pytest.fixture(autouse=True)
+def _reset_auth_throttle():
+    """Many tests register users from the same TestClient IP."""
+    from app.main import reset_auth_throttle
+    reset_auth_throttle()
+    yield
+    reset_auth_throttle()
+
 ARJUN = dict(display_name="Arjun", year=1990, month=5, day=15, hour=6, minute=15,
              place_name="Chennai", place_state="Tamil Nadu", place_country="India",
              latitude=13.0827, longitude=80.2707, birth_time_precision="exact")
@@ -364,3 +373,195 @@ def test_token_revoked_after_account_deletion():
                             settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
         r = client.get("/api/auth/me", headers={"authorization": f"Bearer {forged}"})
         assert r.status_code == 401
+
+
+# ---------- 4. Review-fix regressions ----------
+
+def _db_profile_and_conv(h):
+    from app.db import SessionLocal, Conversation, BirthProfile
+    uid = client.get("/api/auth/me", headers=h).json()["id"]
+    db = SessionLocal()
+    conv = db.query(Conversation).filter(Conversation.user_id == uid).first()
+    prof = db.query(BirthProfile).filter(BirthProfile.user_id == uid).first()
+    return db, conv, prof
+
+
+def test_gate_not_bypassed_by_non_future_phrasing():
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    db, conv, prof = _db_profile_and_conv(h)
+    conv.state = "open"          # skip calibration; predictions stay locked
+    db.commit(); db.close()
+    r = send("how is my career looking", h)
+    assert r and all("analysis" not in m["meta"] for m in r)
+    assert client.get("/api/profile", headers=h).json()["predictions_allowed"] is False
+
+
+def test_uncalibrated_label_is_full_sentence():
+    out = C.calibration_outcome([{"user_feedback": "rejected", "matched": False}] * 3)
+    assert out["state"] == "uncalibrated"
+    assert out["label"].endswith("recheck the birth details and calculation settings.")
+
+
+def test_offline_lead_varies_with_support_count():
+    from app.llm import providers
+    msgs = [{"role": "user", "content": "will i get a job"}]
+
+    def lead(support, conflict):
+        a = {"domain": "career", "support_count": support, "conflict_count": conflict,
+             "calculation_evidence_ids": [], "convergence": "x"}
+        return providers.offline_response(msgs, None, a)
+    strong, substantial, mixed, weak = lead(3, 0), lead(2, 0), lead(2, 1), lead(0, 0)
+    assert "line up quite well" in strong
+    assert "mostly supportive" in substantial
+    assert "genuinely mixed" in mixed
+    assert "weak" in weak
+    assert len({strong, substantial, mixed, weak}) == 4
+
+
+def test_put_profile_invalid_calendar_date_is_422():
+    h = register_and_profile()
+    r = client.put("/api/profile", json={**ARJUN, "month": 2, "day": 31}, headers=h)
+    assert r.status_code == 422
+
+
+def _status_error(code):
+    import httpx
+    req = httpx.Request("POST", "https://example.invalid/x")
+    return httpx.HTTPStatusError("err", request=req, response=httpx.Response(code, request=req))
+
+
+def test_generate_does_not_retry_on_401_but_retries_5xx(monkeypatch):
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers.time, "sleep", lambda seconds: None)
+    calls = {"gemini": 0, "groq": 0}
+
+    def gemini_401(system, messages, timeout=45):
+        calls["gemini"] += 1
+        raise _status_error(401)
+
+    def groq_503_then_ok(system, messages, timeout=45):
+        calls["groq"] += 1
+        if calls["groq"] < 2:
+            raise _status_error(503)
+        return "ok"
+
+    monkeypatch.setitem(providers.PROVIDERS, "gemini", gemini_401)
+    monkeypatch.setitem(providers.PROVIDERS, "groq", groq_503_then_ok)
+    text, provider = providers.generate([{"role": "user", "content": "hello"}])
+    assert calls == {"gemini": 1, "groq": 2}
+    assert (text, provider) == ("ok", "groq")
+
+
+def test_engine_cache_is_lru_capped(monkeypatch):
+    from app.astro import engine as E
+    monkeypatch.setattr(E, "CACHE_MAX", 2)
+    eng = E.ChartEngine()
+
+    def b(minute):
+        return BirthInput(name="x", year=1990, month=5, day=15, hour=6, minute=minute,
+                          second=0, lat=13.0827, lon=80.2707, tz_offset=5.5,
+                          place_label="Chennai")
+    eng.compute(b(0)); eng.compute(b(1))
+    eng.compute(b(0))                       # hit: b(0) becomes most recent
+    eng.compute(b(2))                       # evicts b(1)
+    assert len(eng._cache) == 2
+    minutes = {k[4] for k in eng._cache}
+    assert minutes == {0, 2}
+
+
+def test_fingerprint_depends_on_birth_inputs():
+    from app.astro.engine import birth_fingerprint
+    b1, _ = make_facts()
+    b2 = BirthInput(**{**b1.__dict__, "minute": 16})
+    b3 = BirthInput(**b1.__dict__)
+    assert birth_fingerprint(b1) != birth_fingerprint(b2)
+    assert birth_fingerprint(b1) == birth_fingerprint(b3)
+
+
+def test_login_throttled_after_10_bad_attempts():
+    email = f"thr_{uuid.uuid4().hex[:8]}@test.dev"
+    codes = [client.post("/api/auth/login", json={"email": email, "password": "wrongpass1"}).status_code
+             for _ in range(11)]
+    assert codes[:10] == [401] * 10
+    assert codes[10] == 429
+
+
+def test_only_one_rectification_per_profile(monkeypatch):
+    calls = []
+
+    def fake_rectify(birth, facts, evs, eng):
+        calls.append(1)
+        nb = BirthInput(**{**birth.__dict__, "minute": (birth.minute + 4) % 60})
+        return {"birth": nb, "delta_minutes": 4}
+
+    monkeypatch.setattr(C, "try_rectify", fake_rectify)
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    for _ in range(3):
+        send("No, not at all", h)
+    assert len(calls) == 1
+    db, conv, prof = _db_profile_and_conv(h)
+    assert prof.rectified_from == "1990-05-15 06:15:00"
+    assert prof.minute == 19
+    assert prof.calc_fingerprint
+    db.close()
+    for _ in range(3):
+        send("No, not at all", h)
+    assert len(calls) == 1                  # second failure: no further rectification
+    db, conv, prof = _db_profile_and_conv(h)
+    assert prof.minute == 19 and conv.state == "rectify"
+    db.close()
+    # a material edit by the user clears the marker
+    p = client.get("/api/profile", headers=h).json()
+    edited = {k: p[k] for k in ARJUN}
+    edited["hour"] = 7
+    assert client.put("/api/profile", json=edited, headers=h).status_code == 200
+    db, conv, prof = _db_profile_and_conv(h)
+    assert prof.rectified_from is None
+    db.close()
+
+
+def test_insufficient_history_state(monkeypatch):
+    monkeypatch.setattr(C, "generate_statements", lambda *a, **k: [])
+    h = register_and_profile()
+    msgs = client.get("/api/chat/history", headers=h).json()
+    assert any("enough past timeline" in m["content"] for m in msgs)
+    prof = client.get("/api/profile", headers=h).json()
+    assert prof["calibration_state"] == "insufficient_history"
+    assert prof["predictions_allowed"] is False
+    r = send("will i get a promotion next year", h)
+    text = " ".join(m["content"] for m in r)
+    assert "enough past timeline" in text and "didn't line up" not in text
+
+
+def test_domain_detection_word_boundaries():
+    from app.chat.orchestrator import detect_domain, _apply_disclaimer
+    assert detect_domain("of course") is None
+    assert detect_domain("my network is slow") is None
+    assert detect_domain("any job change soon") == "career"
+    assert detect_domain("should I do a house shift") == "relocation"
+    assert detect_domain("which course should I take") == "education"
+    assert "not medical diagnoses" in _apply_disclaimer("hello", "health")
+    assert detect_domain("when will I pass my exams") == "education"
+    assert detect_domain("jobs") == "career"
+    assert detect_domain("investing") == "finance"
+
+
+def test_successful_logins_do_not_consume_email_budget():
+    email = f"ok_{uuid.uuid4().hex[:8]}@test.dev"
+    assert client.post("/api/auth/register", json={"email": email, "password": "password123"}).status_code == 200
+    from app import main as M
+    for _ in range(9):
+        assert client.post("/api/auth/login", json={"email": email, "password": "password123"}).status_code == 200
+        M._auth_attempts.pop("ip:testclient", None)   # isolate the per-email budget
+    assert len(M._auth_attempts.get("email:" + email, ())) == 0
+    for _ in range(10):
+        assert client.post("/api/auth/login", json={"email": email, "password": "wrong-pass"}).status_code == 401
+        M._auth_attempts.pop("ip:testclient", None)
+    r = client.post("/api/auth/login", json={"email": email, "password": "password123"})
+    assert r.status_code == 429

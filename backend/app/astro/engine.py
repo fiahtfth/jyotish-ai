@@ -7,6 +7,7 @@ that the orchestrator, the four-pillar engine and the verifier all read.
 import hashlib
 import json
 import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import swisseph as swe
@@ -24,6 +25,7 @@ from . import constants as K
 _lock = threading.Lock()
 _configured = False
 PYJHORA_VERSION = "5.0.0"
+CACHE_MAX = 256
 
 VARGA_FUNCS = {
     "D1": charts.rasi_chart, "D2": charts.hora_chart, "D4": charts.chaturthamsa_chart,
@@ -55,9 +57,25 @@ def fingerprint(settings: dict) -> str:
         "nodes": "mean", "vargas": "parashari counting, method=1",
         "dasha": "vimshottari, moon-star, tribhagi=false",
         "birth_time_precision": settings.get("birth_time_precision", "exact"),
+        # birth inputs: a different birth time/place is a different chart
+        "birth": [settings.get(k) for k in ("year", "month", "day", "hour", "minute", "second")]
+                 + [None if settings.get(k) is None else round(float(settings[k]), 4)
+                    for k in ("lat", "lon")]
+                 + [None if settings.get("tz_offset") is None
+                    else round(float(settings["tz_offset"]), 3)],
     }
     raw = json.dumps(base, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
+
+
+def birth_fingerprint(b: "BirthInput") -> str:
+    """Calc fingerprint including the birth inputs themselves."""
+    return fingerprint({
+        "birth_time_precision": b.birth_time_precision,
+        "year": b.year, "month": b.month, "day": b.day, "hour": b.hour,
+        "minute": b.minute, "second": b.second, "lat": b.lat, "lon": b.lon,
+        "tz_offset": b.tz_offset,
+    })
 
 
 def _pos_list_to_dict(positions) -> dict:
@@ -153,7 +171,8 @@ class ChartEngine:
 
     def __init__(self):
         configure()
-        self._cache = {}
+        self._cache: "OrderedDict[tuple, dict]" = OrderedDict()
+        self._cache_lock = threading.Lock()
 
     # ---------- core ----------
 
@@ -161,8 +180,10 @@ class ChartEngine:
         key = (b.year, b.month, b.day, b.hour, b.minute, b.second,
                round(b.lat, 4), round(b.lon, 4), round(b.tz_offset, 3),
                b.birth_time_precision)
-        if key in self._cache:
-            return self._cache[key]
+        with self._cache_lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+                return self._cache[key]
 
         place = drik.Place(b.place_label, b.lat, b.lon, b.tz_offset)
         jd = utils.julian_day_number((b.year, b.month, b.day), (b.hour, b.minute, b.second))
@@ -306,7 +327,11 @@ class ChartEngine:
             "bhava": bhava,
             "vargas": vargas,
         }
-        self._cache[key] = facts
+        with self._cache_lock:
+            self._cache[key] = facts
+            self._cache.move_to_end(key)
+            while len(self._cache) > CACHE_MAX:
+                self._cache.popitem(last=False)
         return facts
 
     # ---------- jaimini ----------

@@ -6,13 +6,14 @@ The prediction gate is enforced HERE — server-side — never by the LLM.
 """
 import json
 import re
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.orm import Session
 
 from ..astro import calibration, pillars, verify
 from ..astro.constants import DOMAINS
-from ..astro.engine import BirthInput, engine
+from .. import geo
+from ..astro.engine import BirthInput, birth_fingerprint, engine
 from ..db import BirthProfile, CalibrationEvent, Conversation, Message
 from ..llm import providers
 
@@ -78,17 +79,24 @@ ANSWER_MAP = {"yes": "yes", "confirmed": "yes", "that happened": "yes",
               "don't remember": "unknown", "n/a": "unknown"}
 
 
+_DOMAIN_RES = {
+    dom: re.compile(r"\b(?:" + "|".join(re.escape(k) for k in kws) + r")(?:s|es|ing|ed)?\b")
+    for dom, kws in DOMAIN_KEYWORDS.items()
+}
+
+
 def _apply_disclaimer(reply: str, domain: str | None) -> str:
     note = DOMAINS.get(domain or "", {}).get("disclaimer")
-    if note and note.split()[0] not in reply:
+    if note and note not in reply:
         return reply.rstrip() + "\n\n" + note
     return reply
 
 
 def detect_domain(text: str) -> str | None:
-    t = text.lower()
-    for dom, kws in DOMAIN_KEYWORDS.items():
-        if any(k in t for k in kws):
+    # "of course" is a figure of speech, not the education keyword "course"
+    t = re.sub(r"\bof course\b", " ", text.lower())
+    for dom, rx in _DOMAIN_RES.items():
+        if rx.search(t):
             return dom
     return None
 
@@ -159,18 +167,37 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
 
 # ------------------------------------------------------------------ entry
 
-def _ensure_events(db: Session, profile: BirthProfile, facts: dict):
+INSUFFICIENT_MSG = (
+    "I can't verify your chart yet — there isn't enough past timeline for me to form "
+    "three reliable checks against it. Until I can, I won't make predictions. I'm happy "
+    "to answer factual questions about your chart, and if you update your birth details "
+    "I'll try again.")
+
+
+def _mark_insufficient(db: Session, conv: Conversation, profile: BirthProfile) -> Message:
+    profile.calibration_state = "insufficient_history"
+    profile.predictions_allowed = False
+    conv.state = "open"
+    conv.pending_event_id = ""
+    return _add_msg(db, conv, "assistant", INSUFFICIENT_MSG)
+
+
+def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
     """Seed calibration events when none exist or the fingerprint changed
-    (e.g. after the birth details were edited mid-conversation)."""
+    (e.g. after the birth details were edited mid-conversation).
+    Returns the number of events available; fewer than 3 means the chart
+    cannot be calibrated (no events are stored in that case)."""
     existing = (db.query(CalibrationEvent)
                 .filter(CalibrationEvent.profile_id == profile.id).all())
     if existing and existing[0].calc_fingerprint == profile.calc_fingerprint:
-        return
+        return len(existing)
     for e in existing:
         db.delete(e)
     db.flush()
     stmts = calibration.generate_statements(facts, birth_input(profile),
                                             profile.calc_fingerprint)
+    if len(stmts) < 3:
+        return 0
     for s in stmts:
         db.add(CalibrationEvent(
             profile_id=profile.id, event_id=s["event_id"], domain=s["domain"],
@@ -182,6 +209,7 @@ def _ensure_events(db: Session, profile: BirthProfile, facts: dict):
             chat_text=s["chat_text"],
             calc_fingerprint=s["calculation_fingerprint"]))
     db.flush()
+    return len(stmts)
 
 
 def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -> list[Message]:
@@ -194,9 +222,11 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
              f"({facts['planets']['Moon']['nakshatra']['name']} nakshatra).")
     _add_msg(db, conv, "assistant", hello)
 
-    _ensure_events(db, profile, facts)
+    n = _ensure_events(db, profile, facts)
     ev = _next_pending_event(db, conv, profile)
-    if ev is None:
+    if n < 3:
+        _mark_insufficient(db, conv, profile)
+    elif ev is None:
         conv.state = "open"
     else:
         _ask_event(db, conv, ev, first=True)
@@ -291,7 +321,9 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
         return new_msgs
 
     if conv.state == "cal_intro":
-        _ensure_events(db, profile, facts)
+        if _ensure_events(db, profile, facts) < 3:
+            new_msgs.append(_mark_insufficient(db, conv, profile))
+            return new_msgs
         ev = _next_pending_event(db, conv, profile)
         if ev:
             _ask_event(db, conv, ev, first=True)
@@ -374,13 +406,26 @@ def _advance_calibration(db, conv, profile, new_msgs, note=None):
     profile.predictions_allowed = outcome["predictions_allowed"]
     if outcome["state"] == "uncalibrated":
         # try rectification: a slightly different birth time may fit the
-        # recorded feedback better — only adopt on a clearly better score
-        rect = calibration.try_rectify(birth_input(profile), chart_facts(profile), evs, engine)
+        # recorded feedback better — only adopt on a clearly better score.
+        # At most ONE rectification per profile, so repeated attempts can't
+        # drift the birth time away from what the user entered.
+        rect = None
+        if not profile.rectified_from:
+            rect = calibration.try_rectify(birth_input(profile), chart_facts(profile), evs, engine)
         if rect:
             nb = rect["birth"]
+            profile.rectified_from = (
+                f"{profile.year:04d}-{profile.month:02d}-{profile.day:02d} "
+                f"{profile.hour:02d}:{profile.minute:02d}:{(profile.second or 0):02d}")
             profile.year, profile.month, profile.day = nb.year, nb.month, nb.day
             profile.hour, profile.minute, profile.second = nb.hour, nb.minute, nb.second
+            # the date may have shifted, so re-derive the historical UTC offset
+            profile.utc_offset_hours = geo.historical_utc_offset(
+                profile.latitude, profile.longitude,
+                datetime(nb.year, nb.month, nb.day, nb.hour, nb.minute, nb.second),
+                profile.utc_offset_hours)
             profile.chart_json = None
+            profile.calc_fingerprint = birth_fingerprint(birth_input(profile))
             for e in evs:
                 db.delete(e)
             db.flush()
@@ -394,7 +439,9 @@ def _advance_calibration(db, conv, profile, new_msgs, note=None):
                 f"different birth times — {nb.hour:02d}:{nb.minute:02d} "
                 f"({sign}{rect['delta_minutes']} min) fits your history much better. "
                 "I've adjusted the chart to that time. Let's re-verify quickly."))
-            _ensure_events(db, profile, chart_facts(profile))
+            if _ensure_events(db, profile, chart_facts(profile)) < 3:
+                new_msgs.append(_mark_insufficient(db, conv, profile))
+                return
             ev = _next_pending_event(db, conv, profile)
             if ev:
                 _ask_event(db, conv, ev, first=False)
@@ -452,8 +499,10 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
     # ---- prediction gate: enforced in code, not the prompt ----
     if is_future and not profile.predictions_allowed:
         if profile.calibration_state == "pending":
+            if _ensure_events(db, profile, facts) < 3:
+                _mark_insufficient(db, conv, profile)
+                return conv.messages[-2:]
             conv.state = "cal_ask"
-            _ensure_events(db, profile, facts)
             ev = _next_pending_event(db, conv, profile)
             if ev:
                 _add_msg(db, conv, "assistant",
@@ -461,6 +510,9 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
                          "chart against your past first — it takes three quick questions.")
                 _ask_event(db, conv, ev, first=False)
                 return conv.messages[-3:]
+        if profile.calibration_state == "insufficient_history":
+            _add_msg(db, conv, "assistant", INSUFFICIENT_MSG)
+            return conv.messages[-2:]
         _add_msg(db, conv, "assistant",
                  "I don't want to guess at your future before the chart has earned some "
                  "trust. The earlier checks didn't line up — let's fix the birth data "
@@ -486,7 +538,10 @@ def _open_turn(db, conv, profile, facts, birth, text) -> list[Message]:
         return conv.messages[-2:]
 
     # general / factual chat — allowed regardless of gate
-    if domain:
+    # a domain-flavoured analysis is itself predictive content, so it is only
+    # computed when predictions are allowed (phrasing like "how's my career
+    # looking?" is not caught by FUTURE_PAT)
+    if domain and profile.predictions_allowed:
         start, end = _target_window(text)
         analysis = pillars.evaluate(facts, birth, domain, start, end)
     else:
