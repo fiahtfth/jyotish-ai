@@ -294,3 +294,30 @@ def test_pillar_gap_features():
     assert "(Darakaraka)" in ev or "A7" in ev or "A12" in ev
     # Muntha-lord dignity and BAV bindus now appear in evidence when they fire
     assert "Muntha" in ev
+
+
+def test_token_revoked_after_account_deletion():
+    from jose import jwt
+    from app.config import settings
+    email_a = f"a_{uuid.uuid4().hex[:8]}@test.dev"
+    tok_a = client.post("/api/auth/register",
+                        json={"email": email_a, "password": "password123"}).json()["access_token"]
+    ha = {"authorization": f"Bearer {tok_a}"}
+    uid_a = client.get("/api/auth/me", headers=ha).json()["id"]
+    assert client.delete("/api/auth/me", headers=ha).status_code == 200
+
+    email_b = f"b_{uuid.uuid4().hex[:8]}@test.dev"
+    tok_b = client.post("/api/auth/register",
+                        json={"email": email_b, "password": "password123"}).json()["access_token"]
+    uid_b = client.get("/api/auth/me", headers={"authorization": f"Bearer {tok_b}"}).json()["id"]
+    assert uid_b != uid_a
+    assert client.get("/api/auth/me", headers=ha).status_code == 401
+
+    # Even if an id is reused (e.g. DB reset), a token minted for a previous
+    # account (different nonce) or without a nonce must not authenticate.
+    claims = jwt.decode(tok_a, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
+    for extra in ({"nonce": claims["nonce"]}, {}):
+        forged = jwt.encode({"sub": str(uid_b), "exp": claims["exp"], **extra},
+                            settings.JWT_SECRET, algorithm=settings.JWT_ALGORITHM)
+        r = client.get("/api/auth/me", headers={"authorization": f"Bearer {forged}"})
+        assert r.status_code == 401

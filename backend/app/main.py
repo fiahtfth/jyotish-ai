@@ -69,7 +69,7 @@ def register(body: RegisterIn, db: Session = Depends(get_db)):
              display_name=body.display_name)
     db.add(u)
     db.commit()
-    return TokenOut(access_token=create_token(u.id), needs_birth_profile=True)
+    return TokenOut(access_token=create_token(u), needs_birth_profile=True)
 
 
 @app.post("/api/auth/login", response_model=TokenOut)
@@ -77,7 +77,7 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     u = db.query(User).filter(User.email == body.email.lower()).first()
     if not u or not verify_password(body.password, u.password_hash):
         raise HTTPException(401, "invalid credentials")
-    return TokenOut(access_token=create_token(u.id),
+    return TokenOut(access_token=create_token(u),
                     needs_birth_profile=u.profile is None)
 
 
