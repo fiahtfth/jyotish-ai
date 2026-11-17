@@ -112,7 +112,7 @@ def scorecard(rows, today=None):
             "note": "Self-reported outcomes; not independently validated. Partial and unanswered outcomes are not hits. Legacy and same-day/retrospective forecasts are excluded."}
 
 
-def interpretation_reading(analysis, facts=None):
+def interpretation_reading(analysis, facts=None, messages=None):
     """A useful computed-chart answer when no event forecast is being issued."""
     from .constants import DOMAINS
     domain = analysis.get("domain", "direction")
@@ -136,11 +136,26 @@ def interpretation_reading(analysis, facts=None):
                          f"and is placed in {rec['sign_name']} in house {rec['house']}.")
     if not lines:
         lines.append(f"We can explore {domain} through the chart's planetary placements and current periods.")
-    lines.append(focus.get(domain, focus["direction"]))
+    history = [m["content"] for m in (messages or []) if m["role"] == "assistant"]
+    user_text = next((m["content"].lower() for m in reversed(messages or []) if m["role"] == "user"), "")
+    question = focus.get(domain, focus["direction"])
+    # Offline mode must not pretend to understand a follow-up by replaying its intro.
+    if any(question in old or (lines[0] in old) for old in history):
+        return ("I couldn't get a fresh AI response for this follow-up. "
+                "The chart details above still apply, but repeating them would not answer your question. "
+                "Please try sending your question again.")
+    if domain == "career":
+        if "business" in user_text:
+            question = "What kind of business are you considering, and are you starting it alongside your current work?"
+        elif "promotion" in user_text or "current role" in user_text:
+            question = "What role are you in now, and what change are you hoping for?"
+        elif "change" in user_text or "switch" in user_text:
+            question = "What is prompting the job change, and what kind of role are you considering?"
+    lines.append(question)
     return " ".join(lines)
 
 
-def constrain_reply(reply, analysis, facts=None):
+def constrain_reply(reply, analysis, facts=None, messages=None):
     """Preserve helpful readings while rejecting unsupported event promises."""
     decision = analysis["decision"]
     abstained = decision["disposition"] == "abstain"
@@ -150,8 +165,25 @@ def constrain_reply(reply, analysis, facts=None):
             allowed.update((w["start"], w["end"]))
     dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", reply))
     certainty = re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", reply, re.I)
-    prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b", reply, re.I)
+    prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?|20\d{2})\b", reply, re.I)
     internal = re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", reply, re.I)
     if dates - allowed or certainty or prose_date or internal:
-        return interpretation_reading(analysis, facts)
+        # Remove only the offending sentences. A single unsupported claim
+        # must not erase the rest of an otherwise useful answer.
+        sentences = re.split(r"(?<=[.!?])\s+|\n\n", reply)
+        if len(sentences) > 1:
+            kept = []
+            for sentence in sentences:
+                bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
+                if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
+                    continue
+                if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
+                    continue
+                if re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I):
+                    continue
+                if sentence.strip():
+                    kept.append(sentence.strip())
+            if kept:
+                return " ".join(kept)
+        return interpretation_reading(analysis, facts, messages)
     return reply

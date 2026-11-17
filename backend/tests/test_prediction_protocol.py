@@ -127,3 +127,29 @@ def test_broad_questions_keep_helpful_readings_and_hide_internal_scoring():
     fallback=Q.constrain_reply("The question needs one observable event before it can be scored.",a,f)
     assert 'key part of this chart' in fallback
     assert 'scored' not in fallback and 'reliable event forecast' not in fallback
+
+
+def test_modal_may_and_march_verb_do_not_trigger_month_filter():
+    a=analysis();a['decision']=Q.decide('How is my career?',a)
+    reply='You may be considering a job change. You can march forward carefully while comparing roles.'
+    assert Q.constrain_reply(reply,a) == reply
+
+
+def test_filter_preserves_valid_sentences_when_one_claim_is_unsupported():
+    a=analysis();a['decision']=Q.decide('How is my career?',a)
+    reply='Your promotion is guaranteed. Your chart connects professional themes with overseas work. What role are you considering?'
+    result=Q.constrain_reply(reply,a)
+    assert 'guaranteed' not in result
+    assert 'professional themes with overseas work' in result
+    assert 'What role are you considering?' in result
+
+
+def test_offline_followup_does_not_repeat_previous_reading_or_question():
+    a=analysis();a['decision']=Q.decide('How is my career?',a)
+    _,f=make_facts()
+    first=Q.interpretation_reading(a,f)
+    history=[{'role':'assistant','content':first},{'role':'user','content':'I am considering a job change'}]
+    second=Q.interpretation_reading(a,f,history)
+    assert first != second
+    assert 'Are you mainly thinking' not in second
+    assert 'fresh AI response' in second

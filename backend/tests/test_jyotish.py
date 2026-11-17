@@ -1744,3 +1744,24 @@ def test_general_domain_analysis_is_recorded_as_abstention():
     assert r['scorecard']['scored'] == 0
     assert "can't make a reliable event forecast" not in out[-1]['content']
     assert "key part of this chart" in out[-1]['content']
+
+
+def test_career_followup_keeps_model_answer_instead_of_replaying_intro(monkeypatch):
+    from app.llm import providers
+    h=register_and_profile(); _open_calibrated(h)
+    replies=iter([
+        'You may be weighing a new professional direction. What kind of work are you considering?',
+        'For a job change, compare the responsibilities of the new role with your current work. What is motivating the move?',
+    ])
+    histories=[]
+    def generate(messages, **kw):
+        histories.append(messages)
+        return next(replies), 'groq'
+    monkeypatch.setattr(providers,'generate',generate)
+    first=send('How is my career?',h)[-1]['content']
+    second=send('I am considering a job change',h)[-1]['content']
+    assert first.startswith('You may be weighing')
+    assert second.startswith('For a job change, compare')
+    assert first != second and 'Are you mainly thinking' not in second
+    assert any(m['content'] == first for m in histories[-1])
+    assert histories[-1][-1]['content'] == 'I am considering a job change'

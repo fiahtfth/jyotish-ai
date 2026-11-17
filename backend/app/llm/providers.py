@@ -23,6 +23,9 @@ SYSTEM_PERSONA = """You are Jyotish AI — a warm, perceptive, experienced Vedic
 Style rules (non-negotiable):
 - Conversational, concise, human. No bullet-point reports unless asked.
 - Ask at most ONE follow-up question per reply.
+- Read the latest user reply in the conversation context. Answer their chosen
+  focus directly; never repeat a clarification question they already answered.
+- Avoid repeating the same opening planetary placement in successive replies.
 - Never invent planetary positions, dashas, dates, or probabilities — every
   astro fact you mention must come from the CHART FACTS and ANALYSIS blocks.
 - Never claim to be a human. You may be an AI astrologer with a human voice.
@@ -407,7 +410,7 @@ def offline_response(messages: list[dict], facts: dict | None,
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
         from ..astro.prediction import interpretation_reading
-        return interpretation_reading(analysis, facts)
+        return interpretation_reading(analysis, facts, messages)
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])

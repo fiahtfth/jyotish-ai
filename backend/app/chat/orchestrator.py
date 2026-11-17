@@ -1206,7 +1206,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         vr = verify.verify_response(reply, facts, {"running_dasha": run})
         if not vr["ok"]:
             reply = verify.repair_response(reply, vr["issues"])
-        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts), domain)
+        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts, _conversation_history(conv)), domain)
         _add_msg(db, conv, "assistant", reply,
                  meta={"analysis": analysis, "provider": provider})
         _save_prediction(db, profile, text, analysis, reply)
@@ -1235,7 +1235,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         reply = verify.repair_response(reply, vr["issues"])
     reply = _apply_disclaimer(reply, domain)
     if analysis:
-        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts), domain)
+        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts, _conversation_history(conv)), domain)
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, **({"analysis": analysis} if analysis else {})})
