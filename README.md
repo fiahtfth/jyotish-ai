@@ -25,6 +25,7 @@ A conversational Vedic astrology app — **not** a chart dashboard. You sign in,
 ```bash
 # backend (Python 3.10+)
 cd backend && pip install -r requirements.txt
+export JYOTISH_DEV_INSECURE_JWT=true   # or set JYOTISH_JWT_SECRET (>= 32 bytes) in backend/.env
 uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 # frontend (Node 20+)
@@ -38,7 +39,8 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 | Var | Default | Purpose |
 |---|---|---|
 | `JYOTISH_DATABASE_URL` | sqlite at `backend/jyotish.db` | swap to `postgresql+psycopg2://…` for Postgres |
-| `JYOTISH_JWT_SECRET` | dev default | **set in production** |
+| `JYOTISH_JWT_SECRET` | — (required) | random value, at least 32 bytes; the app refuses to start without it |
+| `JYOTISH_DEV_INSECURE_JWT` | `false` | local dev only: `true` uses a random per-process secret when `JYOTISH_JWT_SECRET` is missing |
 | `JYOTISH_LLM_PROVIDER` | `offline` | `offline` \| `gemini` \| `groq` \| `openrouter` \| `ollama` \| `lmstudio` |
 | `GEMINI_API_KEY` | — | free key from ai.google.dev |
 | `JYOTISH_GEMINI_MODEL` | `gemini-3.5-flash` | note: 2.0/2.5 flash are retired for new API users |
