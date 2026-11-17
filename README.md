@@ -16,6 +16,8 @@ A conversational Vedic astrology app — **not** a chart dashboard. You sign in,
 - **LLM providers** (`JYOTISH_LLM_PROVIDER`):
   - `offline` — built-in deterministic responder from locked facts; zero keys, zero cost.
   - `gemini` — Gemini API free tier. Requires `GEMINI_API_KEY` and `JYOTISH_LLM_EXTERNAL_CONSENT=true` (explicit opt-in before any data leaves the machine).
+  - `groq` — Groq OpenAI-compatible API. Requires `GROQ_API_KEY` and the same external-consent flag; also used automatically as a fallback when configured and available.
+  - `openrouter` — OpenRouter API, restricted to free models (`openrouter/free` or any `:free` model id). Requires `OPENROUTER_API_KEY` and external consent; used as a later fallback when configured.
   - `ollama` / `lmstudio` — local servers (`JYOTISH_OLLAMA_URL`, `JYOTISH_LMSTUDIO_URL`).
 
 ## Run it
@@ -37,9 +39,13 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 |---|---|---|
 | `JYOTISH_DATABASE_URL` | sqlite at `backend/jyotish.db` | swap to `postgresql+psycopg2://…` for Postgres |
 | `JYOTISH_JWT_SECRET` | dev default | **set in production** |
-| `JYOTISH_LLM_PROVIDER` | `offline` | `offline` \| `gemini` \| `ollama` \| `lmstudio` |
+| `JYOTISH_LLM_PROVIDER` | `offline` | `offline` \| `gemini` \| `groq` \| `openrouter` \| `ollama` \| `lmstudio` |
 | `GEMINI_API_KEY` | — | free key from ai.google.dev |
 | `JYOTISH_GEMINI_MODEL` | `gemini-3.5-flash` | note: 2.0/2.5 flash are retired for new API users |
+| `GROQ_API_KEY` | — | optional Groq key; enables fallback when external consent is on |
+| `JYOTISH_GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model id |
+| `OPENROUTER_API_KEY` | — | optional OpenRouter key; free models only |
+| `JYOTISH_OPENROUTER_MODEL` | `openrouter/free` | must be `openrouter/free` or end with `:free` |
 | `JYOTISH_LLM_EXTERNAL_CONSENT` | `false` | must be `true` before any external LLM call |
 
 ## Tests
@@ -65,9 +71,9 @@ See `docs/CALCULATION_VALIDATION.md` for calculation choices and caveats, and `d
 The app ships as **one service**: `frontend/` builds to a static export committed at `frontend/out/`, and FastAPI serves it at `/` plus the API at `/api/*`. `render.yaml` is included.
 
 - Build: `pip install -r backend/requirements.txt` · Start: `cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT` · Health: `/api/health`
-- Set env vars on the service: `JYOTISH_LLM_PROVIDER=gemini`, `GEMINI_API_KEY`, `JYOTISH_LLM_EXTERNAL_CONSENT=true`, `JYOTISH_JWT_SECRET`, and optionally `JYOTISH_DATABASE_URL`.
+- Set env vars on the service: `JYOTISH_LLM_PROVIDER=gemini`, `GEMINI_API_KEY`, optional `GROQ_API_KEY` / `OPENROUTER_API_KEY` fallbacks, `JYOTISH_LLM_EXTERNAL_CONSENT=true`, `JYOTISH_JWT_SECRET`, and optionally `JYOTISH_DATABASE_URL`.
 - **Free-tier caveats**: sleeps after ~15 min idle (~30s cold start); without `JYOTISH_DATABASE_URL` the SQLite file lives on ephemeral disk — **accounts reset on every redeploy**. Point `JYOTISH_DATABASE_URL` at a free Postgres (e.g. Neon: `postgresql+psycopg2://…`) to make accounts permanent.
 - After editing the frontend, rebuild the export (`npm run build`) and force-add it (`git add -f frontend/out`) — the directory is git-ignored; auto-deploy pulls from `main`.
 - Rectification flow is a placeholder (asks for better birth data; does not run a full rectification algorithm).
 - Google sign-in not implemented (email/password only).
-- Gemini free tier can return transient 503s; the app retries then falls back to the offline responder.
+- Gemini free tier can return transient 503s; the app retries, then falls back to Groq and OpenRouter free models when their keys are set, and finally to the offline responder.

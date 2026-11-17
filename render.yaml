@@ -17,5 +17,9 @@ services:
         value: "true"
       - key: GEMINI_API_KEY
         sync: false        # set in the dashboard or via API
+      - key: GROQ_API_KEY
+        sync: false        # optional fallback provider key
+      - key: OPENROUTER_API_KEY
+        sync: false        # optional free-model fallback key
       - key: JYOTISH_JWT_SECRET
         generateValue: true

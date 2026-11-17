@@ -1,9 +1,10 @@
 """LLM providers.
 
-Priority: configured provider (gemini | ollama | lmstudio) -> offline
-deterministic responder. The offline responder never claims to be an LLM —
-it composes answers directly from the locked chart facts and the
-four-pillar result, so the app is fully usable with zero API keys.
+Priority: configured provider (gemini | groq | openrouter | ollama | lmstudio)
+-> groq/openrouter fallbacks when configured -> offline deterministic responder.
+The offline responder never claims to be an LLM — it composes answers directly
+from the locked chart facts and the four-pillar result, so the app is fully
+usable with zero API keys.
 """
 import json
 import os
@@ -53,6 +54,45 @@ def _gemini(system: str, messages: list[dict]) -> str:
     return data["candidates"][0]["content"]["parts"][0]["text"].strip()
 
 
+def _groq(system: str, messages: list[dict]) -> str:
+    if not settings.GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY not set")
+    if not settings.LLM_EXTERNAL_CONSENT:
+        # consent gate: external provider requires explicit opt-in
+        raise RuntimeError("external LLM consent not granted (set JYOTISH_LLM_EXTERNAL_CONSENT=true)")
+    payload = {"model": settings.GROQ_MODEL,
+               "messages": [{"role": "system", "content": system}] + messages,
+               "temperature": 0.7, "max_tokens": 1400}
+    if "gpt-oss" in settings.GROQ_MODEL:
+        payload["reasoning_effort"] = "low"
+        payload["reasoning_format"] = "hidden"
+    r = httpx.post("https://api.groq.com/openai/v1/chat/completions",
+                   headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+                   json=payload, timeout=45)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"].strip()
+
+
+def _openrouter(system: str, messages: list[dict]) -> str:
+    if not settings.OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY not set")
+    if not settings.LLM_EXTERNAL_CONSENT:
+        # consent gate: external provider requires explicit opt-in
+        raise RuntimeError("external LLM consent not granted (set JYOTISH_LLM_EXTERNAL_CONSENT=true)")
+    model = settings.OPENROUTER_MODEL
+    if model != "openrouter/free" and not model.endswith(":free"):
+        raise RuntimeError("OpenRouter fallback is restricted to free models (:free or openrouter/free)")
+    r = httpx.post("https://openrouter.ai/api/v1/chat/completions",
+                   headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                            "X-OpenRouter-Title": "Jyotish AI"},
+                   json={"model": model,
+                         "messages": [{"role": "system", "content": system}] + messages,
+                         "temperature": 0.7, "max_tokens": 1400},
+                   timeout=45)
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"].strip()
+
+
 def _ollama(system: str, messages: list[dict]) -> str:
     prompt = system + "\n\n" + "\n\n".join(
         f"{'User' if m['role'] == 'user' else 'Astrologer'}: {m['content']}" for m in messages
@@ -74,12 +114,13 @@ def _lmstudio(system: str, messages: list[dict]) -> str:
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
-PROVIDERS = {"gemini": _gemini, "ollama": _ollama, "lmstudio": _lmstudio}
+PROVIDERS = {"gemini": _gemini, "groq": _groq, "openrouter": _openrouter,
+             "ollama": _ollama, "lmstudio": _lmstudio}
 
 
 def generate(messages: list[dict], facts: dict | None = None,
              analysis: dict | None = None, context_note: str = "") -> tuple[str, str]:
-    """Return (reply, provider_used). Falls back to 'offline' on any failure."""
+    """Return (reply, provider_used). Falls back through Groq/OpenRouter to 'offline'."""
     system = SYSTEM_PERSONA
     if facts is not None:
         system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(facts)
@@ -89,13 +130,21 @@ def generate(messages: list[dict], facts: dict | None = None,
         system += "\n\nCONTEXT: " + context_note
 
     provider = settings.LLM_PROVIDER
+    providers_to_try = []
     if provider in PROVIDERS:
+        providers_to_try = [provider] + [f for f in ("groq", "openrouter") if f != provider]
+    # skip external providers that have no key or no consent — no point retrying them
+    keys = {"gemini": settings.GEMINI_API_KEY, "groq": settings.GROQ_API_KEY,
+            "openrouter": settings.OPENROUTER_API_KEY}
+    providers_to_try = [p for p in providers_to_try
+                        if p not in keys or (keys[p] and settings.LLM_EXTERNAL_CONSENT)]
+    for p in providers_to_try:
         for attempt in range(3):
             try:
-                text = PROVIDERS[provider](system, messages)
+                text = PROVIDERS[p](system, messages)
                 if text:
                     # the persona demands plain text; strip stray markdown
-                    return re.sub(r"[*_`]{1,2}", "", text), provider
+                    return re.sub(r"[*_`]{1,2}", "", text), p
             except Exception:
                 if attempt < 2:
                     time.sleep(2 * (attempt + 1))

@@ -1,6 +1,11 @@
 """Application configuration. Everything overridable via environment variables."""
 import os
 
+from dotenv import load_dotenv
+
+# local secrets live in backend/.env (git-ignored); real env vars take precedence
+load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
+
 
 class Settings:
     # Auth / security
@@ -15,10 +20,14 @@ class Settings:
     )
 
     # LLM provider: 'offline' (built-in deterministic responder, zero cost),
-    # 'gemini' (free-tier Gemini API), 'ollama' (local), 'lmstudio' (local).
+    # 'gemini'/'groq'/'openrouter' (external APIs), 'ollama'/'lmstudio' (local).
     LLM_PROVIDER: str = os.environ.get("JYOTISH_LLM_PROVIDER", "offline").lower()
     GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
     GEMINI_MODEL: str = os.environ.get("JYOTISH_GEMINI_MODEL", "gemini-3.5-flash")
+    GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
+    GROQ_MODEL: str = os.environ.get("JYOTISH_GROQ_MODEL", "openai/gpt-oss-120b")
+    OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
+    OPENROUTER_MODEL: str = os.environ.get("JYOTISH_OPENROUTER_MODEL", "openrouter/free")
     OLLAMA_URL: str = os.environ.get("JYOTISH_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.environ.get("JYOTISH_OLLAMA_MODEL", "llama3.1")
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")

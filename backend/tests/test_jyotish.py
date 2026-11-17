@@ -107,6 +107,59 @@ def test_verifier_bans_injected_degrees():
     assert not r["ok"]
 
 
+def test_groq_fallback_after_primary_failure(monkeypatch):
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+
+    def failing(system, messages):
+        raise RuntimeError("primary down")
+
+    def groq_ok(system, messages):
+        return "Fallback reply."
+
+    monkeypatch.setitem(providers.PROVIDERS, "gemini", failing)
+    monkeypatch.setitem(providers.PROVIDERS, "groq", groq_ok)
+    monkeypatch.setattr(providers.time, "sleep", lambda seconds: None)
+    text, provider = providers.generate([{"role": "user", "content": "hello"}])
+    assert provider == "groq"
+    assert text == "Fallback reply."
+
+
+def test_openrouter_fallback_after_groq_failure(monkeypatch):
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+
+    def failing(system, messages):
+        raise RuntimeError("provider down")
+
+    def openrouter_ok(system, messages):
+        return "OpenRouter fallback reply."
+
+    monkeypatch.setitem(providers.PROVIDERS, "gemini", failing)
+    monkeypatch.setitem(providers.PROVIDERS, "groq", failing)
+    monkeypatch.setitem(providers.PROVIDERS, "openrouter", openrouter_ok)
+    monkeypatch.setattr(providers.time, "sleep", lambda seconds: None)
+    text, provider = providers.generate([{"role": "user", "content": "hello"}])
+    assert provider == "openrouter"
+    assert text == "OpenRouter fallback reply."
+
+
+def test_openrouter_rejects_paid_model(monkeypatch):
+    from app.llm import providers
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers.settings, "OPENROUTER_MODEL", "openai/gpt-4")
+    with pytest.raises(RuntimeError, match="free models"):
+        providers._openrouter("system", [{"role": "user", "content": "hi"}])
+
+
 # ---------- 3. Calibration gate via API ----------
 
 def register_and_profile():
