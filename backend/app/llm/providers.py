@@ -296,6 +296,16 @@ def generate(messages: list[dict], facts: dict | None = None,
 
     def _offline():
         text = offline_response(messages, facts, analysis, context_note)
+        if provider != "offline":
+            if not allow_external and provider in EXTERNAL_PROVIDERS:
+                notice = ("External AI replies are off for this account. To enable them, choose "
+                          "'Allow external AI replies' in the account menu. This sends your "
+                          "chat and chart data to an external AI service.")
+            elif not providers_to_try:
+                notice = "AI chat is not configured or enabled on the server."
+            else:
+                notice = "The AI service is temporarily unavailable."
+            text = notice + " I'm using the limited built-in chart responder for this reply.\n\n" + text
         if on_delta is not None and not emitted:
             _emit(text)          # the whole offline reply as a single delta
         return text, "offline"
@@ -307,12 +317,20 @@ def generate(messages: list[dict], facts: dict | None = None,
         return _offline()
     try:
         deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS
-        for p in providers_to_try:
+        for index, p in enumerate(providers_to_try):
+            # Reserve time for each remaining provider. A primary read timeout
+            # must not consume the entire turn and silently bypass healthy backups.
+            now = time.monotonic()
+            budget = (deadline - now) / (len(providers_to_try) - index)
+            provider_deadline = min(deadline, now + max(_MIN_CALL_SECONDS, budget))
             for attempt in range(3):
-                remaining = deadline - time.monotonic()
-                if remaining < _MIN_CALL_SECONDS:
+                now = time.monotonic()
+                if deadline - now < _MIN_CALL_SECONDS:
                     log.warning("LLM turn deadline reached; using offline responder")
                     return _offline()
+                remaining = provider_deadline - now
+                if remaining <= 0:
+                    break
                 try:
                     if on_delta is None:
                         text = PROVIDERS[p](system, messages, timeout=remaining)
@@ -339,7 +357,7 @@ def generate(messages: list[dict], facts: dict | None = None,
                 if not retryable or attempt >= 2:
                     break
                 delay = 2 * (attempt + 1)
-                if time.monotonic() + delay + _MIN_CALL_SECONDS >= deadline:
+                if time.monotonic() + delay + _MIN_CALL_SECONDS >= provider_deadline:
                     break
                 time.sleep(delay)
     finally:
@@ -435,5 +453,5 @@ def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
         lag = facts["lagna"]
         return (f"Your chart is a {lag['sign_name']} lagna chart — the moon sits in "
                 f"{facts['planets']['Moon']['sign_name']}. What would you like to explore?")
-    return ("Tell me a little more about what you're asking — I read the chart, "
-            "not a script, so the more specific you are the better I can help.")
+    return ("The built-in responder cannot interpret that question. It can show computed "
+            "chart facts; try 'What is my lagna?', 'Where is my Moon?' or 'Show my birth chart'.")

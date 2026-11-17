@@ -626,7 +626,11 @@ def chat_stream(body: ChatIn, user: User = Depends(current_user)):
 
     def gen():
         while True:
-            ev = events.get()
+            try:
+                ev = events.get(timeout=15)
+            except queue.Empty:
+                yield ": keep-alive\n\n"
+                continue
             if ev is None:
                 return
             yield _sse(ev)

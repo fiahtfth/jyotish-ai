@@ -16,6 +16,7 @@ const en = {
   language: "हिन्दी",
   back: "Back",
   somethingWrong: "Something went wrong — please try again.",
+  reloadChat: "Reload conversation",
   // login
   tagline1: "A Vedic astrologer that proves itself on your past",
   tagline2: "before reading your future.",
@@ -132,6 +133,7 @@ const hi: Record<Key, string> = {
   language: "English",
   back: "वापस",
   somethingWrong: "कुछ गड़बड़ हो गई — कृपया फिर कोशिश करें।",
+  reloadChat: "बातचीत फिर लोड करें",
   tagline1: "एक वैदिक ज्योतिषी जो आपके भविष्य से पहले आपके अतीत पर खुद को परखता है",
   tagline2: "",
   signIn: "साइन इन करें",

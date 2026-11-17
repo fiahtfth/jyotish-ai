@@ -1551,3 +1551,116 @@ def test_account_deletion_removes_all_profiles():
     assert db.query(BirthProfile).filter(BirthProfile.user_id == uid).count() == 0
     assert db.query(Conversation).filter(Conversation.user_id == uid).count() == 0
     db.close()
+
+
+# Chat regressions: routing, context and interrupted calibration replies.
+@pytest.mark.parametrize('question, expected', [
+    ('show my D24 chart', 'D24'), ('show my D10 chart', 'D10'),
+    ('show my D-60 chart', 'D60'), ('my chaturvimshamsa chart', 'D24'),
+    ('show my D12 chart', 'D12'), ('my relationship', None),
+])
+def test_chart_request_uses_exact_varga(question, expected):
+    from app.chat.orchestrator import detect_varga
+    assert detect_varga(question) == expected
+
+
+def test_prediction_and_chart_followups_keep_context(monkeypatch):
+    from app.chat import orchestrator as O
+    h = register_and_profile()
+    _open_conv(h)
+    db, conv, prof = _db_profile_and_conv(h)
+    prof.predictions_allowed = True
+    prof.calibration_state = 'calibrated'
+    db.commit(); db.close()
+    chart = send('show my D24 chart', h)
+    assert chart[-1]['meta']['varga'] == 'D24'
+    captured = []
+    def generate(messages, **kwargs):
+        captured.append(messages)
+        return 'I have the earlier chart and question in context.', 'offline'
+    monkeypatch.setattr(O.providers, 'generate', generate)
+    send('What does this mean?', h)
+    assert any(m['content'] == chart[-1]['content'] for m in captured[-1])
+    send('Will I change my job next year?', h)
+    assert any(m['content'] == 'What does this mean?' for m in captured[-1])
+    assert captured[-1][-1]['content'] == 'Will I change my job next year?'
+
+
+def test_why_domain_question_is_answered_instead_of_old_evidence(monkeypatch):
+    from app.chat import orchestrator as O
+    h = register_and_profile()
+    _open_conv(h)
+    seen = []
+    def generate(messages, **kwargs):
+        seen.append(messages[-1]['content'])
+        return 'Let us look at your question.', 'offline'
+    monkeypatch.setattr(O.providers, 'generate', generate)
+    send('Why is my career difficult?', h)
+    send('Explain my Moon placement', h)
+    assert seen == ['Why is my career difficult?', 'Explain my Moon placement']
+
+
+def test_calibration_date_followup_does_not_swallow_questions():
+    h = register_and_profile()
+    client.get('/api/chat/history', headers=h)
+    send('Something similar, different time', h)
+    before = client.get('/api/calibration', headers=h).json()['events']
+    out = send('What does my chart mean?', h)
+    after = client.get('/api/calibration', headers=h).json()['events']
+    assert [e['user_feedback'] for e in before] == [e['user_feedback'] for e in after]
+    assert 'which year' in out[-1]['content']
+    send('not sure', h)
+    out = send('yes', h)
+    assert any(m['kind'] == 'options' for m in out)
+
+
+def test_next_month_prediction_window_includes_last_day():
+    import calendar
+    from app.chat.orchestrator import _target_window
+    start, end = _target_window('next month')
+    assert start.day == 1
+    assert end.day == calendar.monthrange(start.year, start.month)[1]
+
+
+@pytest.mark.parametrize('streaming', [False, True])
+def test_slow_primary_leaves_time_for_healthy_backup(monkeypatch, streaming):
+    from app.llm import providers as P
+    monkeypatch.setattr(P.settings, 'LLM_PROVIDER', 'gemini')
+    monkeypatch.setattr(P.settings, 'GEMINI_API_KEY', 'test')
+    monkeypatch.setattr(P.settings, 'GROQ_API_KEY', 'test')
+    monkeypatch.setattr(P.settings, 'OPENROUTER_API_KEY', 'test')
+    monkeypatch.setattr(P.settings, 'LLM_EXTERNAL_CONSENT', True)
+    monkeypatch.setattr(P.settings, 'LLM_TURN_DEADLINE_SECONDS', 30)
+    clock = [0.0]
+    calls = []
+    monkeypatch.setattr(P.time, 'monotonic', lambda: clock[0])
+    monkeypatch.setattr(P.time, 'sleep', lambda seconds: clock.__setitem__(0, clock[0] + seconds))
+    def slow(system, messages, *args, timeout):
+        calls.append(('gemini', timeout))
+        clock[0] += timeout
+        raise P.httpx.ReadTimeout('primary timed out')
+    def backup(system, messages, *args, timeout):
+        calls.append(('groq', timeout))
+        if args:
+            args[0]('Backup reply.')
+        return 'Backup reply.'
+    registry = P.STREAM_PROVIDERS if streaming else P.PROVIDERS
+    monkeypatch.setitem(registry, 'gemini', slow)
+    monkeypatch.setitem(registry, 'groq', backup)
+    got = []
+    reply, provider = P.generate([{'role':'user','content':'hello'}], on_delta=got.append if streaming else None)
+    assert (reply, provider) == ('Backup reply.', 'groq')
+    assert calls[0] == ('gemini', 10)
+    assert calls[1][0] == 'groq' and calls[1][1] > 0
+    if streaming:
+        assert got == ['Backup reply.']
+
+
+def test_offline_reply_explains_missing_account_consent(monkeypatch):
+    from app.llm import providers as P
+    monkeypatch.setattr(P.settings, 'LLM_PROVIDER', 'gemini')
+    reply, provider = P.generate([{'role':'user','content':'tell me about myself'}], allow_external=False)
+    assert provider == 'offline'
+    assert 'External AI replies are off for this account' in reply
+    assert 'Allow external AI replies' in reply
+    assert 'I read the chart, not a script' not in reply

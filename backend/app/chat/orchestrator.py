@@ -4,6 +4,7 @@ State machine:
     cal_intro -> cal_ask -> (cal_followup) -> cal_ask -> ... -> open | rectify
 The prediction gate is enforced HERE — server-side — never by the LLM.
 """
+import calendar
 import json
 import re
 from datetime import date, datetime, timedelta
@@ -181,14 +182,24 @@ def detect_domain(text: str) -> str | None:
 
 def detect_varga(text: str) -> str | None:
     t = text.lower()
-    for v, keys in {"D9": ["navamsa", "navamsha", "d9", "d-9"],
-                    "D10": ["dasamsa", "dashamsha", "d10", "d-10"],
-                    "D1": ["rasi", "d1", "birth chart", "kundli", "natal chart"],
-                    "D7": ["saptamsa", "d7"], "D2": ["hora", "d2"],
-                    "D24": ["chaturvimshamsa", "d24"], "D60": ["shashtiamsa", "d60"]}.items():
-        if any(k in t for k in keys):
+    explicit = re.search(r"\bd-?(\d{1,2})\b", t)
+    if explicit:
+        return f"D{int(explicit.group(1))}"
+    for v, keys in {"D9": ["navamsa", "navamsha"],
+                    "D10": ["dasamsa", "dashamsha"],
+                    "D1": ["rasi", "birth chart", "kundli", "natal chart"],
+                    "D7": ["saptamsa"], "D2": ["hora"],
+                    "D24": ["chaturvimshamsa"], "D60": ["shashtiamsa"]}.items():
+        if any(re.search(r"\b" + re.escape(k) + r"\b", t) for k in keys):
             return v
     return None
+
+
+def _conversation_history(conv: Conversation) -> list[dict]:
+    # Structured replies still contain conversational text. Dropping them left
+    # the model unable to understand follow-ups to charts, timing and reports.
+    return [{"role": m.role, "content": m.content}
+            for m in conv.messages[-16:] if m.role in ("user", "assistant")]
 
 
 def _target_window(text: str) -> tuple[date, date]:
@@ -210,7 +221,7 @@ def _target_window(text: str) -> tuple[date, date]:
     if "next month" in t:
         nm = today.replace(day=28)
         nm = (nm.fromordinal(nm.toordinal() + 7)).replace(day=1)
-        end = nm.replace(day=28)
+        end = nm.replace(day=calendar.monthrange(nm.year, nm.month)[1])
         return nm, end
     end = today.fromordinal(today.toordinal() + 365)
     return today, end
@@ -511,7 +522,19 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
         # expect a month/year
         m = re.search(r"(20\d\d|19\d\d)", text)
         mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", text, re.I)
-        ev.actual_date = f"{m.group(1) if m else ''}-{mon.group(1)[:3] if mon else ''}".strip("-")
+        if not m:
+            if _norm_reply(text) in ("not sure", "don't know", "skip", "don't remember"):
+                _advance_calibration(db, conv, profile, new_msgs,
+                                     note="That's okay — I'll leave the actual date unknown.")
+                return new_msgs
+            _add_msg(db, conv, "assistant",
+                     "Roughly which year did it happen? You can also say 'not sure'.")
+            return new_msgs
+        year = int(m.group(1))
+        if year < profile.year or year > date.today().year:
+            _add_msg(db, conv, "assistant", "Please give a year between the birth year and today.")
+            return new_msgs
+        ev.actual_date = f"{year}-{mon.group(1)[:3] if mon else ''}".strip("-")
         _advance_calibration(db, conv, profile, new_msgs,
                              note="Noted — the timing was different. I'll remember the actual period.")
         return new_msgs
@@ -1022,8 +1045,7 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
                  kind="options", meta={"options": options, "actions": _ACTIONS})
         return
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-    history = [{"role": m.role, "content": m.content}
-               for m in conv.messages[-8:] if m.kind == "text"]
+    history = _conversation_history(conv)
     reply, provider = providers.generate(
         history, facts=facts,
         context_note=_context_prefix(profile)
@@ -1064,7 +1086,9 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
     wants_report = bool(REPORT_PAT.search(t))
     wants_timing = bool(TIMING_PAT.search(t))
     is_future = bool(FUTURE_PAT.search(text)) or wants_report or wants_timing
-    if WHY_PAT.search(t) and conv.messages and len(conv.messages) >= 2:
+    if (re.fullmatch(r"\s*(why|why is that|tell me why|explain( that)?|details|"
+                     r"(show me( the)? )?(reasoning|evidence|calculation)|how do you know)[?.! ]*", t)
+            and len(conv.messages) >= 2):
         for m in reversed(conv.messages[:-1]):
             if m.role == "assistant" and m.meta_json:
                 meta = json.loads(m.meta_json)
@@ -1089,10 +1113,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                         pretty += "\n\n" + "\n".join(extra)
                     _add_msg(db, conv, "assistant", pretty, kind="analysis", meta=a)
                     return conv.messages[-2:]
-        _add_msg(db, conv, "assistant",
-                 "There's nothing recent with a reasoning trail attached. Ask me something "
-                 "about your chart and then ask me why.")
-        return conv.messages[-2:]
+        # Without a computed trail, answer conversationally using the history.
 
     domain = detect_domain(text)
 
@@ -1148,7 +1169,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         start, end = _target_window(text)
         analysis, prec = _precision_analysis(facts, birth, domain, start, end, profile)
         run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-        messages = [{"role": "user", "content": text}]
+        messages = _conversation_history(conv)
         reply, provider = providers.generate(
             messages, facts=facts, analysis=analysis,
             context_note=_context_prefix(profile) +
@@ -1178,10 +1199,11 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
     else:
         analysis = None
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-    history = [{"role": m.role, "content": m.content}
-               for m in conv.messages[-8:] if m.kind == "text"]
+    history = _conversation_history(conv)
     reply, provider = providers.generate(history, facts=facts, analysis=analysis,
                                          context_note=_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
+                                         + ("Chart facts only; no predictions or future timing. "
+                                            if not profile.predictions_allowed else "") +
                                          f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
                                          allow_external=_external_ok(profile),
                                          on_delta=on_delta)

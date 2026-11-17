@@ -1,11 +1,8 @@
-// API base: same-origin ("") anywhere that isn't localhost, so a dev
-// NEXT_PUBLIC_API_URL left in .env.local can never leak into a prod build.
-// Only on localhost do we consult the env / fall back to the dev backend.
-const API = (typeof window !== "undefined" &&
-             window.location.hostname !== "localhost" &&
-             window.location.hostname !== "127.0.0.1")
-  ? ""
-  : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000");
+// The exported app and API are served together, including local previews.
+// Only the Next development server needs a separate backend address.
+const API = process.env.NODE_ENV === "development"
+  ? (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000")
+  : "";
 
 export function token() {
   return typeof window === "undefined" ? "" : localStorage.getItem("jyotish_token") || "";
@@ -117,7 +114,7 @@ export async function streamSend(text: string, onDelta: (t: string) => void): Pr
     body: JSON.stringify({ text }),
   });
   await failIfBad(r);
-  if (!r.body) throw new Error("streaming unsupported");
+  if (!r.body) throw new StreamBroken("No response stream. Reload the conversation to check your message.");
   // from here on the server has accepted the turn
   try {
     return await readStream(r.body, onDelta);
@@ -145,18 +142,25 @@ async function readStream(body: ReadableStream<Uint8Array>, onDelta: (t: string)
     else if (ev.type === "error") throw new StreamServerError(ev.detail || "stream error");
   };
 
-  for (;;) {
-    const { value, done: fin } = await reader.read();
-    buf += dec.decode(value, { stream: !fin });
-    // events are separated by a blank line; a chunk may end mid-event
-    const parts = buf.split(/\r?\n\r?\n/);
-    buf = parts.pop() ?? "";
-    for (const p of parts) handle(p);
-    if (fin) break;
+  try {
+    for (;;) {
+      const { value, done: fin } = await reader.read();
+      buf += dec.decode(value, { stream: !fin });
+      const parts = buf.split(/\r?\n\r?\n/);
+      buf = parts.pop() ?? "";
+      for (const p of parts) {
+        handle(p);
+        if (done !== null) return done;
+      }
+      if (fin) break;
+    }
+    if (buf.trim()) handle(buf);
+    if (done === null) throw new Error("Connection interrupted. Reload the conversation to check your message.");
+    return done;
+  } finally {
+    await reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
-  if (buf.trim()) handle(buf);
-  if (done === null) throw new Error("stream ended without a result");
-  return done;
 }
 
 export const api = {

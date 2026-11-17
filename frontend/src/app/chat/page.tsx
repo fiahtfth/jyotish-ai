@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { api, clearToken, errMsg, streamSend, StreamBroken, StreamServerError, token, type Me, type Msg } from "@/lib/api";
+import { api, clearToken, errMsg, streamSend, token, type Me, type Msg } from "@/lib/api";
 import type { ChartData } from "@/components/Chart";
 import type { PredictionsResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
@@ -35,21 +35,34 @@ export default function Chat() {
   const [predErr, setPredErr] = useState("");
   const endRef = useRef<HTMLDivElement>(null);
   const tempId = useRef(-1);
+  const sending = useRef(false);
+  const loadVersion = useRef(0);
+  const [chatError, setChatError] = useState("");
 
   useEffect(() => { document.documentElement.classList.toggle("dark", dark); }, [dark]);
 
   useEffect(() => {
     if (!token()) { router.replace("/login"); return; }
-    const load = () => Promise.all([
-      api.me().then(setMe).catch(() => {}),
-      api.history().then(h => setMsgs(Array.isArray(h) ? h : h.messages || [])),
-    ]).catch((e) => { if (e.message === "profile needed") router.replace("/birth"); })
-      .finally(() => setLoading(false));
-    load();
-    // token may have been replaced in another tab — reload the right account's chat
-    const onFocus = () => { if (token()) load(); };
+    let disposed = false;
+    const load = async () => {
+      if (sending.current) return;
+      const version = ++loadVersion.current;
+      try {
+        const [account, history] = await Promise.all([api.me(), api.history()]);
+        if (disposed || version !== loadVersion.current || sending.current) return;
+        setMe(account);
+        setMsgs(Array.isArray(history) ? history : history.messages || []);
+        setChatError("");
+      } catch (e) {
+        if (!disposed && version === loadVersion.current) setChatError(errMsg(e));
+      } finally {
+        if (!disposed) setLoading(false);
+      }
+    };
+    void load();
+    const onFocus = () => { if (token()) void load(); else router.replace("/login"); };
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    return () => { disposed = true; window.removeEventListener("focus", onFocus); };
   }, [router]);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, live]);
@@ -60,38 +73,27 @@ export default function Chat() {
   }
 
   async function send(text: string) {
-    if (!text.trim() || busy) return;
-    setInput(""); setBusy(true);
-    setMsgs(m => [...m, { id: tempId.current--, role: "user", content: text, kind: "text", meta: {}, created_at: "" }]);
-    const apply = (added: Msg[]) => setMsgs(m => {
-      // done messages are authoritative: replace the optimistic user message
-      const kept = m.filter(x => x.id >= 0 || x.content !== text);
-      return [...kept, ...added];
-    });
+    text = text.trim();
+    if (!text || sending.current || loading || chatError) return;
+    sending.current = true;
+    ++loadVersion.current;
+    setInput(""); setBusy(true); setChatError("");
+    const optimisticId = tempId.current--;
+    setMsgs(m => [...m, { id: optimisticId, role: "user", content: text, kind: "text", meta: {}, created_at: "" }]);
     try {
       setLive("");
-      let added: Msg[] | null = null;
-      try {
-        added = await streamSend(text, d => setLive(l => (l ?? "") + d));
-      } catch (e) {
-        if (errMsg(e) === "profile needed" || errMsg(e) === "unauthorized") throw e;
-        setLive(null);
-        // server-reported failure: keep the optimistic message, show the error text
-        if (e instanceof StreamServerError) throw e;
-        if (e instanceof StreamBroken) {
-          // server already persisted the turn (it finishes even if we disconnect):
-          // reload history instead of resending, which would duplicate it
-          const h = await api.history();
-          setMsgs(Array.isArray(h) ? h : h.messages || []);
-        } else {
-          added = await api.send(text); // never accepted: safe to use the non-streaming endpoint
-        }
-      }
-      if (added) apply(added);
+      const added = await streamSend(text, d => setLive(l => (l ?? "") + d));
+      setMsgs(m => {
+        const ids = new Set(added.map(x => x.id));
+        return [...m.filter(x => x.id !== optimisticId && !ids.has(x.id)), ...added];
+      });
     } catch (e) {
-      if (errMsg(e) === "profile needed") router.replace("/birth");
-      setMsgs(m => [...m, { id: tempId.current--, role: "assistant", content: t("somethingWrong"), kind: "text", meta: {}, created_at: "" }]);
-    } finally { setLive(null); setBusy(false); }
+      // A failed fetch may still have reached the server. Never automatically
+      // POST the same turn again; let the user reload the saved conversation.
+      setChatError(errMsg(e) || t("somethingWrong"));
+    } finally {
+      setLive(null); setBusy(false); sending.current = false;
+    }
   }
 
   async function resendVerify() {
@@ -130,19 +132,24 @@ export default function Chat() {
   }
 
   async function reset() {
+    if (sending.current) return;
+    sending.current = true;
+    ++loadVersion.current;
     setBusy(true);
     try {
       await api.resetChat();
       const h = await api.history();
-      setMsgs(Array.isArray(h) ? h : []);
-    } catch {} finally { setBusy(false); }
+      setMsgs(Array.isArray(h) ? h : h.messages || []);
+      setChatError("");
+    } catch (e) { setChatError(errMsg(e)); }
+    finally { setBusy(false); sending.current = false; }
   }
 
   const lastOptIdx = msgs.reduce((acc, m, i) => (m.kind === "options" && m.meta?.options?.length ? i : acc), -1);
   const optionsActive = lastOptIdx >= 0 && lastOptIdx > msgs.reduce((acc, m, i) => (m.role === "user" ? i : acc), -1);
 
   return (
-    <div className="h-screen flex flex-col max-w-2xl mx-auto">
+    <div className="h-dvh flex flex-col max-w-2xl mx-auto">
       <header className="flex items-center justify-between px-4 py-3 border-b border-bord">
         <div>
           <div className="font-serif-astro text-lg leading-tight">{t("appName")}</div>
@@ -185,7 +192,7 @@ export default function Chat() {
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4">
         {loading && <div className="text-center text-muted text-sm mt-10">{t("drawing")}</div>}
         {msgs.map((m, i) => {
           if (m.kind === "options") {
@@ -250,13 +257,22 @@ export default function Chat() {
         <div ref={endRef} />
       </div>
 
+      {chatError && (
+        <div role="alert" className="px-4 py-3 text-sm border-t border-bord">
+          <p>{chatError}</p>
+          <button onClick={() => window.location.reload()} className="text-accent underline mt-1">
+            {t("reloadChat")}
+          </button>
+        </div>
+      )}
       <div className="border-t border-bord p-3">
         <div className="flex gap-2">
           <input value={input} onChange={e => setInput(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && send(input)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
+            aria-label={t("askPh")} disabled={loading || !!chatError}
             placeholder={t("askPh")}
             className="flex-1 border border-bord rounded-full px-4 py-2.5 bg-transparent text-[15px] outline-none focus:border-accent" />
-          <button onClick={() => send(input)} disabled={busy || !input.trim()}
+          <button onClick={() => send(input)} disabled={busy || loading || !!chatError || !input.trim()}
             className="bg-accent text-white rounded-full px-5 py-2.5 font-medium disabled:opacity-40">{t("send")}</button>
         </div>
       </div>
