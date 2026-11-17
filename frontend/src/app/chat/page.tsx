@@ -156,7 +156,7 @@ export default function Chat() {
   const optionsActive = lastOptIdx >= 0 && lastOptIdx > msgs.reduce((acc, m, i) => (m.role === "user" ? i : acc), -1);
 
   return (
-    <div className="h-dvh flex flex-col max-w-2xl mx-auto">
+    <div className="h-dvh w-full min-w-0 flex flex-col max-w-2xl mx-auto">
       <header className="flex items-center justify-between px-4 py-3 border-b border-bord">
         <div>
           <div className="font-serif-astro text-lg leading-tight">{t("appName")}</div>
@@ -204,7 +204,7 @@ export default function Chat() {
             return (
               <div key={m.id}>
                 <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap bg-card border border-bord rounded-bl-sm">
+                  <div className="chat-message max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap bg-card border border-bord rounded-bl-sm">
                     {m.content}
                   </div>
                 </div>
@@ -224,7 +224,7 @@ export default function Chat() {
           const mine = m.role === "user";
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
-              <div className={`max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap
+              <div className={`chat-message max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap
                 ${mine ? "bg-accent text-white rounded-br-sm" : "bg-card border border-bord rounded-bl-sm"}`}>
                 {m.content}
                 {m.kind === "chart" && !!m.meta?.chart && (
@@ -239,7 +239,7 @@ export default function Chat() {
         })}
         {busy && live ? (
           <div className="flex justify-start">
-            <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap bg-card border border-bord rounded-bl-sm">
+            <div className="chat-message max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap bg-card border border-bord rounded-bl-sm">
               {live}
             </div>
           </div>
@@ -276,7 +276,7 @@ export default function Chat() {
             onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault(); void send(input); } }}
             aria-label={t("askPh")} disabled={loading || !!chatError || !!me?.ai_terms_required}
             placeholder={t("askPh")}
-            className="flex-1 border border-bord rounded-full px-4 py-2.5 bg-transparent text-[15px] outline-none focus:border-accent" />
+            className="flex-1 min-w-0 border border-bord rounded-full px-4 py-2.5 bg-transparent text-[15px] outline-none focus:border-accent" />
           <button onClick={() => send(input)} disabled={busy || loading || !!chatError || !!me?.ai_terms_required || !input.trim()}
             className="bg-accent text-white rounded-full px-5 py-2.5 font-medium disabled:opacity-40">{t("send")}</button>
         </div>

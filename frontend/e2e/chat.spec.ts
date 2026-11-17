@@ -140,3 +140,30 @@ test("chat hides rule-agreement footers while preserving the reading", async ({ 
   await expect(page.getByText("Your chart highlights professional responsibilities.", { exact: true })).toBeVisible();
   await expect(page.getByText("2/4 Mixed or limited rule agreement", { exact: true })).toHaveCount(0);
 });
+
+
+for (const width of [320, 390, 1024]) {
+  test(`long chat replies wrap without horizontal overflow at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 800 });
+    const paragraph = "Donate half a kilogram of black lentils to a senior citizen home or to the poor on Saturday whenever possible.";
+    const text = "1. Saturn\n" + paragraph.replaceAll(" ", "\u00a0") + "\n\n2. Rahu\n" + "OmRaamRaaHumHreemShreemNamah".repeat(12) + "\n" + paragraph;
+    await page.route("**/api/chat/history", route => route.fulfill({ json: [
+      message(1, "assistant", text), message(2, "user", "https://example.com/" + "long-path".repeat(40)),
+      { ...message(3, "assistant", text), kind: "options", meta: { options: ["Yes", "No"] } },
+    ] }));
+    await page.goto("/chat");
+    const bubbles = page.locator(".chat-message");
+    await expect(bubbles).toHaveCount(3);
+    for (const bubble of await bubbles.all()) {
+      const size = await bubble.evaluate(node => {
+        const box = node.getBoundingClientRect();
+        return { client: node.clientWidth, scroll: node.scrollWidth, left: box.left, right: box.right };
+      });
+      expect(size.scroll).toBeLessThanOrEqual(size.client + 1);
+      expect(size.left).toBeGreaterThanOrEqual(0);
+      expect(size.right).toBeLessThanOrEqual(width);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    await expect(bubbles.first()).toHaveText(text);
+  });
+}

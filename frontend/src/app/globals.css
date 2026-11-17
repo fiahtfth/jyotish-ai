@@ -41,3 +41,10 @@ body {
   font-family: ui-sans-serif, system-ui, sans-serif;
 }
 .font-serif-astro { font-family: Georgia, 'Times New Roman', serif; }
+
+/* Long words, URLs and non-breaking spaces must stay inside the bubble.
+   min-width: 0 also lets message flex items shrink on narrow screens. */
+.chat-message {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
