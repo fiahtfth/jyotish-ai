@@ -1,20 +1,31 @@
-# Render.com blueprint — free web service for the pilot deployment.
-# The repo ships a statically-exported frontend (frontend/out) served by
-# FastAPI, so a plain Python environment is enough — no Node needed at
-# build or run time.
+# Render.com blueprint — web service for the pilot deployment.
+# The build step installs backend deps AND builds the Next.js static export
+# (frontend/out), which FastAPI then serves. Node is needed at build time only
+# (Render's Python runtime ships Node; NODE_VERSION pins it).
+#
+# IMPORTANT: Render's filesystem is ephemeral. Without JYOTISH_DATABASE_URL the
+# app falls back to SQLite on local disk and every deploy/restart wipes all
+# accounts. Set it to the Neon Postgres connection string before launch.
+# The free plan also sleeps after ~15 min idle (slow first request); use a
+# paid instance for real users.
 services:
   - type: web
     name: jyotish-ai
     runtime: python
     plan: free
-    buildCommand: pip install -r backend/requirements.txt
+    buildCommand: pip install -r backend/requirements.txt && cd frontend && npm ci && npm run build
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
     healthCheckPath: /api/health
     envVars:
+      - key: NODE_VERSION
+        value: "22"
       - key: JYOTISH_ENV
         value: prod
+      - key: JYOTISH_DATABASE_URL
+        sync: false        # Neon Postgres URL — REQUIRED, see note above
       - key: JYOTISH_LLM_PROVIDER
         value: gemini
+      # server-level switch; each user must ALSO opt in (User.llm_consent)
       - key: JYOTISH_LLM_EXTERNAL_CONSENT
         value: "true"
       - key: GEMINI_API_KEY
@@ -25,3 +36,5 @@ services:
         sync: false        # optional free-model fallback key
       - key: JYOTISH_JWT_SECRET
         generateValue: true
+      - key: SENTRY_DSN
+        sync: false        # optional error tracking

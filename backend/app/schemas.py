@@ -8,6 +8,26 @@ class RegisterIn(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8)
     display_name: str = ""
+    # opt-in to third-party AI providers; without it replies come from the
+    # built-in offline responder and no chart data leaves the server
+    llm_consent: bool = False
+
+
+class ConsentIn(BaseModel):
+    llm_consent: bool
+
+
+class ForgotIn(BaseModel):
+    email: EmailStr
+
+
+class ResetIn(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
+    password: str = Field(min_length=8)
+
+
+class TokenIn(BaseModel):
+    token: str = Field(min_length=1, max_length=200)
 
 
 class LoginIn(BaseModel):
@@ -30,8 +50,15 @@ class PlaceSearchOut(BaseModel):
     label: str
 
 
+Relation = Literal["self", "spouse", "mother", "father", "son", "daughter",
+                   "brother", "sister", "friend", "other"]
+MAX_PROFILES = 10
+
+
 class BirthProfileIn(BaseModel):
     display_name: str = ""
+    # omitted -> unchanged on edit, "self" when a profile is first created
+    relation: Optional[Relation] = None
     year: int = Field(ge=1900, le=2030)
     month: int = Field(ge=1, le=12)
     day: int = Field(ge=1, le=31)
@@ -55,11 +82,34 @@ class BirthProfileIn(BaseModel):
 
 
 class BirthProfileOut(BirthProfileIn):
+    id: int
+    relation: Relation
+    is_active: bool = True
     timezone_name: str
     utc_offset_hours: float
     calc_fingerprint: str
     calibration_state: str
     predictions_allowed: bool
+
+
+class ProfileListItem(BaseModel):
+    id: int
+    display_name: str
+    relation: Relation
+    calibration_state: str
+    predictions_allowed: bool
+    is_active: bool
+
+
+class FeedbackIn(BaseModel):
+    rating: Literal[-1, 0, 1]          # 0 clears the vote
+    comment: str = Field(default="", max_length=500)
+
+
+class ReportIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    page: str = Field(default="", max_length=200)
+    app_version: str = Field(default="", max_length=50)
 
 
 class ChatIn(BaseModel):
@@ -73,6 +123,7 @@ class MessageOut(BaseModel):
     kind: str
     meta: dict
     created_at: str
+    rating: int = 0                    # the caller's own thumbs vote (+1/-1), 0 = none
 
 
 class ChartOut(BaseModel):

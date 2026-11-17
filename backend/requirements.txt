@@ -1,6 +1,7 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 sqlalchemy>=2.0
+alembic>=1.13
 pydantic>=2.7
 pydantic[email]>=2.7
 python-jose[cryptography]>=3.3
@@ -20,4 +21,5 @@ numpy>=1.24
 requests>=2.31
 certifi>=2023.0
 psycopg2-binary>=2.9
+sentry-sdk[fastapi]>=2.0
 pytest>=8.0
