@@ -183,7 +183,11 @@ def test_panchang_chat_unauthenticated_gate_free():
     """Panchang is factual — available before calibration passes."""
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
-    for _ in range(3):
+    # answer every pending check until the profile leaves 'pending'
+    # (event count can vary), so the panchang ask lands in a steady state
+    for _ in range(8):
+        if c.get("/api/profile", headers=h).json()["calibration_state"] != "pending":
+            break
         rr = c.post("/api/chat/send", json={"text": "No, that didn't happen"},
                     headers=h)
         assert rr.status_code == 200
