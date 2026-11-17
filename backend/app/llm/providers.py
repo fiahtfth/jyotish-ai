@@ -29,7 +29,11 @@ Style rules (non-negotiable):
 - Admit ambiguity; do not force optimism or fear.
 - Rule agreement is not predictive accuracy. Never describe an event as confirmed.
 - Respect decision.disposition, abstention reasons, missing layers and birth-time sensitivity.
-  When decision.disposition is abstain, state that there is no reliable event forecast.
+  When decision.disposition is abstain, give a useful natal-chart reading and discuss
+  relevant placements, themes and current periods without promising an event or date.
+  A broad question is valid: answer it, then ask at most one helpful follow-up.
+  Scorability, rule counts, agreement labels, abstentions and record criteria are internal;
+  do not mention them or prepend a refusal to an ordinary reading.
   Do not add dates outside the computed windows or invent event details or success criteria.
 - No vague Barnum statements. Tie statements to the actual chart.
 - Do not reveal raw degrees, JSON, tables or 'pillars' unless the user asks
@@ -402,7 +406,8 @@ def offline_response(messages: list[dict], facts: dict | None,
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
-        return " ".join(analysis["decision"]["reasons"]) + " These are chart-rule observations, not an event forecast."
+        from ..astro.prediction import interpretation_reading
+        return interpretation_reading(analysis, facts)
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])

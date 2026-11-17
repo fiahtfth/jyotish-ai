@@ -117,3 +117,13 @@ def test_past_intervals_are_never_issued_as_future_forecasts():
     a=analysis()
     a['analysis_window']={'start':'2000-01-01','end':'2000-12-31'}
     assert Q.decide('Will I get a promotion?',a)['disposition'] == 'abstain'
+
+
+def test_broad_questions_keep_helpful_readings_and_hide_internal_scoring():
+    a=analysis();a['decision']=Q.decide('How is my career?',a)
+    reply='Your chart highlights professional responsibilities. What is happening in your current role?'
+    assert Q.constrain_reply(reply,a) == reply
+    b,f=make_facts()
+    fallback=Q.constrain_reply("The question needs one observable event before it can be scored.",a,f)
+    assert 'key part of this chart' in fallback
+    assert 'scored' not in fallback and 'reliable event forecast' not in fallback

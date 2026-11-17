@@ -112,18 +112,46 @@ def scorecard(rows, today=None):
             "note": "Self-reported outcomes; not independently validated. Partial and unanswered outcomes are not hits. Legacy and same-day/retrospective forecasts are excluded."}
 
 
-def constrain_reply(reply, analysis):
-    """Do not display an LLM event promise after an abstention, or novel dates."""
+def interpretation_reading(analysis, facts=None):
+    """A useful computed-chart answer when no event forecast is being issued."""
+    from .constants import DOMAINS
+    domain = analysis.get("domain", "direction")
+    focus = {
+        "career": "Are you mainly thinking about your current role, a job change, or starting a business?",
+        "relationship": "Are you asking about an existing relationship or finding a partner?",
+        "education": "Which course, qualification, or exam are you considering?",
+        "relocation": "Where are you considering moving, and what is prompting the move?",
+        "finance": "Is your main concern income, savings, or a specific financial commitment?",
+        "direction": "Which part of your life feels most uncertain right now?",
+        "health": "What would you like to understand about the chart's traditional health indicators?",
+    }
+    lines = []
+    if facts:
+        house = DOMAINS.get(domain, DOMAINS["direction"])["houses"][0]
+        houses = facts.get("houses", {})
+        lord = (houses.get(house) or houses.get(str(house)) or {}).get("lord")
+        rec = facts.get("planets", {}).get(lord)
+        if rec:
+            lines.append(f"For {domain}, a key part of this chart is {lord}, which rules house {house} "
+                         f"and is placed in {rec['sign_name']} in house {rec['house']}.")
+    if not lines:
+        lines.append(f"We can explore {domain} through the chart's planetary placements and current periods.")
+    lines.append(focus.get(domain, focus["direction"]))
+    return " ".join(lines)
+
+
+def constrain_reply(reply, analysis, facts=None):
+    """Preserve helpful readings while rejecting unsupported event promises."""
     decision = analysis["decision"]
-    if decision["disposition"] == "abstain":
-        return "The chart methods can still be discussed as interpretations; they do not establish this event or its date."
-    allowed = {decision["window"]["start"], decision["window"]["end"]}
-    for w in analysis.get("precision", {}).get("timing_windows", []):
-        allowed.update((w["start"], w["end"]))
+    abstained = decision["disposition"] == "abstain"
+    allowed = set() if abstained else {decision["window"]["start"], decision["window"]["end"]}
+    if not abstained:
+        for w in analysis.get("precision", {}).get("timing_windows", []):
+            allowed.update((w["start"], w["end"]))
     dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", reply))
     certainty = re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", reply, re.I)
-    # Date prose is deliberately restricted to the server's ISO windows.
     prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\b", reply, re.I)
-    if dates - allowed or certainty or prose_date:
-        return "The computed rules are supportive, with no guarantee. The recorded event and interval above define what will be evaluated."
+    internal = re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", reply, re.I)
+    if dates - allowed or certainty or prose_date or internal:
+        return interpretation_reading(analysis, facts)
     return reply

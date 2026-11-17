@@ -1742,4 +1742,5 @@ def test_general_domain_analysis_is_recorded_as_abstention():
     r=client.get('/api/predictions',headers=h).json()
     assert r['scorecard']['abstentions'] == 1
     assert r['scorecard']['scored'] == 0
-    assert "can't make a reliable event forecast" in out[-1]['content']
+    assert "can't make a reliable event forecast" not in out[-1]['content']
+    assert "key part of this chart" in out[-1]['content']

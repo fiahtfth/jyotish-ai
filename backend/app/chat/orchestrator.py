@@ -121,13 +121,6 @@ def _save_prediction(db, profile, question, analysis, reply):
                                   "birth_input": asdict(birth_input(profile))})))
 
 
-def _decision_note(analysis):
-    decision = analysis["decision"]
-    if decision["disposition"] == "abstain":
-        return "I can't make a reliable event forecast here. " + " ".join(decision["reasons"])
-    return ("The rules indicate this event, without guaranteeing it. The recorded outcome to check is: "
-            + decision["success_criteria"])
-
 
 def chart_facts(profile: BirthProfile) -> dict:
     if profile.chart_json:
@@ -1213,7 +1206,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         vr = verify.verify_response(reply, facts, {"running_dasha": run})
         if not vr["ok"]:
             reply = verify.repair_response(reply, vr["issues"])
-        reply = _decision_note(analysis) + "\n\n" + _apply_disclaimer(prediction.constrain_reply(reply, analysis), domain)
+        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts), domain)
         _add_msg(db, conv, "assistant", reply,
                  meta={"analysis": analysis, "provider": provider})
         _save_prediction(db, profile, text, analysis, reply)
@@ -1242,7 +1235,7 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         reply = verify.repair_response(reply, vr["issues"])
     reply = _apply_disclaimer(reply, domain)
     if analysis:
-        reply = _decision_note(analysis) + "\n\n" + _apply_disclaimer(prediction.constrain_reply(reply, analysis), domain)
+        reply = _apply_disclaimer(prediction.constrain_reply(reply, analysis, facts), domain)
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, **({"analysis": analysis} if analysis else {})})

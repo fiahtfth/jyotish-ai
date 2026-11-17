@@ -232,18 +232,7 @@ export default function Chat() {
                     <NorthChart varga={vargaOf(m)} chart={chartOf(m.meta.chart)} />
                   </div>
                 )}
-                {m.kind === "analysis" && (
-                  <div className="mt-2 text-xs text-muted border-t border-bord pt-2">
-                    {t("convergence")}: {m.meta.convergence || "—"} · {t("support")} {m.meta.support_count ?? "—"}
-                  </div>
-                )}
-                {m.meta?.analysis?.convergence && (
-                  <div className="mt-2 text-xs text-muted border-t border-bord pt-2">
-                    <span className="inline-block rounded-md bg-accentsoft text-accent px-2 py-0.5 font-medium">
-                      {m.meta.analysis.convergence}
-                    </span>
-                  </div>
-                )}
+
               </div>
             </div>
           );

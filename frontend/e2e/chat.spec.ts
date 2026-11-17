@@ -129,3 +129,14 @@ test("scorecard separates abstentions and records an event outside the window as
   await expect(dialog.locator("span").filter({ hasText: /^Outside the window$/ })).toBeVisible();
   expect(reported).toBe(true);
 });
+
+
+test("chat hides rule-agreement footers while preserving the reading", async ({ page }) => {
+  await page.route("**/api/chat/history", route => route.fulfill({ json: [{
+    ...message(1, "assistant", "Your chart highlights professional responsibilities."),
+    meta: { analysis: { convergence: "2/4 Mixed or limited rule agreement" } },
+  }] }));
+  await page.goto("/chat");
+  await expect(page.getByText("Your chart highlights professional responsibilities.", { exact: true })).toBeVisible();
+  await expect(page.getByText("2/4 Mixed or limited rule agreement", { exact: true })).toHaveCount(0);
+});
