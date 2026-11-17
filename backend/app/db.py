@@ -3,6 +3,7 @@ from sqlalchemy import (
     Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, create_engine,
     inspect, text,
 )
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 from .config import settings
@@ -114,9 +115,16 @@ def init_db():
 
 def _migrate_token_nonce():
     cols = {c["name"] for c in inspect(engine_db).get_columns("users")}
+    if "token_nonce" not in cols:
+        try:
+            with engine_db.begin() as conn:
+                conn.execute(text("ALTER TABLE users ADD COLUMN token_nonce VARCHAR"))
+        except DBAPIError:
+            # another worker may have added it concurrently
+            cols = {c["name"] for c in inspect(engine_db).get_columns("users")}
+            if "token_nonce" not in cols:
+                raise
     with engine_db.begin() as conn:
-        if "token_nonce" not in cols:
-            conn.execute(text("ALTER TABLE users ADD COLUMN token_nonce VARCHAR"))
         ids = conn.execute(text("SELECT id FROM users WHERE token_nonce IS NULL")).scalars().all()
         for uid in ids:
             conn.execute(text("UPDATE users SET token_nonce = :n WHERE id = :i"),
