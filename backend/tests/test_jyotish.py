@@ -459,10 +459,9 @@ def test_generate_does_not_retry_on_401_but_retries_5xx(monkeypatch):
     assert (text, provider) == ("ok", "groq")
 
 
-def test_engine_cache_is_lru_capped(monkeypatch):
+def test_engine_cache_is_lru_capped():
     from app.astro import engine as E
-    monkeypatch.setattr(E, "CACHE_MAX", 2)
-    eng = E.ChartEngine()
+    eng = E.ChartEngine(cache_size=2)
 
     def b(minute):
         return BirthInput(name="x", year=1990, month=5, day=15, hour=6, minute=minute,
@@ -604,6 +603,57 @@ def test_jwt_secret_dev_flag_ignored_in_prod(monkeypatch):
     monkeypatch.setenv("JYOTISH_ENV", "prod")
     with pytest.raises(RuntimeError, match="not set"):
         _load_jwt_secret()
+
+
+# ---------- resource-exhaustion guards ----------
+
+def test_profile_material_changes_rate_limited(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "PROFILE_RATE_LIMIT_PER_MIN", 3)
+    h = register_and_profile()  # 1st material change
+    codes = []
+    for minute in range(16, 22):
+        r = client.put("/api/profile", json={**ARJUN, "minute": minute}, headers=h)
+        codes.append(r.status_code)
+    assert codes[:2] == [200, 200]
+    assert all(c == 429 for c in codes[2:])
+    # non-material re-submits are still accepted
+    prof = client.get("/api/profile", headers=h).json()
+    same = {**ARJUN, "minute": prof["minute"]}
+    assert client.put("/api/profile", json=same, headers=h).status_code == 200
+
+
+def test_profile_create_and_edit_by_id_share_rate_limit(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "PROFILE_RATE_LIMIT_PER_MIN", 3)
+    h = register_and_profile()  # 1st material change
+    mum = client.post("/api/profiles", json=MUM, headers=h)
+    assert mum.status_code == 200
+    r = client.put(f"/api/profiles/{mum.json()['id']}", json=dict(MUM, minute=1), headers=h)
+    assert r.status_code == 200
+    assert client.post("/api/profiles", json=dict(MUM, display_name="X"), headers=h).status_code == 429
+    r = client.put(f"/api/profiles/{mum.json()['id']}", json=dict(MUM, minute=2), headers=h)
+    assert r.status_code == 429
+
+
+def test_geo_search_rate_limited(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "GEO_RATE_LIMIT_PER_MIN", 2)
+    h = register_and_profile()
+    codes = [client.get("/api/geo/search", params={"q": "Chen"}, headers=h).status_code
+             for _ in range(4)]
+    assert codes == [200, 200, 429, 429]
+
+
+def test_engine_cache_is_bounded():
+    from app.astro.engine import ChartEngine
+    e = ChartEngine(cache_size=3)
+    for minute in range(5):
+        e.compute(BirthInput(name="x", year=1990, month=5, day=15, hour=6,
+                             minute=minute, second=0, lat=13.0827, lon=80.2707,
+                             tz_offset=5.5, place_label="Chennai",
+                             birth_time_precision="exact"))
+    assert len(e._cache) == 3
 
 
 # ---------- 5. Consent, data export, privacy ----------
