@@ -2,10 +2,10 @@
 
 Past-event checks and birth-time refinement are optional parts of a reading.
 """
-import calendar
 from dataclasses import asdict
 import json
 import re
+import time
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
@@ -20,6 +20,7 @@ from ..db import (
     _utcnow,
 )
 from ..llm import providers
+from . import language
 
 RECTIFY_STATES = ("rectify", "rectify_collect", "rectify_domain", "rectify_confirm")
 
@@ -74,7 +75,7 @@ def _calibrated(profile: BirthProfile) -> bool:
     return profile.calibration_state == "calibrated"
 
 
-def _precision_analysis(facts, birth, domain, start, end, profile, question=""):
+def _precision_analysis(facts, birth, domain, start, end, profile, question="", event=None):
     """Run the four pillars plus the precision filters; returns
     (analysis_for_llm, precision_result). The merged analysis keeps every
     key the existing consumers read (pillars/convergence/evidence) and
@@ -101,7 +102,7 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question=""):
     analysis["sensitivity"] = sensitivity.evaluate(facts, birth, domain, start, end, _calibrated(profile), base=prec)
     if not analysis["sensitivity"]["timing_stable"]:
         analysis["precision"]["timing_windows"] = []
-    analysis["decision"] = prediction.decide(question, analysis)
+    analysis["decision"] = prediction.decide(question, analysis, event)
     return analysis, prec
 
 
@@ -140,21 +141,15 @@ def _add_msg(db: Session, conv: Conversation, role: str, content: str,
 
 
 DOMAIN_KEYWORDS = {
-    "career": ["job", "career", "promotion", "work", "business", "profession", "salary", "boss", "interview", "transfer"],
-    "education": ["study", "studies", "exam", "education", "degree", "college", "course", "learn"],
-    "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love", "spouse", "engagement"],
+    "career": ["job", "career", "promotion", "work", "business", "profession", "salary", "boss", "interview", "transfer", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work"],
+    "education": ["study", "studies", "exam", "education", "degree", "college", "course", "learn", "admission", "padhai", "पढ़ाई"],
+    "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love", "spouse", "engagement", "tie the knot", "dating", "shaadi", "शादी"],
     "relocation": ["move", "relocate", "relocating", "abroad", "foreign", "city", "house shift", "settle"],
     "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest"],
     "direction": ["direction", "purpose", "path in life", "meaning"],
     "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical"],
 }
 
-# an explicit request to SEE a chart — bare mentions of "chart" don't count
-CHART_PAT = re.compile(
-    r"(navamsa|navamsha|dasamsa|dashamsha|saptamsa|chaturvimshamsa|shashtiamsa|"
-    r"hora\s+chart|d-?\d{1,2}\s+chart|kundli|birth chart|rasi chart|natal chart|"
-    r"show\s+(me\s+)?(my\s+)?(d\d+|chart|kundli)|see\s+my\s+(d\d+|chart|kundli))", re.I)
-GREET_PAT = re.compile(r"^\s*(hi|hello|hey|namaste|good (morning|evening|afternoon)|hare krishna)\b", re.I)
 # panchang: the day's limbs — factual almanac, not a prediction
 PANCHANG_PAT = re.compile(
     r"\b(panchang|panchanga|"
@@ -235,29 +230,19 @@ def _conversation_history(conv: Conversation) -> list[dict]:
             for m in conv.messages[max(0, end - 16):end] if m.role in ("user", "assistant")]
 
 
-def _target_window(text: str) -> tuple[date, date]:
-    """Parse a future window from the question, default next 12 months."""
-    t = text.lower()
-    today = date.today()
-    m = re.search(r"\b(20\d\d)\b", t)
-    if m:
-        y = int(m.group(1))
-        if "first half" in t or "early" in t:
-            return date(y, 1, 1), date(y, 6, 30)
-        if "second half" in t or "late" in t or "end of" in t:
-            return date(y, 7, 1), date(y, 12, 31)
-        return date(y, 1, 1), date(y, 12, 31)
-    if "next year" in t:
-        return date(today.year + 1, 1, 1), date(today.year + 1, 12, 31)
-    if "this year" in t:
-        return date(today.year, 1, 1), date(today.year, 12, 31)
-    if "next month" in t:
-        nm = today.replace(day=28)
-        nm = (nm.fromordinal(nm.toordinal() + 7)).replace(day=1)
-        end = nm.replace(day=calendar.monthrange(nm.year, nm.month)[1])
-        return nm, end
-    end = today.fromordinal(today.toordinal() + 365)
-    return today, end
+def _previous_reading(conv, profile):
+    # A structured explanation or an outcome prompt can follow the reading.
+    # Other intervening replies start their own conversational context.
+    for m in reversed(conv.messages):
+        if m.role != "assistant":
+            continue
+        meta = json.loads(m.meta_json or "{}")
+        if m.kind == "analysis" or meta.get("followup_id"):
+            continue
+        if meta.get("fingerprint", profile.calc_fingerprint) != profile.calc_fingerprint:
+            break
+        return meta
+    return {}
 
 
 def _today_at(birth: BirthInput) -> date:
@@ -588,7 +573,8 @@ def _classify_answer(text: str) -> str | None:
     t = _norm_reply(text)
     if t in ANSWER_MAP:
         return ANSWER_MAP[t]
-    if _QUESTIONISH.search(t) or len(t) >= 60:
+    if _QUESTIONISH.search(t) or len(t) >= 60 or (
+            detect_domain(t) and re.search(r"\b(?:actually|instead|let.s discuss|i meant|talk about)\b", t)):
         return None
     # word-boundary matching, longest keys first — substring matching once
     # misread "...future now" as the answer "no"
@@ -623,7 +609,7 @@ def _calibration_turn(db, conv, profile, facts, text, on_delta):
         return
 
     # chart requests are factual — answer them without losing the pending check
-    if ev and conv.state == "cal_ask" and CHART_PAT.search(text.lower()) and detect_varga(text.lower()):
+    if ev and conv.state == "cal_ask" and language.show_chart(text, detect_varga(text)):
         varga = detect_varga(text.lower()) or "D1"
         data = facts["vargas"].get(varga)
         if data:
@@ -1069,8 +1055,9 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
         _add_msg(db, conv, "assistant", reading_note(profile), meta=_notice_meta(profile))
 
     # chart request — always allowed
-    if CHART_PAT.search(t) and ("show" in t or "chart" in t or "kundli" in t or "see" in t or detect_varga(t)):
-        varga = detect_varga(t) or "D1"
+    varga = detect_varga(t)
+    if language.show_chart(text, varga):
+        varga = varga or "D1"
         data = facts["vargas"].get(varga)
         if not data:
             _add_msg(db, conv, "assistant", f"I couldn't compute the {varga} chart for this birth data.")
@@ -1088,12 +1075,16 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
 
     wants_report = bool(REPORT_PAT.search(t))
     wants_timing = bool(TIMING_PAT.search(t))
+    if re.search(r"when (?:should|shall) i", t) and detect_domain(t) and panchang.detect_activity(t) == "general":
+        wants_timing = False
     if (re.fullmatch(r"\s*(why|why is that|tell me why|explain( that)?|details|"
                      r"(show me( the)? )?(reasoning|evidence|calculation)|how do you know)[?.! ]*", t)
             and len(conv.messages) >= 2):
         for m in reversed(conv.messages[:-1]):
             if m.role == "assistant" and m.meta_json:
                 meta = json.loads(m.meta_json)
+                if m.kind == "analysis" or meta.get("followup_id"):
+                    continue
                 if "analysis" in meta:
                     a = meta["analysis"]
                     pillar_line = ", ".join(
@@ -1132,9 +1123,8 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                     _add_msg(db, conv, "assistant", "\n".join(parts),
                              kind="analysis", meta=meta)
                     return conv.messages[-2:]
+                break  # Evidence from an older, unrelated reading does not answer this question.
         # Without a computed trail, answer conversationally using the history.
-
-    domain = detect_domain(text)
 
     # report — computed chart + 12-month outlook, deterministic text.
     # Domain outlooks are abstaining "general outlook" verdicts, not
@@ -1170,25 +1160,112 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                  kind="timing", meta={"timing": sug})
         return conv.messages[-2:]
 
-    # Both specific forecasts and general domain questions use the same analysis.
-    if domain:
-        start, end = _target_window(text)
-        analysis, _prec = _precision_analysis(facts, birth, domain, start, end, profile, question=text)
-    else:
-        analysis = None
-    run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
+    return _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta)
+
+
+def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
+    t = text.lower()
     history = _conversation_history(conv)
+    prior = _previous_reading(conv, profile)
+    previous = prior.get("analysis", {})
+    old_window = previous.get("analysis_window", {})
+    dates = prior.get("requested_window") or ([old_window["start"], old_window["end"]] if old_window else None)
+    prior_window = tuple(date.fromisoformat(d) for d in dates) if dates else None
+    focus = language.focus_text(text)
+    domain = detect_domain(focus)
+    today = _today_at(birth)
+    try:
+        period = language.requested_window(focus, today, prior_window)
+    except ValueError:
+        _add_msg(db, conv, "assistant", "Which period would you like me to read? You can give a month and year.",
+                 meta={"pending_domain": domain or previous.get("domain"),
+                       "pending_event": prediction.event_spec(focus, domain) or (
+                           previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
+        return conv.messages[-2:]
+
+    event = prediction.event_spec(focus, domain)
+    # A bare event label can answer a previous question, e.g. "an offer".
+    if not domain and previous.get("domain"):
+        event = prediction.event_spec(focus, previous["domain"])
+        if event and not re.search(r"\b(?:can you offer|move on|offer advice)\b", focus, re.I):
+            domain = previous["domain"]
+        else:
+            event = None
+
+    references_reading = bool(re.search(
+        r"\b(and if|in that case|what does (?:this|that|it)|tell me more|go on|and my|"
+        r"elaborate|same (?:period|time)|what then|what do you mean|my current (?:role|company)|please continue|"
+        r"explain (?:it|that|this)|how so|aur batao|(?:it|that|this) (?:happen|happening|likely)|"
+        r"likely is (?:it|that)|within (?:my|the) same (?:team|company))\b", t))
+    references_reading = references_reading or bool(re.fullmatch(r"(why|explain|yes please|go ahead|and then|and me|and why)[.?! ]*", t))
+    factual = bool(re.search(r"\b(moon|sun|mars|mercury|venus|jupiter|saturn|rahu|ketu|lagna|"
+                             r"ascendant|dasha|nakshatra|rashi|chart|kundli)\b", t))
+    routing_seconds = 0
+    social = re.fullmatch(r"(hi|hello|hey|namaste|thanks|thank you|ok|okay)[.! ]*", t)
+    unclear_topic = not domain and not (previous and (period or references_reading))
+    possible_event = domain and not event and re.search(r"\b(will|might|chance|likely|could i)\b", t)
+    if (unclear_topic or possible_event) and not (varga or factual or social):
+        routing_started = time.monotonic()
+        topic = providers.conversation_topic(history, allow_external=_external_ok(profile))
+        routing_seconds = time.monotonic() - routing_started
+        if topic == "continue":
+            references_reading = True
+        elif topic in DOMAIN_KEYWORDS:
+            domain = domain or topic
+        else:
+            for candidate, _, event_type, definition in prediction.EVENTS:
+                if topic == event_type and domain in (None, candidate):
+                    domain = candidate
+                    event = {"event_type": event_type, "definition": definition}
+                    break
+
+    continuing = bool(period or references_reading)
+    if not domain and continuing and not factual and not varga:
+        domain = previous.get("domain") or prior.get("pending_domain")
+        if not event and domain == prior.get("pending_domain"):
+            event = prior.get("pending_event")
+    prior_chart = prior.get("varga")
+    chart_domain = {"D10": "career", "D9": "relationship", "D24": "education"}.get(prior_chart)
+    if not varga and (continuing or t.startswith("what about")) and (not domain or domain == chart_domain):
+        varga = prior_chart
+        if varga and period and not domain:
+            domain = chart_domain
+    selected = language.chart_details(facts, varga, text) if varga else None
+    if varga and not selected:
+        _add_msg(db, conv, "assistant", f"The {varga} chart is unavailable for these birth details.")
+        return conv.messages[-2:]
+    if period and not domain and not selected and not factual:
+        _add_msg(db, conv, "assistant",
+                 f"What would you like to explore for {language.window_label(period)}?",
+                 meta={"requested_window": [d.isoformat() for d in period]})
+        return conv.messages[-2:]
+    same_topic = domain and domain == previous.get("domain")
+    if not event and same_topic and continuing and not re.search(r"\b(?:instead|actually|not|generally)\b", t):
+        event = previous.get("decision", {}).get("event")
+    keep_period = same_topic or references_reading or (not previous and prior.get("requested_window"))
+    window = period or (prior_window if keep_period else None) or (today, today + timedelta(days=365))
+    analysis = None
+    if domain and (not selected or event or period):
+        analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=focus, event=event)
+        analysis["period_requested"] = bool(period or (keep_period and (
+            previous.get("period_requested") or (not previous and prior_window))))
+    if selected:
+        facts = {**facts, "selected_chart": selected}
+    run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
     periods = "/".join("/".join(period["lords"]) for period in run[:2])
     reply, provider = providers.generate(
         history, facts=facts, analysis=analysis,
         context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
-                      f"Current Vimshottari: {periods}."),
-        allow_external=_external_ok(profile), on_delta=None if analysis else on_delta)
+                      f"Current Vimshottari: {periods}. Use the resolved event and analysis window when supplied. "
+                      "Name the period when timing was requested. Answer using the selected divisional chart when present."),
+        allow_external=_external_ok(profile), on_delta=None if analysis else on_delta, routing_seconds=routing_seconds)
     reply = _apply_disclaimer(reply, domain)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
-             meta={"provider": provider, **({"analysis": analysis} if analysis else {})})
+             meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
+                   **({"analysis": analysis, "requested_window": [d.isoformat() for d in window]} if analysis else {}),
+                   **({"varga": varga} if selected else {})})
     return conv.messages[-2:]
 
 

@@ -39,8 +39,15 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   const box = page.getByPlaceholder(/ask anything/i);
   await box.fill("Will I change jobs next year?");
   await box.press("Enter");
-  await expect(page.locator(".chat-message").last()).toContainText(/career/i);
+  await expect(page.locator(".chat-message").last()).toContainText(/for a job change in/i);
   await expect(continueReading).toHaveCount(0);
+
+  await box.fill("What about July 2027?");
+  await box.press("Enter");
+  await expect(page.locator(".chat-message").last()).toContainText(/a job change in July 2027/i);
+  await box.fill("Actually, I meant a promotion at my current company.");
+  await box.press("Enter");
+  await expect(page.locator(".chat-message").last()).toContainText(/promotion in July 2027/i);
 
   // Sign out / in
   await page.getByRole("button", { name: /sign out/i }).or(

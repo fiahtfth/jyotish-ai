@@ -252,9 +252,48 @@ PROVIDERS = {"gemini": _gemini, "groq": _groq, "openrouter": _openrouter,
 EXTERNAL_PROVIDERS = ("gemini", "groq", "openrouter")
 
 
+def _available_providers(allow_external):
+    provider = settings.LLM_PROVIDER
+    providers_to_try = []
+    if provider in PROVIDERS:
+        providers_to_try = [provider] + [f for f in ("groq", "openrouter") if f != provider]
+    # skip external providers that have no key or no consent — no point retrying them
+    keys = {"gemini": settings.GEMINI_API_KEY, "groq": settings.GROQ_API_KEY,
+            "openrouter": settings.OPENROUTER_API_KEY}
+    providers_to_try = [p for p in providers_to_try
+                        if p not in keys or (keys[p] and settings.LLM_EXTERNAL_CONSENT)]
+    if not allow_external:
+        providers_to_try = [p for p in providers_to_try if p not in EXTERNAL_PROVIDERS]
+    return providers_to_try
+
+
+def conversation_topic(messages, *, allow_external):
+    """Use recent messages to select a known topic. Only a validated label
+    can be passed back to the calculation engine."""
+    from ..astro.prediction import EVENTS
+    from ..astro.constants import DOMAINS
+    choices = set(DOMAINS) | {event for _, _, event, _ in EVENTS} | {"continue", "general"}
+    candidates = _available_providers(allow_external)
+    if not candidates or not _llm_slots.acquire(blocking=False):
+        return None
+    prompt = ("Classify the LAST user message in its conversational context, including corrections, "
+              "indirect wording, and Hindi/Hinglish. Reply with just one label from: "
+              + ", ".join(sorted(choices)) + ". Select an event only if the user asks about that "
+              "specific outcome. Use continue for a reference to the previous reading, general for "
+              "social chat, factual questions, or an unrelated or unclear request.")
+    try:
+        response = PROVIDERS[candidates[0]](prompt, messages[-6:], timeout=min(3, settings.LLM_TURN_DEADLINE_SECONDS / 4))
+        label = response.strip().lower()
+        return label if label in choices else None
+    except Exception:
+        return None
+    finally:
+        _llm_slots.release()
+
+
 def generate(messages: list[dict], facts: dict | None = None,
              analysis: dict | None = None, context_note: str = "",
-             allow_external: bool = True, on_delta=None) -> tuple[str, str]:
+             allow_external: bool = True, on_delta=None, routing_seconds=0) -> tuple[str, str]:
     """Return (reply, provider_used). Falls back through Groq/OpenRouter to 'offline'.
 
     `on_delta(text)` (optional) enables streaming: chunks are pushed as they
@@ -273,16 +312,7 @@ def generate(messages: list[dict], facts: dict | None = None,
         system += "\n\nCONTEXT: " + context_note
 
     provider = settings.LLM_PROVIDER
-    providers_to_try = []
-    if provider in PROVIDERS:
-        providers_to_try = [provider] + [f for f in ("groq", "openrouter") if f != provider]
-    # skip external providers that have no key or no consent — no point retrying them
-    keys = {"gemini": settings.GEMINI_API_KEY, "groq": settings.GROQ_API_KEY,
-            "openrouter": settings.OPENROUTER_API_KEY}
-    providers_to_try = [p for p in providers_to_try
-                        if p not in keys or (keys[p] and settings.LLM_EXTERNAL_CONSENT)]
-    if not allow_external:
-        providers_to_try = [p for p in providers_to_try if p not in EXTERNAL_PROVIDERS]
+    providers_to_try = _available_providers(allow_external)
     emitted = 0
 
     def _emit(chunk: str):
@@ -313,7 +343,7 @@ def generate(messages: list[dict], facts: dict | None = None,
     if not _llm_slots.acquire(blocking=False):
         return _offline()
     try:
-        deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS
+        deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS - routing_seconds
         for index, p in enumerate(providers_to_try):
             # Reserve time for each remaining provider. A primary read timeout
             # must not consume the entire turn and silently bypass healthy backups.
@@ -384,6 +414,9 @@ def _facts_brief(facts: dict) -> str:
                  f"yogakaraka: {func['yogakaraka']}; maraka: {', '.join(func['maraka_lords'])}")
     jk = facts["jaimini"]["karakas"]
     lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    if facts.get("selected_chart"):
+        lines.append("Selected divisional chart (houses counted from its own ascendant): " +
+                     json.dumps(facts["selected_chart"], ensure_ascii=False))
     return "\n".join(lines)
 
 
@@ -393,11 +426,25 @@ def offline_response(messages: list[dict], facts: dict | None,
                      analysis: dict | None, context_note: str = "") -> str:
     """Deterministic responder built purely on computed facts + analysis."""
     user_msg = messages[-1]["content"].lower() if messages else ""
+    selected = (facts or {}).get("selected_chart")
+    chart_note = ""
+    if selected:
+        planet = selected["focus"]
+        placement = selected["placements"][planet]
+        chart_note = (f"In the {selected['name']} chart, {planet} is in {placement['sign']} "
+                      f"in house {placement['house']}. ")
+        if selected["name"] == "D10" and planet == "Sun":
+            chart_note += ("In a career reading the Sun represents authority. I would read this "
+                           "placement as a theme about how you take responsibility at work.")
+        elif planet == "Lagna":
+            chart_note += "This is the ascendant, the starting point for counting houses in this chart."
+        if analysis is None:
+            return chart_note.strip()
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
         from ..astro.prediction import interpretation_reading
-        return interpretation_reading(analysis, facts, messages)
+        return (chart_note + " " + interpretation_reading(analysis, facts, messages)).strip()
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])
@@ -413,30 +460,28 @@ def offline_response(messages: list[dict], facts: dict | None,
         lead = f"The indications for {dom} are weak in that window — I wouldn't lean on it heavily."
     bridge = ""
     if evidence:
-        short = [e for e in evidence if "rules" not in e.lower()][:2]
+        short = [e for e in evidence if not any(marker in e for marker in ("rules", "=", "error:"))][:1]
         if short:
             bridge = " " + short[0].split(": ", 1)[-1].rstrip(".") + "."
     prec = analysis.get("precision") or {}
     extras = ""
-    if prec.get("confirmation") in ("Both confirmation methods support", "Hidden friction"):
-        extras += f" The secondary methods give this a '{prec['confirmation'].lower()}' reading."
     if prec.get("timing_windows"):
         w = prec["timing_windows"][0]
-        extras += (" The weeks where the traditional indicators concentrate most are "
-                   f"{w['start']} to {w['end']}.")
+        extras += (" The strongest timing indications fall between "
+                   f"{w['start']} and {w['end']}.")
     if prec.get("magnitude"):
         extras += f" The strength picture suggests something {prec['magnitude']} in scale."
-    tail = " Want me to go deeper into any part of this?"
-    if dom == "health":
-        tail = (" One honest word — these are chart indications, not medical "
-                "diagnoses. For anything real, do see a doctor.") + tail
-    return lead + bridge + extras + tail
+    if analysis.get("decision", {}).get("event"):
+        from ..astro.prediction import reading_subject
+        lead = (reading_subject(analysis) + ", the traditional indicators support this possibility. "
+                "The exact outcome remains uncertain.")
+    return (chart_note + " " + lead + bridge + extras).strip()
 
 
 def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
-    if re.search(r"\b(hi|hello|hey|namaste)\b", user_msg):
+    if re.fullmatch(r"\s*(hi|hello|hey|namaste)[!. ]*", user_msg):
         return "Namaste. I'm listening — what's on your mind?"
-    if "thank" in user_msg:
+    if re.fullmatch(r"\s*(thanks|thank you)( so much)?[!. ]*", user_msg):
         return "Always happy to. What else shall we look at?"
     if facts is not None and ("lagna" in user_msg or "ascendant" in user_msg
                               or "rising" in user_msg):
@@ -448,6 +493,11 @@ def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
         m = facts["planets"]["Moon"]
         return (f"Your Moon is in {m['sign_name']} — {m['nakshatra']['name']} nakshatra, "
                 f"pada {m['nakshatra']['pada']}, in the {m['house']}th house.")
+    if facts:
+        planet = next((name for name in facts["planets"] if re.search(r"\b" + name + r"\b", user_msg, re.I)), None)
+        if planet:
+            placement = facts["planets"][planet]
+            return f"{planet} is in {placement['sign_name']} in house {placement['house']} of the birth chart."
     if facts is not None and "dasha" in user_msg:
         return ("Dasha timing is the backbone of what I read — ask me about a specific "
                 "area (career, marriage, studies) and I'll walk you through what the "
@@ -456,5 +506,5 @@ def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
         lag = facts["lagna"]
         return (f"Your chart is a {lag['sign_name']} lagna chart — the moon sits in "
                 f"{facts['planets']['Moon']['sign_name']}. What would you like to explore?")
-    return ("The built-in responder cannot interpret that question. It can show computed "
-            "chart facts; try 'What is my lagna?', 'Where is my Moon?' or 'Show my birth chart'.")
+    return ("Which part of life would you like to explore? For example, if this is about work, "
+            "tell me whether you have a new role, a promotion, or something else in mind.")

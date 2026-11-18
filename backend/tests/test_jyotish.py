@@ -1693,8 +1693,9 @@ def test_calibration_date_followup_does_not_swallow_questions():
 
 def test_next_month_prediction_window_includes_last_day():
     import calendar
-    from app.chat.orchestrator import _target_window
-    start, end = _target_window('next month')
+    from datetime import date
+    from app.chat.language import requested_window
+    start, end = requested_window('next month', date.today())
     assert start.day == 1
     assert end.day == calendar.monthrange(start.year, start.month)[1]
 
@@ -1826,3 +1827,91 @@ def test_career_followup_keeps_model_answer_instead_of_replaying_intro(monkeypat
     assert first != second and 'Are you mainly thinking' not in second
     assert any(m['content'] == first for m in histories[-1])
     assert histories[-1][-1]['content'] == 'I am considering a job change'
+
+
+def test_conversational_correction_uses_new_event_and_same_month_over_stream():
+    h = register_and_profile()
+    _open_calibrated(h)
+    turns = [
+        ("Will I change jobs?", "job_change"),
+        ("What about July 2027?", "job_change"),
+        ("Actually, I meant a promotion at my current company.", "promotion"),
+    ]
+    for index, (question, event) in enumerate(turns):
+        done = _parse_sse(client.post("/api/chat/stream", json={"text": question}, headers=h))[-1]
+        assert done["type"] == "done"
+        reply = done["messages"][-1]
+        analysis = reply["meta"]["analysis"]
+        assert analysis["decision"]["event"]["event_type"] == event
+        if index:
+            assert analysis["analysis_window"] == {"start": "2027-07-01", "end": "2027-07-31"}
+            assert "July 2027" in reply["content"]
+        assert "try sending" not in reply["content"].lower()
+    records = client.get("/api/predictions", headers=h).json()["predictions"]
+    record = next(r for r in records if r["question"] == turns[-1][0])
+    assert record["event_type"] == "promotion" and record["window_end"] == "2027-07-31"
+    assert "promotion" in reply["content"].lower()
+    assert "analysis" not in send("Where is my Saturn?", h)[-1]["meta"]
+    assert "analysis" not in send("What about October 2028?", h)[-1]["meta"]
+    changed = send("Marriage", h)[-1]["meta"]["analysis"]
+    assert changed["domain"] == "relationship" and changed["analysis_window"]["end"] == "2028-10-31"
+
+
+def test_chart_display_interpretation_and_followup_use_computed_varga(monkeypatch):
+    from app.llm import providers
+    h = register_and_profile()
+    send("Show my D10 chart", h)
+    answer = send("What does my D10 chart suggest about leadership?", h)[-1]
+    assert answer["kind"] == "text" and "D10" in answer["content"] and "authority" in answer["content"]
+    chart = client.get("/api/chart/D10", headers=h).json()["chart"]
+    from app.astro.constants import SIGN_NAMES
+    assert SIGN_NAMES[chart["Sun"]["sign"]] in answer["content"]
+    captured = []
+    def generate(messages, **kwargs):
+        captured.append(kwargs["facts"]["selected_chart"])
+        return "Interpreting the selected chart.", "gemini"
+    monkeypatch.setattr(providers, "generate", generate)
+    send("What does that mean?", h)
+    assert captured[-1]["name"] == "D10"
+    assert captured[-1]["placements"]["Sun"]["house"] == (chart["Sun"]["sign"] - chart["Lagna"]["sign"]) % 12 + 1
+
+
+def test_semantic_topic_accepts_only_known_labels_and_respects_consent(monkeypatch):
+    from app.llm import providers as p
+    monkeypatch.setattr(p.settings, "LLM_PROVIDER", "gemini")
+    monkeypatch.setattr(p.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(p.settings, "GEMINI_API_KEY", "test")
+    labels = iter(["promotion", "invented event"])
+    seen = []
+    def classify(system, messages, timeout):
+        seen.append(messages[-1]["content"])
+        return next(labels)
+    monkeypatch.setitem(p.PROVIDERS, "gemini", classify)
+    msg = [{"role": "user", "content": "Mere kaam mein tarakki ka koi yog hai?"}]
+    assert p.conversation_topic(msg, allow_external=False) is None and not seen
+    h = register_and_profile()
+    _open_calibrated(h)
+    monkeypatch.setattr(p, "generate", lambda *a, **k: ("Synthetic reading", "gemini"))
+    analysis = send(msg[0]["content"], h)[-1]["meta"]["analysis"]
+    assert analysis["decision"]["event"]["event_type"] == "promotion"
+    assert p.conversation_topic(msg, allow_external=True) is None
+    assert seen == [msg[0]["content"]] * 2
+
+
+def test_conversational_periods_are_calendar_intervals():
+    from datetime import date
+    from app.chat.language import requested_window
+    today = date(2026, 11, 18)
+    prior = (date(2028, 1, 1), date(2028, 12, 31))
+    assert requested_window("And February?", today, prior) == (date(2028, 2, 1), date(2028, 2, 29))
+    assert requested_window("next July", today) == (date(2027, 7, 1), date(2027, 7, 31))
+    assert requested_window("15 July 2027", today) == (date(2027, 7, 15),) * 2
+    assert requested_window("जुलाई 2027", today) == (date(2027, 7, 1), date(2027, 7, 31))
+    assert requested_window("may I change jobs?", today) is None
+    assert requested_window("And the month after that?", today, (date(2027, 12, 1), date(2027, 12, 31))) == (
+        date(2028, 1, 1), date(2028, 1, 31))
+    assert requested_window("June 15 to July 2, 2027", today) == (date(2027, 6, 15), date(2027, 7, 2))
+    with pytest.raises(ValueError):
+        requested_window("31 February 2027", today)
+    with pytest.raises(ValueError):
+        requested_window("2027-01-01 to 2099-12-31", today)

@@ -35,7 +35,9 @@ Sun at sidereal Taurus ingress on 15-May-1990, Moon in Uttara Ashadha, Rahu in C
 
 Every LLM reply is checked before display: planet-in-sign, planet-in-house, running-dasha claims vs computed values; % probabilities banned; precise degree assertions banned (degrees are locked facts); classical citations rejected unless retrieved from a knowledge source. Offending sentences are stripped, else a fallback reply is substituted.
 
-## Prediction protocol 2026-11-17.1
+## Prediction protocol 2026-11-18.1
+
+A follow-up may refine the event or period from the preceding reading. Each new record freezes the resolved event and calculation window alongside the user's original wording. Earlier records retain the protocol used when they were issued.
 
 - Pillar counts describe **rule agreement**, not measured probabilities. Strong agreement requires at least three supports, no conflicting pillar and no unavailable core method.
 - Solar-return years use PyJHora's one-based convention (`years=age+1`). Annual charts overlapping the requested interval are included even if their start precedes it. Seven classical-planet year-lord candidates are evaluated at the actual return, avoiding PyJHora 5's node/index bugs. This repairs the additional annual-trigger filter; the core Tajika pillar remains explicitly simplified Muntha progression.

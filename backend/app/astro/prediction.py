@@ -3,15 +3,15 @@ import re
 import math
 from datetime import date
 
-VERSION = "2026-11-17.1"
+VERSION = "2026-11-18.1"
 # These definitions are prospective scoring targets, not generated event promises.
 EVENTS = [
-    ("career", r"promot", "promotion", "A formal promotion to a higher role takes effect"),
-    ("career", r"job change|change.{0,15}job|switch.{0,15}job", "job_change", "A new job with a different employer begins"),
+    ("career", r"promot|move up (?:at work|the ladder)|higher role|पदोन्नति", "promotion", "A formal promotion to a higher role takes effect"),
+    ("career", r"job (?:change|switch)|chang(?:e|ing).{0,15}jobs?|switch.{0,15}(?:jobs?|companies|employers?)|different employer|(?:new role|new job) at (?:a different|another) company|leave my (?:job|company)|naukri badal", "job_change", "A new job with a different employer begins"),
     ("career", r"offer|get.{0,12}job|find.{0,12}job", "job_offer", "A formal job offer is received"),
     ("career", r"start.{0,15}business|launch.{0,15}business", "business_launch", "The stated business starts trading"),
     ("relationship", r"engag", "engagement", "A mutually agreed formal engagement occurs"),
-    ("relationship", r"marry|marriage|wedding|married", "marriage", "A marriage ceremony or legal marriage occurs"),
+    ("relationship", r"marry|marriage|wedding|married|tie the knot|shaadi|shadi|शादी", "marriage", "A marriage ceremony or legal marriage occurs"),
     ("education", r"pass.{0,20}exam", "exam_pass", "An official passing result for the stated exam is received"),
     ("education", r"admission|admitted", "admission", "A formal admission offer is received"),
     ("education", r"graduat|complete.{0,15}degree", "graduation", "The stated qualification is officially completed"),
@@ -26,8 +26,8 @@ def event_spec(question, domain):
     return None
 
 
-def decide(question, analysis):
-    spec = event_spec(question, analysis["domain"])
+def decide(question, analysis, event=None):
+    spec = event or event_spec(question, analysis["domain"])
     reasons = []
     prec, sens = analysis.get("precision", {}), analysis.get("sensitivity", {})
     if date.fromisoformat(analysis["analysis_window"]["end"]) < date.today():
@@ -112,6 +112,18 @@ def scorecard(rows, today=None):
             "note": "Self-reported outcomes; not independently validated. Partial and unanswered outcomes are not hits. Legacy and same-day/retrospective forecasts are excluded."}
 
 
+def reading_subject(analysis):
+    from ..chat.language import window_label
+    window = analysis["analysis_window"]
+    period = window_label((date.fromisoformat(window["start"]), date.fromisoformat(window["end"])))
+    event = (analysis.get("decision", {}).get("event") or {}).get("event_type")
+    labels = {"job_change": "a job change", "job_offer": "a job offer", "promotion": "a promotion",
+              "business_launch": "starting a business", "exam_pass": "passing the exam",
+              "relocation": "a move", "engagement": "an engagement"}
+    subject = labels.get(event, (event or analysis["domain"]).replace("_", " "))
+    return f"For {subject} in {period}"
+
+
 def interpretation_reading(analysis, facts=None, messages=None):
     """A useful computed-chart answer when no event forecast is being issued."""
     from .constants import DOMAINS
@@ -139,11 +151,26 @@ def interpretation_reading(analysis, facts=None, messages=None):
     history = [m["content"] for m in (messages or []) if m["role"] == "assistant"]
     user_text = next((m["content"].lower() for m in reversed(messages or []) if m["role"] == "user"), "")
     question = focus.get(domain, focus["direction"])
-    # Offline mode must not pretend to understand a follow-up by replaying its intro.
-    if any(question in old or (lines[0] in old) for old in history):
-        return ("I couldn't get a fresh AI response for this follow-up. "
-                "The chart details above still apply, but repeating them would not answer your question. "
-                "Please try sending your question again.")
+    repeated = any(question in old or lines[0] in old for old in history)
+    decision = analysis.get("decision", {})
+    if repeated or decision.get("event") or analysis.get("period_requested"):
+        subject = reading_subject(analysis)
+        signals = analysis.get("support_count", 0)
+        conflicts = analysis.get("conflict_count", 0)
+        if conflicts:
+            reading = "The timing methods give mixed indications for this period."
+        elif signals:
+            reading = f"Some indicators support activity in {domain} during this period."
+        else:
+            reading = f"The timing methods show little support for a change in {domain} during this period."
+        if decision.get("event"):
+            reading += " The chart gives no clear basis for saying that event will happen then."
+        evidence = analysis.get("calculation_evidence_ids") or []
+        details = [item.split(": ", 1)[-1].rstrip(".") for item in evidence if "error:" not in item]
+        detail = next((item for item in details if all(item not in old for old in history)), "")
+        if detail:
+            reading += " " + detail[0].upper() + detail[1:] + "."
+        return f"{subject}, {reading[0].lower()}{reading[1:]}"
     if domain == "career":
         if "business" in user_text:
             question = "What kind of business are you considering, and are you starting it alongside your current work?"

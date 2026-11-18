@@ -152,4 +152,4 @@ def test_offline_followup_does_not_repeat_previous_reading_or_question():
     second=Q.interpretation_reading(a,f,history)
     assert first != second
     assert 'Are you mainly thinking' not in second
-    assert 'fresh AI response' in second
+    assert 'support activity in career' in second and '2027' in second
