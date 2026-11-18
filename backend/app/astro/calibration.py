@@ -6,7 +6,6 @@ window derived from real dasha periods. Predictions are locked before
 feedback; matching rules are objective and partial matches never count
 as full confirmations.
 """
-import calendar
 from datetime import date, datetime, timedelta
 import re
 import itertools
@@ -16,7 +15,7 @@ from . import pillars
 from .engine import BirthInput
 
 _id_counter = itertools.count(1)
-OPENING_EVENT_PREFIX = "recent_calibration_v2_"
+OPENING_EVENT_PREFIX = "recent_calibration_v3_"
 
 # Presentation templates per domain (no Barnum wording; window is real).
 # {poss}/{subj}/{were}/{memory} adapt to the person: "you" for the account
@@ -56,14 +55,9 @@ def _age_today(birth: BirthInput) -> float:
 
 
 def _past_ad_windows(facts, birth: BirthInput) -> list[dict]:
-    """Recent, memorable checks within five years and the relevant life stage."""
+    """Past windows across the person's life, bounded to dates after birth."""
     today = date.today()
-    born = date(birth.year, birth.month, birth.day)
-    year = born.year + 15
-    life_stage = born.replace(year=year, day=min(born.day, calendar.monthrange(year, born.month)[1]))
-    life_stage += timedelta(days=1)
-    recent = today.replace(year=today.year - 5, day=min(today.day, 28))
-    earliest = max(life_stage, recent)
+    earliest = date(birth.year, birth.month, birth.day)
     latest = today - timedelta(days=45)
     out = []
     for p in facts["vimshottari"]["periods"]:
@@ -101,7 +95,7 @@ def pick_domains(age: float) -> list[str]:
 
 def generate_statements(facts, birth: BirthInput, fingerprint: str,
                         subject: str | None = None) -> list[dict]:
-    """Rank recent domain windows, select up to three broad indications, and lock
+    """Rank past domain windows, select up to three broad indications, and lock
     three falsifiable statements. Everything needed to evaluate a claim is
     stored *before* any feedback arrives."""
     words = subject_words(subject)
@@ -110,8 +104,8 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
     windows = _past_ad_windows(facts, birth)
     statements = []
     candidates = []
-    minimum_ages = {"career": 16, "education": 15, "relationship": 18,
-                    "relocation": 15, "finance": 18, "direction": 15}
+    minimum_ages = {"career": 16, "education": 8, "relationship": 18,
+                    "relocation": 10, "finance": 18, "direction": 12}
     for domain in domains:
         for window in windows:
             age_at_start = (window["start"] - date(birth.year, birth.month, birth.day)).days / 365.25

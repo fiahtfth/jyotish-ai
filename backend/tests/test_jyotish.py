@@ -1918,7 +1918,7 @@ def test_conversational_periods_are_calendar_intervals():
 
 
 
-def test_initial_checks_use_recent_adult_periods_and_score_displayed_window(monkeypatch):
+def test_initial_checks_score_the_displayed_window(monkeypatch):
     from datetime import date
     birth, facts = make_facts()
     scored = []
@@ -1932,8 +1932,7 @@ def test_initial_checks_use_recent_adult_periods_and_score_displayed_window(monk
     for statement in statements:
         start = date.fromisoformat(statement["predicted_window"]["start"] + "-01")
         end_month = date.fromisoformat(statement["predicted_window"]["end"] + "-01")
-        assert start.year >= date.today().year - 5
-        assert start > date(birth.year + 15, birth.month, birth.day)
+        assert start >= date(birth.year, birth.month, birth.day)
         assert (end_month - start).days <= 397
         assert any(a == start and b.year == end_month.year and b.month == end_month.month for a, b in scored)
 
@@ -1953,7 +1952,7 @@ def test_untouched_old_checks_refresh_on_history_load():
 
 
 
-def test_opening_windows_start_after_fifteenth_birthday(monkeypatch):
+def test_opening_windows_allow_older_periods_and_periods_before_age_fifteen(monkeypatch):
     from datetime import date
     from dataclasses import replace
     class Today(date):
@@ -1967,10 +1966,10 @@ def test_opening_windows_start_after_fifteenth_birthday(monkeypatch):
         {"lords": ["Sun", "Moon"], "start": "2021-01-01", "end": "2026-01-01"}]}}
     windows = C._past_ad_windows(facts, birth)
     assert windows
-    assert min(w["start"] for w in windows) == date(2024, 6, 1)
-    assert all(w["start"] > date(2024, 5, 15) for w in windows)
+    assert min(w["start"] for w in windows) == date(2021, 1, 1)
+    assert any(w["start"] < date(2024, 5, 15) for w in windows)
     birth = replace(birth, year=2012)
-    assert C._past_ad_windows(facts, birth) == []
+    assert C._past_ad_windows(facts, birth)
 
 
 

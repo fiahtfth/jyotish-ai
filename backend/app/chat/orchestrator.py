@@ -801,7 +801,7 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
     text = reading_note(profile)
     if not profile.milestone_search_done:
         text += (f" Could you share two or three significant events from {_words(profile)['poss']} life "
-                 "after age 15, with an approximate year? A month helps if you remember it. "
+                 "with an approximate year? A month helps if you remember it. "
                  "You can send them together or one at a time, or continue with the reading.")
     else:
         text += " What would you like to explore?"
