@@ -16,12 +16,13 @@ def _load_jwt_secret() -> str:
     """Return the JWT signing secret, refusing to start with a missing or weak one.
 
     Set JYOTISH_DEV_INSECURE_JWT=true for local dev to get a random per-process
-    secret instead (tokens are invalidated on restart).
+    secret instead (tokens are invalidated on restart); ignored when JYOTISH_ENV=prod.
     """
     value = os.environ.get("JYOTISH_JWT_SECRET", "")
     if len(value.encode()) >= MIN_JWT_SECRET_BYTES:
         return value
-    if os.environ.get("JYOTISH_DEV_INSECURE_JWT", "").lower() == "true":
+    dev_flag = os.environ.get("JYOTISH_DEV_INSECURE_JWT", "").lower() == "true"
+    if dev_flag and os.environ.get("JYOTISH_ENV") != "prod":
         logging.getLogger(__name__).warning(
             "JYOTISH_JWT_SECRET missing or too short; using a random ephemeral dev secret")
         return secrets.token_urlsafe(MIN_JWT_SECRET_BYTES)
@@ -70,6 +71,20 @@ class Settings:
 
     # Rate limiting (chat messages per minute per user)
     CHAT_RATE_LIMIT_PER_MIN: int = int(os.environ.get("JYOTISH_CHAT_RATE_LIMIT", "30"))
+
+    # Email (password reset / verification). With no SMTP host the mailer only
+    # logs (dev mode). PUBLIC_BASE_URL is used to build links in emails.
+    SMTP_HOST: str = os.environ.get("JYOTISH_SMTP_HOST", "")
+    SMTP_PORT: int = int(os.environ.get("JYOTISH_SMTP_PORT", "587"))
+    SMTP_USER: str = os.environ.get("JYOTISH_SMTP_USER", "")
+    SMTP_PASSWORD: str = os.environ.get("JYOTISH_SMTP_PASSWORD", "")
+    SMTP_FROM: str = os.environ.get("JYOTISH_SMTP_FROM", "Jyotish AI <noreply@localhost>")
+    PUBLIC_BASE_URL: str = os.environ.get("JYOTISH_PUBLIC_BASE_URL", "http://localhost:3000").rstrip("/")
+
+    # Owner accounts (comma-separated emails) allowed to read /api/admin/*
+    ADMIN_EMAILS: frozenset = frozenset(
+        e.strip().lower() for e in os.environ.get("JYOTISH_ADMIN_EMAILS", "").split(",")
+        if e.strip())
 
     FRONTEND_ORIGIN: str = os.environ.get("JYOTISH_FRONTEND_ORIGIN", "http://localhost:3000")
 

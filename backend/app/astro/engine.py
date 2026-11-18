@@ -277,10 +277,11 @@ class ChartEngine:
         # ashtakavarga SAV
         try:
             h2p = utils.get_house_planet_list_from_planet_positions(rasi)
-            bav, sav, _ = ashtakavarga.get_ashtaka_varga(h2p)
+            bav, sav, prav = ashtakavarga.get_ashtaka_varga(h2p)
         except Exception:
             sav = None
             bav = None
+            prav = None
 
         # shadbala (planetary strength) + bhava chalit houses — best effort
         try:
@@ -323,6 +324,7 @@ class ChartEngine:
             "jaimini": jaimini,
             "sarvastakavarga": sav,
             "binnashtakavarga": bav,
+            "prastara_ashtakavarga": prav,
             "shadbala": shad,
             "bhava": bhava,
             "vargas": vargas,

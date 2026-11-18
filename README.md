@@ -15,9 +15,9 @@ A conversational Vedic astrology app — **not** a chart dashboard. You sign in,
 - **Frontend** `frontend/`: Next.js 16 (App Router), Tailwind 4, React 19.
 - **LLM providers** (`JYOTISH_LLM_PROVIDER`):
   - `offline` — built-in deterministic responder from locked facts; zero keys, zero cost.
-  - `gemini` — Gemini API free tier. Requires `GEMINI_API_KEY` and `JYOTISH_LLM_EXTERNAL_CONSENT=true` (explicit opt-in before any data leaves the machine).
+  - `gemini` — Gemini API free tier. Requires `GEMINI_API_KEY` and `JYOTISH_LLM_EXTERNAL_CONSENT=true`. External AI replies are included in the required service terms accepted at signup; existing accounts accept the updated terms once before chatting.
   - `groq` — Groq OpenAI-compatible API. Requires `GROQ_API_KEY` and the same external-consent flag; also used automatically as a fallback when configured and available.
-  - `openrouter` — OpenRouter API, restricted to free models (`openrouter/free` or any `:free` model id). Requires `OPENROUTER_API_KEY` and external consent; used as a later fallback when configured.
+  - `openrouter` — OpenRouter API, restricted to free models (`openrouter/free` or any `:free` model id). Requires `OPENROUTER_API_KEY` and server-level external processing enabled; used as a later fallback when configured.
   - `ollama` / `lmstudio` — local servers (`JYOTISH_OLLAMA_URL`, `JYOTISH_LMSTUDIO_URL`).
 
 ## Run it
@@ -40,7 +40,7 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 |---|---|---|
 | `JYOTISH_DATABASE_URL` | sqlite at `backend/jyotish.db` | swap to `postgresql+psycopg2://…` for Postgres |
 | `JYOTISH_JWT_SECRET` | — (required) | random value, at least 32 bytes; the app refuses to start without it |
-| `JYOTISH_DEV_INSECURE_JWT` | `false` | local dev only: `true` uses a random per-process secret when `JYOTISH_JWT_SECRET` is missing |
+| `JYOTISH_DEV_INSECURE_JWT` | `false` | local dev only: `true` uses a random per-process secret when `JYOTISH_JWT_SECRET` is missing; ignored when `JYOTISH_ENV=prod` |
 | `JYOTISH_LLM_PROVIDER` | `offline` | `offline` \| `gemini` \| `groq` \| `openrouter` \| `ollama` \| `lmstudio` |
 | `GEMINI_API_KEY` | — | free key from ai.google.dev |
 | `JYOTISH_GEMINI_MODEL` | `gemini-3.5-flash` | note: 2.0/2.5 flash are retired for new API users |
@@ -81,3 +81,7 @@ The app ships as **one service**: `frontend/` builds to a static export committe
 - Rectification flow is a placeholder (asks for better birth data; does not run a full rectification algorithm).
 - Google sign-in not implemented (email/password only).
 - Gemini free tier can return transient 503s; the app retries, then falls back to Groq and OpenRouter free models when their keys are set, and finally to the offline responder.
+
+### AI replies and service terms
+
+Signup has one required agreement linking `/terms` and `/privacy` and explaining that chart summaries and recent messages are processed by Gemini, Groq or OpenRouter. There is no separate AI checkbox or chat-menu toggle. The API requires `terms_accepted: true` at registration and records the terms version and acceptance timestamp. Existing accounts must accept the current terms once via `POST /api/auth/terms` before sending chat messages. Migration 0008 leaves their historical consent records unchanged and does not fabricate acceptance. Account exports include the acceptance record. The server-level `JYOTISH_LLM_EXTERNAL_CONSENT` switch and provider credentials still control provider availability.

@@ -21,12 +21,22 @@ if not os.path.exists(_CSV):
         os.path.dirname(__file__), "..", "..",
         ".venv-libs", "jhora-data", "geonames_places_5k.csv",
     )
+
+def _package_csv() -> str:
+    """Locate the CSV inside the installed jhora package (any Python version)."""
+    import importlib.util
+    spec = importlib.util.find_spec("jhora")
+    if spec and spec.submodule_search_locations:
+        for loc in spec.submodule_search_locations:
+            cand = os.path.join(loc, "data", "geonames_places_5k.csv")
+            if os.path.exists(cand):
+                return cand
+    return ""
+
+
 # Fall back to the installed package location
-_PKG_CSV = os.path.join(
-    os.path.expanduser("~"), ".local/lib/python3.10/site-packages/jhora/data/geonames_places_5k.csv"
-)
 if not os.path.exists(_CSV):
-    _CSV = _PKG_CSV
+    _CSV = _package_csv() or _CSV
 
 _tf = TimezoneFinder()
 _places: list[dict] = []
