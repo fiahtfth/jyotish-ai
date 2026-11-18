@@ -16,29 +16,24 @@ from . import pillars
 from .engine import BirthInput
 
 _id_counter = itertools.count(1)
+OPENING_EVENT_PREFIX = "recent_calibration_v2_"
 
 # Presentation templates per domain (no Barnum wording; window is real).
 # {poss}/{subj}/{were}/{memory} adapt to the person: "you" for the account
 # owner, otherwise the family member's name (see subject_words).
 _STATEMENTS = {
-    "career": "Between {start} and {end}, I see a possible development connected with {poss} "
-              "career or professional direction — beginning a new role, a noticeable shift in "
-              "responsibility, or changing {poss} work path. Did something like that happen?",
-    "education": "Between {start} and {end}, the chart suggests a significant period for "
-                 "education or learning — starting or completing a course of study, an important "
-                 "exam, or a turn in what {subj} {were} learning. Does that ring true?",
-    "relationship": "Between {start} and {end}, there are indications around an important "
-                    "relationship or family milestone — a significant commitment, marriage, or a "
-                    "major change in a close relationship. Did anything like that take place?",
-    "relocation": "Between {start} and {end}, {poss} chart points to a possible change of residence "
-                  "or a significant move — a new city, a new home, or time spent away from where "
-                  "{subj} lived before. Did that happen around then?",
-    "finance": "Between {start} and {end}, the chart shows a window that could relate to money or "
-               "responsibility — a first income, a significant financial step, or taking on "
-               "dependents. Does that match {memory}?",
-    "direction": "Between {start} and {end}, there is a suggestion of a meaningful change in "
-                 "personal direction — a turning point in what {subj} wanted or how {subj} lived. "
-                 "Did that occur for {obj}?",
+    "career": "Between {start} and {end}, {poss} work responsibilities or professional direction "
+              "appear to have changed. Does that fit {memory}?",
+    "education": "Between {start} and {end}, education or learning appears to have been an important "
+                 "focus for {obj}. Does that fit {memory}?",
+    "relationship": "Between {start} and {end}, a close relationship or family commitment "
+                    "appears to have become an important focus for {obj}. Does that fit {memory}?",
+    "relocation": "Between {start} and {end}, {poss} living situation appears to have changed. "
+                  "Does that fit {memory}?",
+    "finance": "Between {start} and {end}, {poss} financial responsibilities appear to have changed. "
+               "Does that fit {memory}?",
+    "direction": "Between {start} and {end}, {poss} personal goals appear to have changed. "
+                 "Does that fit {memory}?",
 }
 
 
@@ -101,12 +96,12 @@ def _fmt_range(s: date, e: date) -> str:
 def pick_domains(age: float) -> list[str]:
     ok = [d for d in _DOMAIN_ORDER
           if age >= K.MIN_CALIBRATION_AGE_FOR_DOMAIN.get(d, 0)]
-    return ok[:3]
+    return ok
 
 
 def generate_statements(facts, birth: BirthInput, fingerprint: str,
                         subject: str | None = None) -> list[dict]:
-    """Choose 3 domains, find each one's best-supported past window, and lock
+    """Rank recent domain windows, select up to three broad indications, and lock
     three falsifiable statements. Everything needed to evaluate a claim is
     stored *before* any feedback arrives."""
     words = subject_words(subject)
@@ -114,37 +109,33 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
     domains = pick_domains(age)
     windows = _past_ad_windows(facts, birth)
     statements = []
-    used_spans = []
-
-    # minimum age (at window end) for a domain window to be testable
-    WINDOW_MIN_AGE = {"career": 16, "education": 8, "relationship": 18,
-                      "relocation": 10, "finance": 18, "direction": 12}
-
-    for i, domain in enumerate(domains):
-        best = None
-        min_age = WINDOW_MIN_AGE.get(domain, 10)
-        for w in windows:
-            # avoid overlapping windows across the three questions
-            if any(not (w["end"] < u0 or w["start"] > u1) for u0, u1 in used_spans):
+    candidates = []
+    minimum_ages = {"career": 16, "education": 15, "relationship": 18,
+                    "relocation": 15, "finance": 18, "direction": 15}
+    for domain in domains:
+        for window in windows:
+            age_at_start = (window["start"] - date(birth.year, birth.month, birth.day)).days / 365.25
+            if age_at_start < minimum_ages[domain]:
                 continue
-            age_at_start = (w["start"] - date(birth.year, birth.month, birth.day)).days / 365.25
-            if age_at_start < min_age:
-                continue
-            ev = pillars.evaluate(facts, birth, domain, w["start"], w["end"])
-            score = ev["support_count"] - ev["conflict_count"]
-            if best is None or score > best[1]:
-                best = (w, score, ev)
-        if best is None:
+            evidence = pillars.evaluate(facts, birth, domain, window["start"], window["end"])
+            score = evidence["support_count"] - evidence["conflict_count"]
+            candidates.append((score, window["end"], domain, window, evidence))
+    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
+    used_domains, used_spans = set(), []
+    for score, _, domain, w, ev in candidates:
+        if domain in used_domains or any(
+                w["start"] <= end and start <= w["end"] for start, end in used_spans):
             continue
-        w, score, ev = best
+        used_domains.add(domain)
         used_spans.append((w["start"], w["end"]))
+        i = len(statements)
         sm, em = _fmt_range(w["start"], w["end"])
         weak = score <= 0
         text = _STATEMENTS[domain].format(start=sm, end=em, **words)
         if weak:
             text = ("The timing indicators here are weaker, so treat this one as tentative. " + text)
         statements.append({
-            "event_id": f"recent_calibration_{i+1:03d}",
+            "event_id": f"{OPENING_EVENT_PREFIX}{i+1:03d}",
             "domain": domain,
             "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, **words),
             "chat_text": text,
@@ -155,6 +146,8 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
             "pillars": ev["pillars"], "convergence": ev["convergence"],
             "calculation_fingerprint": fingerprint,
         })
+        if len(statements) == 3:
+            break
     return statements
 
 
@@ -177,12 +170,12 @@ def calibration_outcome(statements: list[dict]) -> dict:
     confirmed = sum(1 for s in statements if s.get("user_feedback") == "confirmed")
     partial = sum(1 for s in statements if s.get("user_feedback") == "partial")
     unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
-    if confirmed == 3:
+    if len(statements) >= 2 and confirmed == len(statements):
         state = "calibrated"
-        label = "All three periods matched the events you remember."
+        label = "These indications fit the events you remember."
     elif confirmed == 2:
         state = "partial"
-        label = "Two of the three periods matched. I'll treat dates in the reading as approximate."
+        label = "Some indications fit the events you remember. I'll treat dates in the reading as approximate."
     else:
         state = "uncalibrated"
         label = "The past-event checks didn't establish a consistent match."

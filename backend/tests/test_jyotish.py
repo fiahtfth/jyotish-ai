@@ -1971,3 +1971,35 @@ def test_opening_windows_start_after_fifteenth_birthday(monkeypatch):
     assert all(w["start"] > date(2024, 5, 15) for w in windows)
     birth = replace(birth, year=2012)
     assert C._past_ad_windows(facts, birth) == []
+
+
+
+def test_opening_ranks_all_domains_and_accepts_two_indications(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    windows = [{"start": date(2023, 1, 1), "end": date(2023, 12, 31)},
+               {"start": date(2024, 1, 1), "end": date(2024, 12, 31)}]
+    monkeypatch.setattr(C, "_past_ad_windows", lambda *args: windows)
+    def evaluate(facts, birth, domain, start, end):
+        score = 4 if domain == "relationship" and start.year == 2024 else 1
+        return {"support_count": score, "conflict_count": 0, "traditional_rule_ids": [],
+                "pillars": {}, "convergence": "support"}
+    monkeypatch.setattr(C.pillars, "evaluate", evaluate)
+    statements = C.generate_statements(facts, birth, "fp")
+    assert len(statements) == 2
+    assert statements[0]["domain"] == "relationship"
+    outcome = C.calibration_outcome([{"user_feedback": "confirmed"}] * 2)
+    assert outcome["state"] == "calibrated"
+    assert "three" not in outcome["label"]
+
+
+def test_mismatched_indications_invite_past_events_directly():
+    h = register_and_profile()
+    for _ in range(3):
+        replies = send("No, that didn't happen", h)
+    invitation = replies[-1]
+    assert "two or three significant events" in invitation["content"]
+    assert "approximate year" in invitation["content"]
+    reply = send("started my first job in July 2012", h)
+    assert "career, July 2012" in reply[-1]["content"]
+    assert "Continue with the reading" in reply[-1]["meta"]["options"]

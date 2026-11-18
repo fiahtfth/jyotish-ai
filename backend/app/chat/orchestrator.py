@@ -394,7 +394,7 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
     prefix = ""
     if first:
         poss = _words(ev.profile)["poss"]
-        prefix = (f"I can compare three periods in {poss} chart with events you remember. "
+        prefix = (f"I’ll start with a few broad indications from {poss} chart and see what fits. "
                   "You can answer the checks or ask your own question at any point.\n\n")
     _add_msg(db, conv, "assistant", prefix + ev.chat_text,
              kind="options",
@@ -453,13 +453,13 @@ def _mark_insufficient(db: Session, conv: Conversation, profile: BirthProfile):
 def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
     """Seed calibration events when none exist or the fingerprint changed
     (e.g. after the birth details were edited mid-conversation).
-    Returns the number of events available; fewer than 3 means the chart
+    Returns the number of events available; fewer than 2 means the chart
     cannot be calibrated (no events are stored in that case)."""
     existing = (db.query(CalibrationEvent)
                 .filter(CalibrationEvent.profile_id == profile.id).all())
     if existing and existing[0].calc_fingerprint == profile.calc_fingerprint:
         if any(e.user_feedback for e in existing) or all(
-                e.event_id.startswith("recent_calibration_") for e in existing):
+                e.event_id.startswith(calibration.OPENING_EVENT_PREFIX) for e in existing):
             return len(existing)
     for e in existing:
         db.delete(e)
@@ -467,7 +467,7 @@ def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
     stmts = calibration.generate_statements(facts, birth_input(profile),
                                             profile.calc_fingerprint,
                                             subject=_subject(profile))
-    if len(stmts) < 3:
+    if len(stmts) < 2:
         return 0
     for s in stmts:
         db.add(CalibrationEvent(
@@ -485,12 +485,12 @@ def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
 
 def refresh_initial_checks(db, conv, profile):
     """Refresh an untouched opening questionnaire after the date policy changes."""
-    if conv.state != "cal_ask" or conv.pending_event_id.startswith("recent_calibration_"):
+    if conv.state != "cal_ask" or conv.pending_event_id.startswith(calibration.OPENING_EVENT_PREFIX):
         return
     events = db.query(CalibrationEvent).filter(CalibrationEvent.profile_id == profile.id).all()
     if not events or any(e.user_feedback for e in events):
         return
-    if _ensure_events(db, profile, chart_facts(profile)) < 3:
+    if _ensure_events(db, profile, chart_facts(profile)) < 2:
         _mark_insufficient(db, conv, profile)
     else:
         _ask_event(db, conv, _next_pending_event(db, conv, profile), first=True)
@@ -533,7 +533,7 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
 
     n = _ensure_events(db, profile, facts)
     ev = _next_pending_event(db, conv, profile)
-    if n < 3:
+    if n < 2:
         _mark_insufficient(db, conv, profile)
     elif ev is None:
         conv.state = "open"
@@ -674,7 +674,7 @@ def _calibration_turn(db, conv, profile, facts, text, on_delta):
         return
 
     if conv.state == "cal_intro":
-        if _ensure_events(db, profile, facts) < 3:
+        if _ensure_events(db, profile, facts) < 2:
             _mark_insufficient(db, conv, profile)
             return
         ev = _next_pending_event(db, conv, profile)
@@ -781,7 +781,7 @@ def _start_fresh_checks(db: Session, conv: Conversation, profile: BirthProfile):
     conv.pending_event_id = ""
     profile.calibration_state = "pending"
     profile.predictions_allowed = False
-    if _ensure_events(db, profile, chart_facts(profile)) < 3:
+    if _ensure_events(db, profile, chart_facts(profile)) < 2:
         _mark_insufficient(db, conv, profile)
         return
     ev = _next_pending_event(db, conv, profile)
@@ -798,11 +798,18 @@ def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
     if not profile.milestone_search_done:
         options.append(SHARE_EVENTS)
     options.append(EDIT_BIRTH)
-    return reading_note(profile) + " What would you like to explore?", options
+    text = reading_note(profile)
+    if not profile.milestone_search_done:
+        text += (f" Could you share two or three significant events from {_words(profile)['poss']} life "
+                 "after age 15, with an approximate year? A month helps if you remember it. "
+                 "You can send them together or one at a time, or continue with the reading.")
+    else:
+        text += " What would you like to explore?"
+    return text, options
 
 
 def _enter_rectify(db: Session, conv: Conversation, profile: BirthProfile):
-    conv.state = "rectify"
+    conv.state = "rectify" if profile.milestone_search_done else "rectify_collect"
     conv.pending_event_id = ""
     text, options = rectify_invite(profile)
     _add_msg(db, conv, "assistant", text, kind="options",
