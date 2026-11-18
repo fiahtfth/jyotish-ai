@@ -6,6 +6,7 @@ window derived from real dasha periods. Predictions are locked before
 feedback; matching rules are objective and partial matches never count
 as full confirmations.
 """
+import calendar
 from datetime import date, datetime, timedelta
 import re
 import itertools
@@ -63,8 +64,9 @@ def _past_ad_windows(facts, birth: BirthInput) -> list[dict]:
     """Recent, memorable checks within five years and the relevant life stage."""
     today = date.today()
     born = date(birth.year, birth.month, birth.day)
-    minimum_age = 18 if _age_today(birth) >= 18 else 12
-    life_stage = born.replace(year=born.year + minimum_age, day=min(born.day, 28))
+    year = born.year + 15
+    life_stage = born.replace(year=year, day=min(born.day, calendar.monthrange(year, born.month)[1]))
+    life_stage += timedelta(days=1)
     recent = today.replace(year=today.year - 5, day=min(today.day, 28))
     earliest = max(life_stage, recent)
     latest = today - timedelta(days=45)
