@@ -34,3 +34,27 @@ Sun at sidereal Taurus ingress on 15-May-1990, Moon in Uttara Ashadha, Rahu in C
 ## Verifier
 
 Every LLM reply is checked before display: planet-in-sign, planet-in-house, running-dasha claims vs computed values; % probabilities banned; precise degree assertions banned (degrees are locked facts); classical citations rejected unless retrieved from a knowledge source. Offending sentences are stripped, else a fallback reply is substituted.
+
+## Prediction protocol 2026-11-17.1
+
+- Pillar counts describe **rule agreement**, not measured probabilities. Strong agreement requires at least three supports, no conflicting pillar and no unavailable core method.
+- Solar-return years use PyJHora's one-based convention (`years=age+1`). Annual charts overlapping the requested interval are included even if their start precedes it. Seven classical-planet year-lord candidates are evaluated at the actual return, avoiding PyJHora 5's node/index bugs. This repairs the additional annual-trigger filter; the core Tajika pillar remains explicitly simplified Muntha progression.
+- Confirmation, contributor-level timing, eclipses and annual triggers report calculation failures as unavailable/partial. No result is not equivalent to successful calculation with no indication.
+- Sensitivity checks sample exact time at ±2 minutes, approximate time at ±30/60 minutes, and unknown time at ±60/120 minutes. These are disclosed assumed ranges, not inferred error distributions. Every sample retains its core verdict and timing intervals. Changed/unavailable samples cause abstention; unstable narrow windows are withheld. Finite sampling cannot establish the correct birth time.
+- AI analysis JSON is transmitted whole. Event forecasts are buffered until verification; the final server-authored decision remains authoritative. An abstention cannot be replaced by an AI event promise.
+- Each domain analysis records a frozen versioned snapshot, explicit event definition (when supported), criteria, requested future interval, decisions and final response. Broad outlooks are interpretations and recorded as abstentions. Historical records remain legacy; they are not retroactively assigned predictions.
+- The scorecard excludes legacy and same-day/retrospective issuance from prospective accuracy counts, and evaluates only closed intervals. Partial, uncertain and missing outcomes never count as hits. Out-of-window events are misses. Outcomes are self-reported; event dates entered in the scorecard are checked and retained.
+- Coverage and abstention counts remain visible. Accuracy is not claimed from software tests or three retrospective checks.
+
+### Validation workflow
+
+`backend/scripts/evaluate_predictions.py` accepts an account export or array of prediction records. Select a time cutoff and explicitly held-out profile IDs. Development outcomes must be available before the cutoff and cannot belong to held-out people. Test forecasts must be issued after the cutoff, before the target interval, for held-out people. The report compares the engine with a majority-event baseline learned only from development records of the same domain **and event type**. Missing baseline data is reported, not invented.
+
+```sh
+backend/.venv/bin/python backend/scripts/evaluate_predictions.py private-export.json \
+  --cutoff 2027-01-01 --holdout-profiles 12 18
+```
+
+Do not commit private exports. Synthetic regression fixtures verify evaluation behavior; they are not evidence of prediction accuracy. A real prospective cohort with event-negative observations, complete follow-up, adequate sample size and uncertainty estimates is still required. Future rule changes need a new untouched holdout; fitting weights to this test set is not permitted.
+
+Repeated forecasts for the same profile, event definition and interval are scored once (the earliest record). The API also returns a Wilson interval around the observed hit rate; it describes uncertainty in the self-reported scored subset and does not correct selection bias or prove predictive validity.

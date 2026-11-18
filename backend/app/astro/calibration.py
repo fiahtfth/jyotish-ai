@@ -16,27 +16,40 @@ from .engine import BirthInput
 
 _id_counter = itertools.count(1)
 
-# Presentation templates per domain (no Barnum wording; window is real)
+# Presentation templates per domain (no Barnum wording; window is real).
+# {poss}/{subj}/{were}/{memory} adapt to the person: "you" for the account
+# owner, otherwise the family member's name (see subject_words).
 _STATEMENTS = {
-    "career": "Between {start} and {end}, I see a possible development connected with your "
+    "career": "Between {start} and {end}, I see a possible development connected with {poss} "
               "career or professional direction — beginning a new role, a noticeable shift in "
-              "responsibility, or changing your work path. Did something like that happen?",
+              "responsibility, or changing {poss} work path. Did something like that happen?",
     "education": "Between {start} and {end}, the chart suggests a significant period for "
                  "education or learning — starting or completing a course of study, an important "
-                 "exam, or a turn in what you were learning. Does that ring true?",
+                 "exam, or a turn in what {subj} {were} learning. Does that ring true?",
     "relationship": "Between {start} and {end}, there are indications around an important "
                     "relationship or family milestone — a significant commitment, marriage, or a "
                     "major change in a close relationship. Did anything like that take place?",
-    "relocation": "Between {start} and {end}, your chart points to a possible change of residence "
+    "relocation": "Between {start} and {end}, {poss} chart points to a possible change of residence "
                   "or a significant move — a new city, a new home, or time spent away from where "
-                  "you lived before. Did that happen around then?",
+                  "{subj} lived before. Did that happen around then?",
     "finance": "Between {start} and {end}, the chart shows a window that could relate to money or "
                "responsibility — a first income, a significant financial step, or taking on "
-               "dependents. Does that match your memory?",
+               "dependents. Does that match {memory}?",
     "direction": "Between {start} and {end}, there is a suggestion of a meaningful change in "
-                 "personal direction — a turning point in what you wanted or how you lived. "
-                 "Did that occur for you?",
+                 "personal direction — a turning point in what {subj} wanted or how {subj} lived. "
+                 "Did that occur for {obj}?",
 }
+
+
+def subject_words(name: str | None = None) -> dict:
+    """Wording for the person a chart is about. name=None means the account
+    owner ("you"); otherwise the family member's name."""
+    if not name:
+        return {"subj": "you", "obj": "you", "poss": "your", "were": "were",
+                "memory": "your memory"}
+    poss = name + ("'" if name.endswith("s") else "'s")
+    return {"subj": name, "obj": name, "poss": poss, "were": "was",
+            "memory": f"what you know of {poss} life"}
 
 _DOMAIN_ORDER = ["career", "education", "relocation", "relationship", "finance", "direction"]
 
@@ -90,10 +103,12 @@ def pick_domains(age: float) -> list[str]:
     return ok[:3]
 
 
-def generate_statements(facts, birth: BirthInput, fingerprint: str) -> list[dict]:
+def generate_statements(facts, birth: BirthInput, fingerprint: str,
+                        subject: str | None = None) -> list[dict]:
     """Choose 3 domains, find each one's best-supported past window, and lock
     three falsifiable statements. Everything needed to evaluate a claim is
     stored *before* any feedback arrives."""
+    words = subject_words(subject)
     age = _age_today(birth)
     domains = pick_domains(age)
     windows = _past_ad_windows(facts, birth)
@@ -129,13 +144,13 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str) -> list[dict
             w["end"] = w["start"].fromordinal(w["start"].toordinal() + MAX_WINDOW_DAYS)
         sm, em = _fmt_range(w["start"], w["end"])
         weak = score <= 0
-        text = _STATEMENTS[domain].format(start=sm, end=em)
+        text = _STATEMENTS[domain].format(start=sm, end=em, **words)
         if weak:
             text = ("The timing indicators here are weaker, so treat this one as tentative. " + text)
         statements.append({
             "event_id": f"calibration_{i+1:03d}",
             "domain": domain,
-            "predicted_event": _STATEMENTS[domain].format(start=sm, end=em),
+            "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, **words),
             "chat_text": text,
             "predicted_window": {"start": f"{w['start'].year:04d}-{w['start'].month:02d}",
                                  "end": f"{w['end'].year:04d}-{w['end'].month:02d}"},
@@ -169,16 +184,16 @@ def calibration_outcome(statements: list[dict]) -> dict:
     unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
     if confirmed == 3:
         state = "calibrated"
-        label = "Three retrospective checks matched."
+        label = "All three checks matched — the chart agrees with your past. The birth details hold up well."
         predictions_allowed = True
     elif confirmed == 2:
         state = "partial"
-        label = "Partial calibration — continuing with an uncertainty note."
+        label = "Two of the three matched — good enough to work with; I'll keep a little caution on timing."
         predictions_allowed = True
     else:
         state = "uncalibrated"
-        label = ("The past checks did not line up with the chart. Before going further "
-                 "we should recheck the birth details and calculation settings.")
+        label = ("The chart and your past didn't quite line up, so I'm not going to "
+                 "make predictions from it yet.")
         predictions_allowed = False
     return {"state": state, "label": label, "confirmed": confirmed,
             "partial": partial, "unknown": unknown,
@@ -258,4 +273,61 @@ def try_rectify(birth: BirthInput, stated_facts: dict, events: list,
         return None
     return {"birth": best["birth"], "facts": best["facts"],
             "delta_minutes": best["delta"],
+            "stated_score": stated_score, "best_score": best["score"]}
+
+
+def _milestone_window(m) -> tuple[date, date]:
+    """A month ±2 months, or the whole year when no month was given."""
+    if m.month:
+        start = date(m.year, m.month, 1)
+        s_ord = start.toordinal() - 61
+        e_ord = start.toordinal() + 30 + 61
+        return date.fromordinal(s_ord), date.fromordinal(e_ord)
+    return date(m.year, 1, 1), date(m.year, 12, 31)
+
+
+def _score_milestones(birth: BirthInput, facts: dict, milestones: list) -> float:
+    """Pillar support minus conflict over each reported event's window: a
+    birth time that 'sees' the events the user actually lived scores higher."""
+    total = 0.0
+    for m in milestones:
+        start, end = _milestone_window(m)
+        r = pillars.evaluate(facts, birth, m.domain, start, end)
+        total += r["support_count"] - r["conflict_count"]
+    return total
+
+
+def search_with_milestones(birth: BirthInput, stated_facts: dict, milestones: list,
+                           engine) -> dict | None:
+    """Like try_rectify, but scored against dated life events the user reported
+    (objects with .domain/.year/.month). Same candidate span and the same
+    'clearly better' (+3) margin. Returns None when nothing clearly improves."""
+    usable = [m for m in milestones if m.domain and m.year]
+    if len(usable) < 2:
+        return None
+    span = _RECTIFY_SPAN.get(birth.birth_time_precision, 30)
+    step = max(10, (2 * span) // (_RECTIFY_MAX_CANDIDATES - 1))
+    base = datetime(birth.year, birth.month, birth.day,
+                    birth.hour, birth.minute, birth.second)
+    stated_score = _score_milestones(birth, stated_facts, usable)
+    best = {"score": stated_score, "delta": 0, "birth": birth}
+    for off in range(-span, span + 1, step):
+        if off == 0:
+            continue
+        t = base + timedelta(minutes=off)
+        cand = BirthInput(
+            name=birth.name, year=t.year, month=t.month, day=t.day,
+            hour=t.hour, minute=t.minute, second=t.second,
+            lat=birth.lat, lon=birth.lon, tz_offset=birth.tz_offset,
+            place_label=birth.place_label,
+            birth_time_precision=birth.birth_time_precision)
+        try:
+            s = _score_milestones(cand, engine.compute(cand), usable)
+        except Exception:
+            continue
+        if s > best["score"]:
+            best = {"score": s, "delta": off, "birth": cand}
+    if best["delta"] == 0 or best["score"] < stated_score + 3:
+        return None
+    return {"birth": best["birth"], "delta_minutes": best["delta"],
             "stated_score": stated_score, "best_score": best["score"]}

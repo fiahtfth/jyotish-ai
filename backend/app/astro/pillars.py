@@ -327,10 +327,10 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
     support = sum(1 for v in pillars.values() if v == "support")
     conflict = sum(1 for v in pillars.values() if v == "conflict")
     unavail = sum(1 for v in pillars.values() if v == "unavailable")
-    if support >= 3:
-        label = f"{support}/4 Confirmed"
+    if support >= 3 and conflict == 0 and unavail == 0:
+        label = f"{support}/4 Strong rule agreement"
     else:
-        label = f"{support}/4 Conditional" + (" — weak signal" if support <= 1 else "")
+        label = f"{support}/4 Mixed or limited rule agreement"
     if conflict or unavail:
         label += f" ({conflict} conflicting, {unavail} unavailable)"
     return {
@@ -341,5 +341,5 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
         "convergence": label,
         "calculation_evidence_ids": evidence_ids,
         "traditional_rule_ids": rule_ids,
-        "limitations": limitations,
+        "limitations": limitations + ["Rule agreement is not a measured probability; the methods share chart inputs."],
     }

@@ -19,22 +19,35 @@ from ..config import settings
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PERSONA = """You are Jyotish AI — a warm, perceptive, experienced Vedic astrologer.
-Style rules (non-negotiable):
-- Conversational, concise, human. No bullet-point reports unless asked.
-- Ask at most ONE follow-up question per reply.
-- Never invent planetary positions, dashas, dates, or probabilities — every
-  astro fact you mention must come from the CHART FACTS and ANALYSIS blocks.
-- Never claim to be a human. You may be an AI astrologer with a human voice.
-- Admit ambiguity; do not force optimism or fear.
-- No vague Barnum statements. Tie statements to the actual chart.
-- Do not reveal raw degrees, JSON, tables or 'pillars' unless the user asks
-  for the reasoning.
-- Answer natal questions from the D1 CHART FACTS only — never answer about
-  divisional charts or invent a different lagna unless the user explicitly
-  names a varga.
-- Plain text only: no markdown, no asterisks, no headings.
-- Reply in the user's language (English / Hindi / natural Hinglish).
+SYSTEM_PERSONA = """You are Pandit ji — a senior Vedic astrologer chatting with a client
+on WhatsApp. You have read thousands of charts over decades and speak with the
+ease of someone who has done this all their life.
+
+Voice:
+- Warm, personal, unhurried. Write like real chat — a few short sentences,
+  not essays. No bullet walls, headings or markdown unless the user asks.
+- Talk to them like a client who visits you often — "you", an occasional
+  "ji" where it sits naturally, their name if they've given it.
+  A little Sanskrit/Hindi (muhurta, graha, shubh, namaste) is welcome when
+  it flows naturally. Plain text only.
+- Honest the way a real pundit is: reassuring without flattery, plainspoken
+  when the chart is difficult. No corporate hedging, no legalese, no
+  "as an AI" filler — though you don't hide being an AI astrologer if asked.
+- Read the conversation like a person does. Answer what they actually asked;
+  never repeat a question they've already answered. At most one follow-up
+  question per reply.
+- Reply in the user's language — English, Hindi or natural Hinglish.
+
+The one discipline that matters:
+- Every astrological fact you state — signs, houses, dashas, dates, timings —
+  comes from the CHART FACTS and ANALYSIS blocks below. Those are computed
+  for you; interpret them freely, but never invent positions, periods or
+  numbers. If a fact you want isn't there, say so plainly.
+- When the indicators don't support a clean forecast, say it the pundit's
+  way — honest, gentle, and still useful about the chart's themes and
+  running periods.
+- On health, speak with a pundit's care — the chart shows tendencies;
+  a doctor is the one to see.
 """
 
 
@@ -119,6 +132,131 @@ def _lmstudio(system: str, messages: list[dict], timeout: float = 120) -> str:
     return r.json()["choices"][0]["message"]["content"].strip()
 
 
+# ------------------------------------------------------------ streaming
+# Each stream function pushes text chunks to `on_delta` as they arrive and
+# returns the full text. They share the config/consent gates of the blocking
+# functions above and raise on any failure.
+
+def _require_external(key: str, name: str):
+    if not key:
+        raise RuntimeError(f"{name} not set")
+    if not settings.LLM_EXTERNAL_CONSENT:
+        raise RuntimeError("external LLM consent not granted (set JYOTISH_LLM_EXTERNAL_CONSENT=true)")
+
+
+def _sse_data_lines(r: httpx.Response, timeout: float):
+    """Yield the payload of each `data:` line, enforcing a total time budget
+    (httpx timeouts are per-read, not overall)."""
+    end = time.monotonic() + timeout
+    for line in r.iter_lines():
+        if time.monotonic() > end:
+            raise httpx.ReadTimeout("stream exceeded turn deadline")
+        if line.startswith("data:"):
+            yield line[5:].strip()
+
+
+def _openai_stream(url: str, headers: dict, payload: dict, on_delta, timeout: float) -> str:
+    payload = {**payload, "stream": True}
+    parts: list[str] = []
+    with httpx.stream("POST", url, headers=headers, json=payload, timeout=timeout) as r:
+        r.raise_for_status()
+        for data in _sse_data_lines(r, timeout):
+            if data == "[DONE]":
+                break
+            choices = json.loads(data).get("choices") or []
+            chunk = (choices[0].get("delta") or {}).get("content") if choices else None
+            if chunk:
+                parts.append(chunk)
+                on_delta(chunk)
+    return "".join(parts).strip()
+
+
+def _gemini_stream(system: str, messages: list[dict], on_delta, timeout: float = 45) -> str:
+    _require_external(settings.GEMINI_API_KEY, "GEMINI_API_KEY")
+    contents = [{"role": "user" if m["role"] == "user" else "model",
+                 "parts": [{"text": m["content"]}]} for m in messages]
+    body = {"system_instruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1400,
+                                 "thinkingConfig": {"thinkingBudget": 0}}}
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
+           f"{settings.GEMINI_MODEL}:streamGenerateContent?alt=sse")
+    parts: list[str] = []
+    with httpx.stream("POST", url, json=body, timeout=timeout,
+                      headers={"x-goog-api-key": settings.GEMINI_API_KEY}) as r:
+        r.raise_for_status()
+        for data in _sse_data_lines(r, timeout):
+            cands = json.loads(data).get("candidates") or []
+            for part in ((cands[0].get("content") or {}).get("parts") or []) if cands else []:
+                chunk = part.get("text")
+                if chunk:
+                    parts.append(chunk)
+                    on_delta(chunk)
+    return "".join(parts).strip()
+
+
+def _groq_stream(system: str, messages: list[dict], on_delta, timeout: float = 45) -> str:
+    _require_external(settings.GROQ_API_KEY, "GROQ_API_KEY")
+    payload = {"model": settings.GROQ_MODEL,
+               "messages": [{"role": "system", "content": system}] + messages,
+               "temperature": 0.7, "max_tokens": 1400}
+    if "gpt-oss" in settings.GROQ_MODEL:
+        payload["reasoning_effort"] = "low"
+        payload["reasoning_format"] = "hidden"
+    return _openai_stream("https://api.groq.com/openai/v1/chat/completions",
+                          {"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
+                          payload, on_delta, timeout)
+
+
+def _openrouter_stream(system: str, messages: list[dict], on_delta, timeout: float = 45) -> str:
+    _require_external(settings.OPENROUTER_API_KEY, "OPENROUTER_API_KEY")
+    model = settings.OPENROUTER_MODEL
+    if model != "openrouter/free" and not model.endswith(":free"):
+        raise RuntimeError("OpenRouter fallback is restricted to free models (:free or openrouter/free)")
+    return _openai_stream("https://openrouter.ai/api/v1/chat/completions",
+                          {"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                           "X-OpenRouter-Title": "Jyotish AI"},
+                          {"model": model,
+                           "messages": [{"role": "system", "content": system}] + messages,
+                           "temperature": 0.7, "max_tokens": 1400},
+                          on_delta, timeout)
+
+
+def _lmstudio_stream(system: str, messages: list[dict], on_delta, timeout: float = 120) -> str:
+    return _openai_stream(f"{settings.LMSTUDIO_URL}/chat/completions", {},
+                          {"model": settings.LMSTUDIO_MODEL,
+                           "messages": [{"role": "system", "content": system}] + messages,
+                           "temperature": 0.7, "max_tokens": 600},
+                          on_delta, timeout)
+
+
+def _ollama_stream(system: str, messages: list[dict], on_delta, timeout: float = 120) -> str:
+    prompt = system + "\n\n" + "\n\n".join(
+        f"{'User' if m['role'] == 'user' else 'Astrologer'}: {m['content']}" for m in messages
+    ) + "\n\nAstrologer:"
+    parts: list[str] = []
+    end = time.monotonic() + timeout
+    with httpx.stream("POST", f"{settings.OLLAMA_URL}/api/generate", timeout=timeout,
+                      json={"model": settings.OLLAMA_MODEL, "prompt": prompt,
+                            "stream": True}) as r:
+        r.raise_for_status()
+        for line in r.iter_lines():
+            if time.monotonic() > end:
+                raise httpx.ReadTimeout("stream exceeded turn deadline")
+            if not line.strip():
+                continue
+            chunk = json.loads(line).get("response")
+            if chunk:
+                parts.append(chunk)
+                on_delta(chunk)
+    return "".join(parts).strip()
+
+
+STREAM_PROVIDERS = {"gemini": _gemini_stream, "groq": _groq_stream,
+                    "openrouter": _openrouter_stream, "ollama": _ollama_stream,
+                    "lmstudio": _lmstudio_stream}
+
+
 _llm_slots = threading.BoundedSemaphore(max(1, settings.LLM_MAX_CONCURRENCY))
 _MIN_CALL_SECONDS = 1.0
 
@@ -126,14 +264,26 @@ PROVIDERS = {"gemini": _gemini, "groq": _groq, "openrouter": _openrouter,
              "ollama": _ollama, "lmstudio": _lmstudio}
 
 
+EXTERNAL_PROVIDERS = ("gemini", "groq", "openrouter")
+
+
 def generate(messages: list[dict], facts: dict | None = None,
-             analysis: dict | None = None, context_note: str = "") -> tuple[str, str]:
-    """Return (reply, provider_used). Falls back through Groq/OpenRouter to 'offline'."""
+             analysis: dict | None = None, context_note: str = "",
+             allow_external: bool = True, on_delta=None) -> tuple[str, str]:
+    """Return (reply, provider_used). Falls back through Groq/OpenRouter to 'offline'.
+
+    `on_delta(text)` (optional) enables streaming: chunks are pushed as they
+    arrive. Once any chunk has been emitted a failure is NOT retried and no other
+    provider is tried (that would splice two replies); the returned reply is
+    then the offline text, which callers treat as authoritative.
+
+    `allow_external=False` (the user hasn't opted in) restricts generation to
+    local providers and the offline responder — nothing is sent off-server."""
     system = SYSTEM_PERSONA
     if facts is not None:
         system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(facts)
     if analysis is not None:
-        system += "\n\nANALYSIS (four-pillar result for the current question):\n" + json.dumps(analysis, indent=1)[:4000]
+        system += "\n\nANALYSIS (four-pillar result for the current question):\n" + json.dumps(analysis, separators=(",", ":"))
     if context_note:
         system += "\n\nCONTEXT: " + context_note
 
@@ -146,21 +296,58 @@ def generate(messages: list[dict], facts: dict | None = None,
             "openrouter": settings.OPENROUTER_API_KEY}
     providers_to_try = [p for p in providers_to_try
                         if p not in keys or (keys[p] and settings.LLM_EXTERNAL_CONSENT)]
+    if not allow_external:
+        providers_to_try = [p for p in providers_to_try if p not in EXTERNAL_PROVIDERS]
+    emitted = 0
+
+    def _emit(chunk: str):
+        nonlocal emitted
+        chunk = re.sub(r"[*_`]{1,2}", "", chunk)
+        if chunk:
+            emitted += 1
+            on_delta(chunk)
+
+    def _offline():
+        text = offline_response(messages, facts, analysis, context_note)
+        if provider != "offline":
+            if not allow_external and provider in EXTERNAL_PROVIDERS:
+                notice = ("Accept the updated service terms to use AI chat. "
+                          "AI replies use your chart summary and recent messages with external providers.")
+            elif not providers_to_try:
+                notice = "AI chat is not configured or enabled on the server."
+            else:
+                notice = "The AI service is temporarily unavailable."
+            text = notice + " I'm using the limited built-in chart responder for this reply.\n\n" + text
+        if on_delta is not None and not emitted:
+            _emit(text)          # the whole offline reply as a single delta
+        return text, "offline"
+
     if not providers_to_try:
-        return offline_response(messages, facts, analysis, context_note), "offline"
+        return _offline()
     # global cap on in-flight LLM turns so slow upstreams can't hold every worker thread
     if not _llm_slots.acquire(blocking=False):
-        return offline_response(messages, facts, analysis, context_note), "offline"
+        return _offline()
     try:
         deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS
-        for p in providers_to_try:
+        for index, p in enumerate(providers_to_try):
+            # Reserve time for each remaining provider. A primary read timeout
+            # must not consume the entire turn and silently bypass healthy backups.
+            now = time.monotonic()
+            budget = (deadline - now) / (len(providers_to_try) - index)
+            provider_deadline = min(deadline, now + max(_MIN_CALL_SECONDS, budget))
             for attempt in range(3):
-                remaining = deadline - time.monotonic()
-                if remaining < _MIN_CALL_SECONDS:
+                now = time.monotonic()
+                if deadline - now < _MIN_CALL_SECONDS:
                     log.warning("LLM turn deadline reached; using offline responder")
-                    return offline_response(messages, facts, analysis, context_note), "offline"
+                    return _offline()
+                remaining = provider_deadline - now
+                if remaining <= 0:
+                    break
                 try:
-                    text = PROVIDERS[p](system, messages, timeout=remaining)
+                    if on_delta is None:
+                        text = PROVIDERS[p](system, messages, timeout=remaining)
+                    else:
+                        text = STREAM_PROVIDERS[p](system, messages, _emit, timeout=remaining)
                     if text:
                         # the persona demands plain text; strip stray markdown
                         return re.sub(r"[*_`]{1,2}", "", text), p
@@ -176,15 +363,18 @@ def generate(messages: list[dict], facts: dict | None = None,
                 except Exception as exc:  # RuntimeError config errors, bad payloads, ...
                     log.warning("LLM provider %s failed: %s", p, type(exc).__name__)
                     retryable = False
+                if emitted:
+                    # partial text already reached the client: no retry, no fallback
+                    return _offline()
                 if not retryable or attempt >= 2:
                     break
                 delay = 2 * (attempt + 1)
-                if time.monotonic() + delay + _MIN_CALL_SECONDS >= deadline:
+                if time.monotonic() + delay + _MIN_CALL_SECONDS >= provider_deadline:
                     break
                 time.sleep(delay)
     finally:
         _llm_slots.release()
-    return offline_response(messages, facts, analysis, context_note), "offline"
+    return _offline()
 
 
 def _facts_brief(facts: dict) -> str:
@@ -220,17 +410,20 @@ def offline_response(messages: list[dict], facts: dict | None,
     user_msg = messages[-1]["content"].lower() if messages else ""
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
+    if analysis.get("decision", {}).get("disposition") == "abstain":
+        from ..astro.prediction import interpretation_reading
+        return interpretation_reading(analysis, facts, messages)
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])
     support = analysis.get("support_count", 0)
     conflict = analysis.get("conflict_count", 0)
     if support >= 3:
-        lead = f"Looking at your chart, the traditional indicators for {dom} line up quite well for that period."
+        lead = f"Looking at your chart, the traditional indications for {dom} line up quite well for that period."
     elif support == 2 and conflict == 0:
-        lead = f"The traditional indicators for {dom} are mostly supportive, though not unanimous."
+        lead = f"The indications for {dom} are mostly supportive then, though not unanimous."
     elif support >= 1:
-        lead = f"The signals for {dom} are genuinely mixed — I'd describe the period as possible rather than promised."
+        lead = f"Honestly, the signals for {dom} are genuinely mixed there — possible, not promised."
     else:
         lead = f"The indications for {dom} are weak in that window — I wouldn't lean on it heavily."
     bridge = ""
@@ -238,15 +431,28 @@ def offline_response(messages: list[dict], facts: dict | None,
         short = [e for e in evidence if "rules" not in e.lower()][:2]
         if short:
             bridge = " " + short[0].split(": ", 1)[-1].rstrip(".") + "."
-    tail = " Is there a specific part of this you'd like me to go deeper into?"
-    return lead + bridge + tail
+    prec = analysis.get("precision") or {}
+    extras = ""
+    if prec.get("confirmation") in ("Both confirmation methods support", "Hidden friction"):
+        extras += f" The secondary methods give this a '{prec['confirmation'].lower()}' reading."
+    if prec.get("timing_windows"):
+        w = prec["timing_windows"][0]
+        extras += (" The weeks where the traditional indicators concentrate most are "
+                   f"{w['start']} to {w['end']}.")
+    if prec.get("magnitude"):
+        extras += f" The strength picture suggests something {prec['magnitude']} in scale."
+    tail = " Want me to go deeper into any part of this?"
+    if dom == "health":
+        tail = (" One honest word — these are chart indications, not medical "
+                "diagnoses. For anything real, do see a doctor.") + tail
+    return lead + bridge + extras + tail
 
 
 def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
     if re.search(r"\b(hi|hello|hey|namaste)\b", user_msg):
         return "Namaste. I'm listening — what's on your mind?"
     if "thank" in user_msg:
-        return "Of course. What else would you like to look at?"
+        return "Always happy to. What else shall we look at?"
     if facts is not None and ("lagna" in user_msg or "ascendant" in user_msg
                               or "rising" in user_msg):
         lag = facts["lagna"]
@@ -265,5 +471,5 @@ def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
         lag = facts["lagna"]
         return (f"Your chart is a {lag['sign_name']} lagna chart — the moon sits in "
                 f"{facts['planets']['Moon']['sign_name']}. What would you like to explore?")
-    return ("Tell me a little more about what you're asking — I read the chart, "
-            "not a script, so the more specific you are the better I can help.")
+    return ("The built-in responder cannot interpret that question. It can show computed "
+            "chart facts; try 'What is my lagna?', 'Where is my Moon?' or 'Show my birth chart'.")

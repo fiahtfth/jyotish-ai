@@ -75,9 +75,9 @@ FUNCTIONAL = {
 # Combustion orbs (degrees from Sun)
 COMBUST_ORB = {1: 12.0, 2: 17.0, 3: 14.0, 4: 11.0, 5: 10.0, 6: 15.0}
 
-HEALTH_DISCLAIMER = ("These windows are preventive traditional risk indicators from the "
+HEALTH_DISCLAIMER = ("These windows are preventive traditional indications from the "
                      "chart — not medical diagnoses, and not a substitute for "
-                     "professional medical advice.")
+                     "a doctor's care.")
 
 # Domain -> (relevant natal houses, primary varga, jaimini significator key)
 DOMAINS = {
