@@ -15,6 +15,10 @@ function authHeaders(): Record<string, string> {
 }
 
 // shared status handling: 401 -> login, 428 -> birth details, other non-2xx -> Error(detail)
+export type ClassicalAudit = {
+  note: string;
+  tables: { title: string; columns: string[]; rows: string[][] }[];
+};
 export type MsgMeta = {
   options?: string[];
   followup_id?: number | string;   // prediction follow-up options
@@ -23,7 +27,10 @@ export type MsgMeta = {
   chart?: unknown;                 // chart payload, shape differs per sender (see chat page)
   convergence?: string;
   support_count?: number;
-  analysis?: { convergence?: string };
+  classical?: ClassicalAudit;
+  report?: { domains?: { domain: string; analysis?: { classical?: ClassicalAudit } }[] };
+  expanded?: boolean;
+  analysis?: { convergence?: string; classical?: ClassicalAudit; decision?: { event?: unknown } };
 };
 export type Msg = {
   id: number; role: string; content: string; kind: string;

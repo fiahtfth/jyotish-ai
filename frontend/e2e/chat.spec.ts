@@ -167,3 +167,19 @@ for (const width of [320, 390, 1024]) {
     await expect(bubbles.first()).toHaveText(text);
   });
 }
+
+test("forecast evidence tables fit a mobile chat bubble", async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 740 });
+  const columns = ["Point", "D1", "D2", "D6", "D7", "D9", "D10", "D12", "D24", "D60"];
+  const tables = [{ title: "Lahiri positions", columns, rows: [columns.map(() => "Sagittarius 20.0010°")] }];
+  const reading = { ...message(5, "assistant", "Career reading"), meta: { analysis: {
+    decision: { event: { event_type: "promotion" } }, classical: { tables, note: "Sampled on one date." },
+  } } };
+  await page.route("**/api/chat/history", route => route.fulfill({ json: [reading] }));
+  await page.goto("/chat");
+  await expect(page.getByRole("table", { name: "Lahiri positions" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+  await page.getByText("Chart calculations and timing evidence").click();
+  await expect(page.getByText("Career reading")).toBeVisible();
+  await expect(page.getByRole("table")).toHaveCount(0);
+});

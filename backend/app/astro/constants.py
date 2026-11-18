@@ -87,8 +87,19 @@ DOMAINS = {
     "relocation": {"houses": [4, 3, 9, 12], "varga": "D4", "karaka": "Matrukaraka", "arudhas": ["A4"], "label": "a change of residence or relocation"},
     "finance":    {"houses": [2, 11, 5, 9], "varga": "D2", "karaka": "Amatyakaraka", "arudhas": ["A2", "A11"], "label": "a significant financial or professional responsibility"},
     "direction":  {"houses": [1, 5, 9], "varga": "D1", "karaka": "Atmakaraka", "arudhas": ["A1"], "label": "a major change in personal direction"},
-    "health":     {"houses": [1, 6, 8, 12], "varga": "D30", "karaka": "Gnatikaraka", "arudhas": ["A6", "A8"], "label": "health or physical resilience", "disclaimer": HEALTH_DISCLAIMER},
+    "children": {"houses": [5, 9], "varga": "D7", "karaka": "Putrakaraka", "arudhas": ["A5"], "label": "children and creative legacy"},
+    "parents": {"houses": [9, 4], "varga": "D12", "karaka": "Matrukaraka", "arudhas": ["A9", "A4"], "label": "parents and lineage"},
+    "debt": {"houses": [6, 2], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6"], "label": "debt"},
+    "litigation": {"houses": [6, 7], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6"], "label": "litigation"},
+    "health":     {"houses": [1, 6, 8, 12], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6", "A8"], "label": "health or physical resilience", "disclaimer": HEALTH_DISCLAIMER},
 }
 MIN_CALIBRATION_AGE_FOR_DOMAIN = {"relationship": 21, "career": 16, "finance": 16}
 
 VARGA_FUNCTIONS = {}  # filled lazily in engine to avoid importing jhora at module import time
+
+ASPECTS = {"Mars": (4, 7, 8), "Jupiter": (5, 7, 9), "Saturn": (3, 7, 10),
+           "Rahu": (5, 7, 9), "Ketu": (5, 7, 9)}
+
+
+def reaches(name, sign):
+    return {sign, *((sign + h - 1) % 12 for h in ASPECTS.get(name, (7,)))}

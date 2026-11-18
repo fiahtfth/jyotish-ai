@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
+import ClassicalEvidence from "@/components/ClassicalEvidence";
 import { api, clearToken, errMsg, streamSend, token, type Me, type Msg } from "@/lib/api";
 import type { ChartData } from "@/components/Chart";
 import type { PredictionsResponse } from "@/lib/api";
@@ -221,12 +222,18 @@ export default function Chat() {
               </div>
             );
           }
+          const audit = m.meta.classical || m.meta.analysis?.classical;
           const mine = m.role === "user";
           return (
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`chat-message max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap
                 ${mine ? "bg-accent text-white rounded-br-sm" : "bg-card border border-bord rounded-bl-sm"}`}>
-                {m.content}
+                {audit && <ClassicalEvidence audit={audit} expanded={!!(m.meta.expanded || m.meta.analysis?.decision?.event)} />}
+                {!(m.meta.expanded && audit) && m.content}
+                {m.meta.report?.domains?.map(d => d.analysis?.classical && (
+                  <ClassicalEvidence key={d.domain} label={d.domain.charAt(0).toUpperCase() + d.domain.slice(1) + " calculations"}
+                    audit={d.analysis.classical} expanded={false} />
+                ))}
                 {m.kind === "chart" && !!m.meta?.chart && (
                   <div className="mt-3 bg-bgsoft rounded-xl p-3">
                     <NorthChart varga={vargaOf(m)} chart={chartOf(m.meta.chart)} />

@@ -10,6 +10,8 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 
+from functools import partial
+
 import swisseph as swe
 
 from jhora import const, utils
@@ -28,8 +30,8 @@ _configured = False
 PYJHORA_VERSION = "5.0.0"
 
 VARGA_FUNCS = {
-    "D1": charts.rasi_chart, "D2": charts.hora_chart, "D4": charts.chaturthamsa_chart,
-    "D7": charts.saptamsa_chart, "D9": charts.navamsa_chart, "D10": charts.dasamsa_chart,
+    "D1": charts.rasi_chart, "D2": partial(charts.hora_chart, chart_method=2), "D4": charts.chaturthamsa_chart,
+    "D6": partial(charts.shashthamsa_chart, chart_method=1), "D7": charts.saptamsa_chart, "D9": charts.navamsa_chart, "D10": charts.dasamsa_chart,
     "D12": charts.dwadasamsa_chart, "D16": charts.shodasamsa_chart,
     "D20": charts.vimsamsa_chart, "D24": charts.chaturvimsamsa_chart,
     "D30": charts.trimshamsa_chart if hasattr(charts, "trimshamsa_chart") else None,
@@ -54,7 +56,7 @@ def fingerprint(settings: dict) -> str:
     base = {
         "pyjhora": PYJHORA_VERSION, "pyswisseph": swe.version,
         "ayanamsa": "LAHIRI", "houses": "whole-sign (sripati bhava for cusps)",
-        "nodes": "mean", "vargas": "parashari counting, method=1",
+        "nodes": "mean", "vargas": "classical-v2: Leo/Cancer Hora, Parashari D6",
         "dasha": "vimshottari, moon-star, tribhagi=false",
         "birth_time_precision": settings.get("birth_time_precision", "exact"),
         # birth inputs: a different birth time/place is a different chart
@@ -379,7 +381,7 @@ class ChartEngine:
         jd_birth = utils.julian_day_number((b.year, b.month, b.day), (b.hour, b.minute, b.second))
         jd_now = utils.julian_day_number(when, (12, 0, 0))
         try:
-            rows = chara_dhasa.get_running_dhasa_for_given_date(jd_now, jd_birth, place, dhasa_level_index=2)
+            rows = chara_dhasa.get_running_dhasa_for_given_date(jd_now, jd_birth, place, dhasa_level_index=2, chara_method=const.CHARA_TYPE.KN_RAO)
             out = []
             for lords, start, end in rows:
                 out.append({
@@ -404,7 +406,7 @@ class ChartEngine:
 
     def muntha_sign(self, lagna_sign: int, completed_years: int) -> int:
         """Annual Muntha sign progression (documented simplification)."""
-        return ((lagna_sign - 1 + completed_years) % 12) + 1
+        return ((lagna_sign + completed_years) % 12) + 1
 
 
 engine = ChartEngine()

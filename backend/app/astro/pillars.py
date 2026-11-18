@@ -159,7 +159,7 @@ def pillar_jaimini(facts, birth: BirthInput, domain: str, start: date, end: date
         if m == "dual":
             return {x for x in range(12) if K.SIGN_MODALITY[x] == "dual" and x != s}
         other = "fixed" if m == "movable" else "movable"
-        return {x for x in range(12) if K.SIGN_MODALITY[x] == other and abs(x - s) != 1}
+        return {x for x in range(12) if K.SIGN_MODALITY[x] == other and (x - s) % 12 not in (1, 11)}
 
     hits = {s for s in target_signs if s == md_sign or s in _aspects(md_sign)}
     if hits:
@@ -230,8 +230,13 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
     supports, conflicts = 0, 0
     months = _month_samples(start, end)
     ju_hits, sa_hits, fast_hits = set(), set(), set()
+    target_sign = facts["houses"][houses[0]]["sign"]
+    targets = {target_sign, facts["planets"][_lord_of_house(facts, houses[0])]["sign"]}
+    simultaneous = False
     for t in months:
         pos = engine.transit_positions((t.year, t.month, t.day), place)
+        if all(n in pos for n in ("Jupiter", "Saturn")):
+            simultaneous |= bool(targets & K.reaches("Jupiter", pos["Jupiter"]["sign"]) & K.reaches("Saturn", pos["Saturn"]["sign"]))
         for name in ("Jupiter", "Saturn"):
             if name not in pos:
                 continue
@@ -251,9 +256,9 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
                 conflicts += 1
                 evidence.append("Saturn transiting 8th from natal Moon (ashtama Shani)")
     sav = facts.get("sarvastakavarga")
-    if ju_hits and sa_hits:
+    if simultaneous:
         supports += 2
-        evidence.append(f"Jupiter–Saturn double-transit both touched {domain} houses during window")
+        evidence.append(f"Jupiter–Saturn double-transit on the same date to the {domain} house or its lord")
     elif ju_hits or sa_hits:
         supports += 1
         who = "Jupiter" if ju_hits else "Saturn"
@@ -272,12 +277,12 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
         pid = {v: k for k, v in K.PLANET_NAMES.items()}.get(karaka_planet)
         if pid is not None and pid < len(bav):
             strong_bav = [K.SIGN_NAMES[s] for s in range(12)
-                          if bav[pid][s] >= 4 and _house_of(s, lagna_sign) in houses]
+                          if bav[pid][s] >= 5 and _house_of(s, lagna_sign) in houses]
             weak_bav = [K.SIGN_NAMES[s] for s in range(12)
                         if bav[pid][s] <= 2 and _house_of(s, lagna_sign) in houses]
             if strong_bav:
                 supports += 1
-                evidence.append(f"{karaka_planet} BAV ≥4 bindus in {', '.join(strong_bav)}")
+                evidence.append(f"{karaka_planet} BAV ≥5 bindus in {', '.join(strong_bav)}")
             elif weak_bav:
                 conflicts += 1
                 evidence.append(f"{karaka_planet} BAV thin (≤2 bindus) in {', '.join(weak_bav)}")

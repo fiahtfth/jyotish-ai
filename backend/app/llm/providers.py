@@ -23,7 +23,11 @@ SYSTEM_PERSONA = """You are Pandit ji, a Vedic astrology assistant conducting a 
 Answer the client's current question first. Use short paragraphs and explain a technical term
 in everyday language the first time it matters. Be warm, respectful and direct. Use the
 client's language (English, Hindi or Hinglish) and the correct person for a family chart.
-Build on details the client has already shared. Ask one focused follow-up only if the answer
+Use the conversation to resolve references. Use a stated profession or personal history in an
+interpretation only when the client asks you to relate the chart to it. Never supply KP sub-lords,
+bindus, dates or degrees from memory. Cite supplied placements for interpretive statements.
+Use the classical static promise and gate assessment when available. A weak or unavailable
+promise supports interpretation only. Report health themes as preventive traditional indicators. Ask one focused follow-up only if the answer
 depends on it. Avoid a new greeting, stock sign-off or repeated invitation on each turn.
 
 Use the supplied CHART FACTS and ANALYSIS for placements, periods and dates. Distinguish
@@ -307,7 +311,18 @@ def generate(messages: list[dict], facts: dict | None = None,
     if facts is not None:
         system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(facts)
     if analysis is not None:
-        system += "\n\nANALYSIS (four-pillar result for the current question):\n" + json.dumps(analysis, separators=(",", ":"))
+        context = dict(analysis)
+        if audit := context.get("classical"):
+            # Historical calibration evidence is for the reader. Only the current
+            # question's calculations belong in the interpretation prompt.
+            current_tables = []
+            for t in audit["tables"]:
+                if t["title"].startswith(("Past ", "Birth-time checks", "Reported milestones")):
+                    break
+                current_tables.append(t)
+            context["classical"] = {**audit, "tables": current_tables}
+            context.pop("sensitivity", None)
+        system += "\n\nANALYSIS (computed results for the current question):\n" + json.dumps(context, separators=(",", ":"))
     if context_note:
         system += "\n\nCONTEXT: " + context_note
 
@@ -395,8 +410,7 @@ def generate(messages: list[dict], facts: dict | None = None,
 def _facts_brief(facts: dict) -> str:
     p = facts["planets"]
     lag = facts["lagna"]
-    # degrees are withheld even from the model — it interprets, never states them
-    lines = [f"Lagna: {lag['sign_name']}, lord {lag['lord']}"]
+    lines = [f"Lagna: {lag['sign_name']} {lag['degree']:.4f}°, lord {lag['lord']}"]
     for name, rec in p.items():
         extra = []
         if rec["retrograde"]:
@@ -405,7 +419,7 @@ def _facts_brief(facts: dict) -> str:
             extra.append("combust")
         if rec["dignity"]:
             extra.append("/".join(rec["dignity"]))
-        lines.append(f"{name}: {rec['sign_name']} house {rec['house']}, "
+        lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}, "
                      f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']}"
                      + (f" [{', '.join(extra)}]" if extra else ""))
     func = facts["functional"]

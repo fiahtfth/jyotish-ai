@@ -363,7 +363,8 @@ def _week_scores(facts, birth: BirthInput, domain_signs: set,
             if lord_id == 7:
                 charged = calibrated and _kakshya_charged(
                     prastara, pid_of[name], rec["sign"], rec["degree"])
-            if charged:
+            sav, bav = facts.get("sarvastakavarga"), facts.get("binnashtakavarga")
+            if charged and sav and bav and sav[rec["sign"]] >= 28 and bav[pid_of[name]][rec["sign"]] >= 5:
                 score += 2
                 reasons.append(f"{name} in bindu-charged kakshya of "
                                f"{kakshya_lord(k)} in {K.SIGN_NAMES[rec['sign']]}")
@@ -469,7 +470,7 @@ def timing_windows(facts, birth: BirthInput, domain: str,
                            "the clearer days carry the indication")
         windows.append({"start": c["start"].isoformat(), "end": c["end"].isoformat(),
                         "why": reasons,
-                        "fast_trigger": not fallback})
+                        "peak_date": c["peak_date"].isoformat(), "fast_trigger": not fallback})
     return {"status": "applied", "reference": ref, "windows": windows, "excluded": excluded,
             "note": ("top weeks where traditional indicators concentrate — "
                      "not a claim the event must occur then")}

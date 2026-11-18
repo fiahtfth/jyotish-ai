@@ -3,7 +3,7 @@ import re
 import math
 from datetime import date
 
-VERSION = "2026-11-18.1"
+VERSION = "2026-11-18.2"
 # These definitions are prospective scoring targets, not generated event promises.
 EVENTS = [
     ("career", r"promot|move up (?:at work|the ladder)|higher role|पदोन्नति", "promotion", "A formal promotion to a higher role takes effect"),
@@ -44,8 +44,16 @@ def decide(question, analysis, event=None):
         reasons.append("A confirmation method is unavailable.")
     if prec.get("confirmation") == "Hidden friction":
         reasons.append("The secondary methods conflict with a positive event forecast.")
+    audit = analysis.get("classical")
+    if audit:
+        if audit["promise"] not in ("Strong", "Moderate"):
+            reasons.append("The natal and divisional checks give limited or unavailable support.")
+        if audit["timing_sensitive"]:
+            reasons.append("The relevant divisional ascendant changes within five minutes.")
+        if not any(s["complete"] and s["count"] >= 3 for s in audit["scores"]):
+            reasons.append("Fewer than three classical gates align on a fully evaluated sample.")
     disposition = "abstain"
-    if not reasons and analysis["support_count"] >= 3 and analysis["conflict_count"] == 0:
+    if not reasons and (audit or (analysis["support_count"] >= 3 and analysis["conflict_count"] == 0)):
         disposition = "event_indicated"
     elif not reasons:
         reasons.append("The methods do not provide sufficient conflict-free support for an event forecast.")
@@ -163,11 +171,20 @@ def interpretation_reading(analysis, facts=None, messages=None):
             reading = f"Some indicators support activity in {domain} during this period."
         else:
             reading = f"The timing methods show little support for a change in {domain} during this period."
+        audit = analysis.get("classical") or {}
+        if audit.get("promise") == "Weak":
+            reading = "The natal and divisional checks give limited support for a major change."
         if decision.get("event"):
             reading += " The chart gives no clear basis for saying that event will happen then."
         evidence = analysis.get("calculation_evidence_ids") or []
         details = [item.split(": ", 1)[-1].rstrip(".") for item in evidence if "error:" not in item]
         detail = next((item for item in details if all(item not in old for old in history)), "")
+        if audit and facts and decision.get("event"):
+            h = DOMAINS[domain]["houses"][0]
+            n = facts["houses"][h]["lord"]
+            rec = facts["planets"][n]
+            detail = (f"The ruler of house {h}, {n}, is at {rec['degree']:.4f}° "
+                      f"in {rec['sign_name']}, in house {rec['house']}")
         if detail:
             reading += " " + detail[0].upper() + detail[1:] + "."
         return f"{subject}, {reading[0].lower()}{reading[1:]}"
@@ -186,6 +203,10 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
     """Preserve helpful readings while rejecting unsupported event promises."""
     decision = analysis["decision"]
     abstained = decision["disposition"] == "abstain"
+    audit = analysis.get("classical")
+    if audit and (re.search(r"\b(?:KP sub[- ]?lord|sub[- ]?lord|bindus?)\b|\d\s*%", reply, re.I)
+                  or (decision.get("event") and audit["promise"] in ("Weak", "Unavailable"))):
+        return interpretation_reading(analysis, facts, messages)
     allowed = set() if abstained else {decision["window"]["start"], decision["window"]["end"]}
     if not abstained:
         for w in analysis.get("precision", {}).get("timing_windows", []):

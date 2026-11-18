@@ -10,7 +10,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import calibration, panchang, precision, report, sensitivity, prediction
+from ..astro import classical, calibration, panchang, precision, report, sensitivity, prediction
 from ..astro.constants import DOMAINS
 from .. import geo
 from ..policy import TERMS_VERSION
@@ -84,6 +84,7 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
     today = _today_at(birth)
     if start <= today <= end:
         start = min(end, today + timedelta(days=1))
+    natal = classical.promise(facts, domain)
     prec = precision.evaluate(facts, birth, domain, start, end,
                               calibrated=_calibrated(profile))
     analysis = dict(prec["verdict"])
@@ -102,6 +103,16 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
     analysis["sensitivity"] = sensitivity.evaluate(facts, birth, domain, start, end, _calibrated(profile), base=prec)
     if not analysis["sensitivity"]["timing_stable"]:
         analysis["precision"]["timing_windows"] = []
+    classical.apply(analysis, facts, birth, domain, start, end, _calibrated(profile), prec, natal)
+    audit = analysis["classical"]
+    opening_checks = [e for e in profile.calibrations if e.calc_fingerprint == profile.calc_fingerprint]
+    classical.birth_checks(audit, facts, birth, opening_checks[:3])
+    if profile.milestone_search_done:
+        rows = [[m.domain, str(m.year) + (f"-{m.month:02d}" if m.month else "")]
+                for m in profile.milestones if m.domain and m.year]
+        if rows:
+            audit["tables"].append(classical.table("Reported milestones used in the birth-time search",
+                                                  ["Life area", "Reported period"], rows))
     analysis["decision"] = prediction.decide(question, analysis, event)
     return analysis, prec
 
@@ -122,12 +133,13 @@ def _save_prediction(db, profile, question, analysis, reply):
 
 
 def chart_facts(profile: BirthProfile) -> dict:
-    if profile.chart_json:
+    if profile.chart_json and profile.calc_fingerprint == birth_fingerprint(birth_input(profile)):
         facts = json.loads(profile.chart_json)
         facts["houses"] = {int(k): v for k, v in facts["houses"].items()}
         return facts
     facts = engine.compute(birth_input(profile))
     profile.chart_json = json.dumps(facts)
+    profile.calc_fingerprint = birth_fingerprint(birth_input(profile))
     return facts
 
 
@@ -145,6 +157,10 @@ DOMAIN_KEYWORDS = {
     "education": ["study", "studies", "exam", "education", "degree", "college", "course", "learn", "admission", "padhai", "पढ़ाई"],
     "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love", "spouse", "engagement", "tie the knot", "dating", "shaadi", "शादी"],
     "relocation": ["move", "relocate", "relocating", "abroad", "foreign", "city", "house shift", "settle"],
+    "children": ["children", "childbirth", "parenthood", "creative legacy"],
+    "parents": ["my parents", "my father", "my mother", "my lineage"],
+    "debt": ["debt", "debts", "repay a loan"],
+    "litigation": ["litigation", "lawsuit", "court case"],
     "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest"],
     "direction": ["direction", "purpose", "path in life", "meaning"],
     "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical"],
@@ -212,7 +228,7 @@ def detect_varga(text: str) -> str | None:
     for v, keys in {"D9": ["navamsa", "navamsha"],
                     "D10": ["dasamsa", "dashamsha"],
                     "D1": ["rasi", "birth chart", "kundli", "natal chart"],
-                    "D7": ["saptamsa"], "D2": ["hora"],
+                    "D6": ["shashthamsa", "shashthamsha"], "D7": ["saptamsa"], "D2": ["hora"],
                     "D24": ["chaturvimshamsa"], "D60": ["shashtiamsa"]}.items():
         if any(re.search(r"\b" + re.escape(k) + r"\b", t) for k in keys):
             return v
@@ -227,7 +243,8 @@ def _conversation_history(conv: Conversation) -> list[dict]:
     end = next((i for i in range(len(conv.messages), 0, -1)
                 if conv.messages[i - 1].role == "user"), 0)
     return [{"role": m.role, "content": m.content}
-            for m in conv.messages[max(0, end - 16):end] if m.role in ("user", "assistant")]
+            for m in conv.messages[max(0, end - 16):end]
+            if m.role in ("user", "assistant") and m.kind != "analysis"]
 
 
 def _previous_reading(conv, profile):
@@ -1110,6 +1127,11 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                     continue
                 if "analysis" in meta:
                     a = meta["analysis"]
+                    if a.get("classical"):
+                        _add_msg(db, conv, "assistant", classical.markdown(a["classical"]) +
+                                 f"\n\nConfirmation: {a['precision']['confirmation']}.", kind="analysis",
+                                 meta={"classical": a["classical"], "expanded": True})
+                        return conv.messages[-2:]
                     pillar_line = ", ".join(
                         f"{k.replace('_', ' ')}: {v}" for k, v in a["pillars"].items())
                     ev = list(dict.fromkeys(a["calculation_evidence_ids"]))
@@ -1282,6 +1304,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                       f"Current Vimshottari: {periods}. Use the resolved event and analysis window when supplied. "
                       "Name the period when timing was requested. Answer using the selected divisional chart when present."),
         allow_external=_external_ok(profile), on_delta=None if analysis else on_delta, routing_seconds=routing_seconds)
+    if analysis and provider != "offline":
+        reply = prediction.constrain_reply(reply, analysis, facts, history)
     reply = _apply_disclaimer(reply, domain)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)

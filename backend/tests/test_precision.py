@@ -274,3 +274,36 @@ def test_strong_agreement_cannot_ignore_a_conflicting_pillar(monkeypatch):
     r = pillars.evaluate({}, None, 'career', date(2027, 1, 1), date(2027, 12, 31))
     assert 'Strong' not in r['convergence'] and 'Confirmed' not in r['convergence']
     assert r['conflict_count'] == 1
+
+
+def test_hora_and_d6_boundaries_and_muntha():
+    from app.astro.engine import VARGA_FUNCS
+    rasi = [["L", (0, 0)], [0, (0, 15)], [1, (1, 15)], [2, (1, 5)]]
+    assert [r[1][0] for r in VARGA_FUNCS["D2"](rasi)] == [4, 3, 4, 3]
+    assert [r[1][0] for r in VARGA_FUNCS["D6"](rasi)] == [0, 3, 9, 7]
+    assert engine.muntha_sign(11, 0) == 12
+    assert engine.muntha_sign(11, 1) == 1
+
+
+def test_all_gates_use_the_same_sample_and_missing_bindus_cannot_confirm():
+    from app.astro import classical
+    birth, facts = make_facts()
+    when = date(2027, 7, 2)
+    audit = classical.evaluate({**facts, "binnashtakavarga": None}, birth, "career", when, when, [], False)
+    assert audit["scores"][0]["complete"] is False
+    assert audit["scores"][0]["micro_aligned"] is False
+    assert audit["tables"][-1]["rows"][-1][1] == "Unavailable"
+    assert all(len(row) == len(t["columns"]) for t in audit["tables"] for row in t["rows"])
+    assert "| Point | D1 | D2 | D4 | D6 |" in classical.markdown(audit)
+    assert not classical.rashi_reaches(8, 8-1)
+    assert K.reaches("Jupiter", 0) & K.reaches("Saturn", 2) == {4, 8}
+
+
+def test_weak_promise_vetoes_otherwise_supported_event():
+    from app.astro import prediction
+    analysis = {"domain": "career", "analysis_window": {"start": "2080-01-01", "end": "2080-12-31"},
+                "support_count": 4, "conflict_count": 0, "unavailable_count": 0,
+                "sensitivity": {"verdict_stable": True, "timing_stable": True},
+                "classical": {"promise": "Weak", "timing_sensitive": False,
+                              "scores": [{"complete": True, "count": 4}]}}
+    assert prediction.decide("Will I get a promotion?", analysis)["disposition"] == "abstain"

@@ -91,7 +91,10 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
              today: date) -> list[dict]:
     end = today + timedelta(days=_OUTLOOK_DAYS)
     out = []
-    for domain, spec in K.DOMAINS.items():
+    from . import classical
+    for domain in ("career", "education", "relationship", "relocation", "finance", "direction", "health"):
+        spec = K.DOMAINS[domain]
+        natal = classical.promise(facts, domain)
         prec = precision.evaluate(facts, birth, domain, today, end,
                                   calibrated=calibrated)
         sens = sensitivity.evaluate(facts, birth, domain, today, end, calibrated, base=prec)
@@ -101,10 +104,11 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
                                  "sudarshana": prec["confirmation"]["sudarshana"]["verdict"],
                                  "layer_verdicts": prec["layer_verdicts"]}
         analysis["sensitivity"] = sens
+        classical.apply(analysis, facts, birth, domain, today, end, calibrated, prec, natal)
         analysis["decision"] = prediction.decide("general outlook", analysis)
         windows = [{"start": w["start"], "end": w["end"],
                     "fast_trigger": w.get("fast_trigger")}
-                   for w in prec["timing"]["windows"]]
+                   for w in analysis["precision"]["timing_windows"]]
         out.append({
             "analysis": analysis, "sensitivity": sens,
             "domain": domain,
@@ -122,8 +126,8 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
 
 
 def _domain_line(d: dict) -> str:
-    parts = [f"{d['domain'].capitalize()}: {d['convergence']}",
-             d["confirmation"], "General outlook only; no specific event forecast"]
+    grade = d["analysis"]["classical"]["promise"].lower()
+    parts = [f"{d['domain'].capitalize()} — the natal and divisional assessment is {grade}"]
     if d["timing_windows"]:
         parts.append("strongest weeks " + "; ".join(
             f"{w['start']} → {w['end']}" for w in d["timing_windows"]))
