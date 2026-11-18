@@ -3,6 +3,8 @@ import datetime
 from pydantic import BaseModel, EmailStr, Field, model_validator
 from typing import Literal, Optional
 
+from .astro.settings import PRESETS
+
 
 class RegisterIn(BaseModel):
     email: EmailStr
@@ -70,6 +72,11 @@ class BirthProfileIn(BaseModel):
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
     birth_time_precision: Literal["exact", "approximate", "unknown"] = "exact"
+    # how the clock time maps to UTC: tz database ("zone"), local mean time, or typed-in offset
+    time_basis: Literal["zone", "lmt", "manual"] = "zone"
+    utc_offset_manual: Optional[float] = Field(default=None, ge=-14, le=14)
+    dst_fold: Optional[Literal[0, 1]] = None    # which occurrence of a repeated local time
+    calc_preset: str = "default"
 
     @model_validator(mode="after")
     def _valid_calendar_date(self):
@@ -77,6 +84,10 @@ class BirthProfileIn(BaseModel):
             datetime.date(self.year, self.month, self.day)
         except ValueError:
             raise ValueError("invalid calendar date")
+        if self.calc_preset not in PRESETS:
+            raise ValueError(f"calc_preset must be one of: {', '.join(PRESETS)}")
+        if self.time_basis == "manual" and self.utc_offset_manual is None:
+            raise ValueError("utc_offset_manual is required when time_basis is 'manual'")
         return self
 
 
@@ -86,6 +97,9 @@ class BirthProfileOut(BirthProfileIn):
     is_active: bool = True
     timezone_name: str
     utc_offset_hours: float
+    offset_source: str = ""
+    tz_warnings: list[str] = []
+    tzdb_version: str = ""
     calc_fingerprint: str
     calibration_state: str
     predictions_allowed: bool
@@ -98,6 +112,13 @@ class ProfileListItem(BaseModel):
     calibration_state: str
     predictions_allowed: bool
     is_active: bool
+
+
+class DegreeTableIn(BaseModel):
+    """Mode B: a pasted planet-degree table from another program."""
+    text: str = Field(min_length=3, max_length=4000)
+    source_program: str = Field(min_length=2, max_length=40)
+    ayanamsa_id: str = "LAHIRI"
 
 
 class FeedbackIn(BaseModel):

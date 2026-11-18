@@ -83,6 +83,14 @@ class BirthProfile(Base):
     timezone_name = Column(String, default="")
     utc_offset_hours = Column(Float)
     birth_time_precision = Column(String, default="exact")  # exact|approximate|unknown
+    # how the clock time was mapped to UTC (zone|lmt|manual) and what came of it
+    time_basis = Column(String, nullable=False, default="zone", server_default="zone")
+    utc_offset_manual = Column(Float, nullable=True)
+    dst_fold = Column(Integer, nullable=True)              # 0|1 for a repeated local time
+    offset_source = Column(String, nullable=True)          # tzdb|lmt|manual|fallback
+    tz_warnings = Column(Text, nullable=True)              # JSON list of strings
+    tzdb_version = Column(String, nullable=True)
+    calc_preset = Column(String, nullable=False, default="default", server_default="default")
     chart_json = Column(Text, default="")          # locked facts cache
     calc_fingerprint = Column(String, default="")
     calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated|insufficient_history|skipped

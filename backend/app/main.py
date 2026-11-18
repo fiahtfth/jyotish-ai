@@ -31,10 +31,11 @@ from .db import (
 from .astro.prediction import scorecard
 from .astro.engine import BirthInput, engine, birth_fingerprint
 from .schemas import (
-    MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, TermsIn, FeedbackIn, ForgotIn,
-    LoginIn, MessageOut, PlaceSearchOut, ProfileListItem, RegisterIn, ReportIn, ResetIn,
-    TokenIn, TokenOut, PredictionOutcomeIn,
+    MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, DegreeTableIn, TermsIn,
+    FeedbackIn, ForgotIn, LoginIn, MessageOut, PlaceSearchOut, ProfileListItem,
+    RegisterIn, ReportIn, ResetIn, TokenIn, TokenOut, PredictionOutcomeIn,
 )
+from .astro import modeb
 
 log = logging.getLogger(__name__)
 
@@ -349,6 +350,10 @@ def _profile_out(p: BirthProfile) -> dict:
         "calc_fingerprint": p.calc_fingerprint,
         "calibration_state": p.calibration_state,
         "predictions_allowed": p.predictions_allowed,
+        "time_basis": p.time_basis or "zone", "utc_offset_manual": p.utc_offset_manual,
+        "dst_fold": p.dst_fold, "calc_preset": p.calc_preset or "default",
+        "offset_source": p.offset_source or "",
+        "tz_warnings": json.loads(p.tz_warnings or "[]"), "tzdb_version": p.tzdb_version or "",
     }
 
 
@@ -394,6 +399,20 @@ def _profile_response(user: User, p: BirthProfile) -> dict:
     return {**_profile_out(p), "is_active": user.active_profile_id == p.id}
 
 
+@app.post("/api/tools/degree-table")
+def degree_table(body: DegreeTableIn, user: User = Depends(current_user)):
+    """Mode B — parse a pasted planet-degree table (JH / Drik / AstroSage).
+
+    Returns the parsed longitudes with their pasted precision, ambiguity
+    flags for varga signs and karaka ranks, and the list of features that
+    stay unavailable without a birth instant.
+    """
+    try:
+        return modeb.parse_degree_table(body.text, body.source_program, body.ayanamsa_id)
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "degree_table_parse", "message": str(exc)})
+
+
 @app.get("/api/profile", response_model=BirthProfileOut)
 def get_profile(user: User = Depends(current_user)):
     p = _active_profile(user)
@@ -405,10 +424,23 @@ def get_profile(user: User = Depends(current_user)):
 def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn) -> BirthProfile:
     """Validate/resolve the birth data and write it to `p` (new or existing),
     resetting calibration when the birth data materially changed. Commits."""
-    birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute)
-    resolved = geo.resolve_place(body.place_name, state=body.place_state,
-                                 country=body.place_country, lat=body.latitude,
-                                 lon=body.longitude, birth_dt=birth_dt)
+    birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute, body.second)
+    try:
+        resolved = geo.resolve_place(body.place_name, state=body.place_state,
+                                     country=body.place_country, lat=body.latitude,
+                                     lon=body.longitude, birth_dt=birth_dt,
+                                     basis=body.time_basis, manual_offset=body.utc_offset_manual,
+                                     fold=body.dst_fold)
+    except geo.NonexistentTime as exc:
+        raise HTTPException(422, detail={
+            "code": "nonexistent_time", "message": str(exc),
+            "offsets": [exc.before, exc.after], "timezone_name": exc.tz_name})
+    except geo.AmbiguousTime as exc:
+        raise HTTPException(422, detail={
+            "code": "ambiguous_time", "message": str(exc),
+            "offsets": exc.offsets, "timezone_name": exc.tz_name})
+    except ValueError as exc:
+        raise HTTPException(422, detail={"code": "invalid_birth_data", "message": str(exc)})
     is_new = p.id is None
     if is_new:
         p.user_id = user.id
@@ -418,13 +450,16 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
         is_new or
         (p.year, p.month, p.day, p.hour, p.minute, p.second or 0,
          round(p.latitude or 0, 4), round(p.longitude or 0, 4),
-         p.birth_time_precision)
+         p.birth_time_precision, p.time_basis or "zone", p.utc_offset_manual, p.dst_fold,
+         p.calc_preset or "default", round(p.utc_offset_hours or 0, 4))
         != (body.year, body.month, body.day, body.hour, body.minute, body.second,
             round(resolved["latitude"], 4), round(resolved["longitude"], 4),
-            body.birth_time_precision)
+            body.birth_time_precision, body.time_basis, body.utc_offset_manual, body.dst_fold,
+            body.calc_preset, round(resolved["utc_offset_hours"], 4))
     )
     for k in ("display_name", "year", "month", "day", "hour", "minute", "second",
-              "place_name", "place_state", "place_country", "birth_time_precision"):
+              "place_name", "place_state", "place_country", "birth_time_precision",
+              "time_basis", "utc_offset_manual", "dst_fold", "calc_preset"):
         setattr(p, k, getattr(body, k) if hasattr(body, k) else getattr(p, k))
     if body.relation is not None:
         p.relation = body.relation
@@ -437,6 +472,9 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
     p.longitude = resolved["longitude"]
     p.timezone_name = resolved["timezone_name"]
     p.utc_offset_hours = resolved["utc_offset_hours"]
+    p.offset_source = resolved["offset_source"]
+    p.tz_warnings = json.dumps(resolved["tz_warnings"])
+    p.tzdb_version = resolved["tzdb_version"]
 
     if material_change:
         _rate_limit(user.id, "profile", settings.PROFILE_RATE_LIMIT_PER_MIN,

@@ -51,9 +51,16 @@ export type Profile = {
   place_name: string; place_state: string; place_country: string;
   latitude: number; longitude: number;
   birth_time_precision: "exact" | "approximate" | "unknown";
+  time_basis: "zone" | "lmt" | "manual";
+  utc_offset_manual: number | null;
+  dst_fold: 0 | 1 | null;
+  calc_preset: string;
   timezone_name: string; utc_offset_hours: number;
+  offset_source?: string; tz_warnings?: string[]; tzdb_version?: string;
 };
-export type ProfileIn = Omit<Profile, "timezone_name" | "utc_offset_hours">;
+export type ProfileIn = Omit<Profile, "timezone_name" | "utc_offset_hours" | "offset_source" | "tz_warnings" | "tzdb_version">;
+export type TzReject = { code: "ambiguous_time" | "nonexistent_time"; message: string; offsets: number[] | [number, number]; timezone_name?: string };
+export class TzError extends Error { detail: TzReject; constructor(d: TzReject) { super(d.message); this.detail = d; } }
 
 export type TokenOut = { access_token: string; token_type: string; needs_birth_profile: boolean };
 
@@ -71,9 +78,13 @@ async function failIfBad(r: Response) {
   if (r.status === 428) { if (typeof window !== "undefined") location.href = "/birth"; throw new Error("profile needed"); }
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
+    if (e.detail && typeof e.detail === "object" && !Array.isArray(e.detail)
+        && (e.detail.code === "ambiguous_time" || e.detail.code === "nonexistent_time")) {
+      throw new TzError(e.detail as TzReject);
+    }
     const detail = Array.isArray(e.detail)
       ? e.detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ")
-      : e.detail;
+      : typeof e.detail === "object" && e.detail ? e.detail.message : e.detail;
     throw new Error(detail || `error ${r.status}`);
   }
 }

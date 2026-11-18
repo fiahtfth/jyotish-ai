@@ -238,7 +238,8 @@ def try_rectify(birth: BirthInput, stated_facts: dict, events: list,
             hour=t.hour, minute=t.minute, second=t.second,
             lat=birth.lat, lon=birth.lon, tz_offset=birth.tz_offset,
             place_label=birth.place_label,
-            birth_time_precision=birth.birth_time_precision)
+            birth_time_precision=birth.birth_time_precision,
+            settings=birth.settings)
         try:
             cf = engine.compute(cand)
             s = _score_candidate(cand, cf, events)
@@ -298,7 +299,8 @@ def search_with_milestones(birth: BirthInput, stated_facts: dict, milestones: li
             hour=t.hour, minute=t.minute, second=t.second,
             lat=birth.lat, lon=birth.lon, tz_offset=birth.tz_offset,
             place_label=birth.place_label,
-            birth_time_precision=birth.birth_time_precision)
+            birth_time_precision=birth.birth_time_precision,
+            settings=birth.settings)
         try:
             s = _score_milestones(cand, engine.compute(cand), usable)
         except Exception:

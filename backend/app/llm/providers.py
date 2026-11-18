@@ -36,7 +36,13 @@ or inconsistent, continue the reading using the recorded time. Treat dates as ap
 and give the relevant chart interpretation. The chat explains the timing limitation at the
 transition, so mention it again only when it materially affects the answer. Earlier messages
 about predictions being paused are obsolete. Never infer that the birth time is wrong from
-a missed event. For health questions, keep chart interpretations separate from medical advice.
+a missed event. For health questions, keep chart interpretations separate from medical advice, and never say or
+imply that anyone should delay, skip or replace medical care because of the chart.
+
+Every CHART FACT line carries an ID like [F001]; computed evidence and rules carry [E###] and [R###].
+Cite the ID inline (for example "Moon in Sagittarius [F003]") for each placement, period or rule you
+rely on. State no degree, date, sign, nakshatra, duration or percentage that is not in the supplied
+facts, and do not use probability language ("chance of", "probability of").
 """
 
 
@@ -50,7 +56,7 @@ def _gemini(system: str, messages: list[dict], timeout: float = 45) -> str:
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = {"system_instruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1400,
+            "generationConfig": {"temperature": settings.LLM_TEMPERATURE, "maxOutputTokens": 1400,
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:generateContent")
@@ -69,7 +75,7 @@ def _groq(system: str, messages: list[dict], timeout: float = 45) -> str:
         raise RuntimeError("external LLM consent not granted (set JYOTISH_LLM_EXTERNAL_CONSENT=true)")
     payload = {"model": settings.GROQ_MODEL,
                "messages": [{"role": "system", "content": system}] + messages,
-               "temperature": 0.7, "max_tokens": 1400}
+               "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400}
     if "gpt-oss" in settings.GROQ_MODEL:
         payload["reasoning_effort"] = "low"
         payload["reasoning_format"] = "hidden"
@@ -94,7 +100,7 @@ def _openrouter(system: str, messages: list[dict], timeout: float = 45) -> str:
                             "X-OpenRouter-Title": "Jyotish AI"},
                    json={"model": model,
                          "messages": [{"role": "system", "content": system}] + messages,
-                         "temperature": 0.7, "max_tokens": 1400},
+                         "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400},
                    timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
@@ -105,7 +111,8 @@ def _ollama(system: str, messages: list[dict], timeout: float = 120) -> str:
         f"{'User' if m['role'] == 'user' else 'Astrologer'}: {m['content']}" for m in messages
     ) + "\n\nAstrologer:"
     r = httpx.post(f"{settings.OLLAMA_URL}/api/generate",
-                   json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False},
+                   json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False,
+                         "options": {"temperature": settings.LLM_TEMPERATURE}},
                    timeout=timeout)
     r.raise_for_status()
     return r.json()["response"].strip()
@@ -115,7 +122,7 @@ def _lmstudio(system: str, messages: list[dict], timeout: float = 120) -> str:
     r = httpx.post(f"{settings.LMSTUDIO_URL}/chat/completions",
                    json={"model": settings.LMSTUDIO_MODEL,
                          "messages": [{"role": "system", "content": system}] + messages,
-                         "temperature": 0.7, "max_tokens": 600},
+                         "temperature": settings.LLM_TEMPERATURE, "max_tokens": 600},
                    timeout=timeout)
     r.raise_for_status()
     return r.json()["choices"][0]["message"]["content"].strip()
@@ -166,7 +173,7 @@ def _gemini_stream(system: str, messages: list[dict], on_delta, timeout: float =
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = {"system_instruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": 0.7, "maxOutputTokens": 1400,
+            "generationConfig": {"temperature": settings.LLM_TEMPERATURE, "maxOutputTokens": 1400,
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:streamGenerateContent?alt=sse")
@@ -188,7 +195,7 @@ def _groq_stream(system: str, messages: list[dict], on_delta, timeout: float = 4
     _require_external(settings.GROQ_API_KEY, "GROQ_API_KEY")
     payload = {"model": settings.GROQ_MODEL,
                "messages": [{"role": "system", "content": system}] + messages,
-               "temperature": 0.7, "max_tokens": 1400}
+               "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400}
     if "gpt-oss" in settings.GROQ_MODEL:
         payload["reasoning_effort"] = "low"
         payload["reasoning_format"] = "hidden"
@@ -207,7 +214,7 @@ def _openrouter_stream(system: str, messages: list[dict], on_delta, timeout: flo
                            "X-OpenRouter-Title": "Jyotish AI"},
                           {"model": model,
                            "messages": [{"role": "system", "content": system}] + messages,
-                           "temperature": 0.7, "max_tokens": 1400},
+                           "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400},
                           on_delta, timeout)
 
 
@@ -215,7 +222,7 @@ def _lmstudio_stream(system: str, messages: list[dict], on_delta, timeout: float
     return _openai_stream(f"{settings.LMSTUDIO_URL}/chat/completions", {},
                           {"model": settings.LMSTUDIO_MODEL,
                            "messages": [{"role": "system", "content": system}] + messages,
-                           "temperature": 0.7, "max_tokens": 600},
+                           "temperature": settings.LLM_TEMPERATURE, "max_tokens": 600},
                           on_delta, timeout)
 
 
@@ -227,7 +234,8 @@ def _ollama_stream(system: str, messages: list[dict], on_delta, timeout: float =
     end = time.monotonic() + timeout
     with httpx.stream("POST", f"{settings.OLLAMA_URL}/api/generate", timeout=timeout,
                       json={"model": settings.OLLAMA_MODEL, "prompt": prompt,
-                            "stream": True}) as r:
+                            "stream": True,
+                            "options": {"temperature": settings.LLM_TEMPERATURE}}) as r:
         r.raise_for_status()
         for line in r.iter_lines():
             if time.monotonic() > end:
@@ -254,6 +262,14 @@ PROVIDERS = {"gemini": _gemini, "groq": _groq, "openrouter": _openrouter,
 
 
 EXTERNAL_PROVIDERS = ("gemini", "groq", "openrouter")
+
+
+def pinned_model_id(provider: str) -> str:
+    """The configured model id for a provider (logged with every call so a
+    reply can be traced to the exact model and temperature that produced it)."""
+    return {"gemini": settings.GEMINI_MODEL, "groq": settings.GROQ_MODEL,
+            "openrouter": settings.OPENROUTER_MODEL, "ollama": settings.OLLAMA_MODEL,
+            "lmstudio": settings.LMSTUDIO_MODEL}.get(provider, provider)
 
 
 def _available_providers(allow_external):
@@ -295,6 +311,26 @@ def conversation_topic(messages, *, allow_external):
         _llm_slots.release()
 
 
+def _tag_analysis(context: dict) -> dict:
+    """Give computed evidence and rule strings stable IDs (E001.., R001..) so the
+    model can cite them; the originals are untouched."""
+    out = dict(context)
+    for key, prefix in (("calculation_evidence_ids", "E"), ("traditional_rule_ids", "R")):
+        if isinstance(out.get(key), list):
+            out[key] = [{"id": f"{prefix}{i:03d}", "text": t} for i, t in enumerate(out[key], 1)]
+    return out
+
+
+def grounding_text(facts: dict | None, analysis: dict | None) -> str:
+    """Everything the model is shown, for the response verifier."""
+    parts = []
+    if facts is not None:
+        parts.append(_facts_brief(facts))
+    if analysis is not None:
+        parts.append(json.dumps(analysis, ensure_ascii=False, default=str))
+    return "\n".join(parts)
+
+
 def generate(messages: list[dict], facts: dict | None = None,
              analysis: dict | None = None, context_note: str = "",
              allow_external: bool = True, on_delta=None, routing_seconds=0) -> tuple[str, str]:
@@ -322,7 +358,8 @@ def generate(messages: list[dict], facts: dict | None = None,
                 current_tables.append(t)
             context["classical"] = {**audit, "tables": current_tables}
             context.pop("sensitivity", None)
-        system += "\n\nANALYSIS (computed results for the current question):\n" + json.dumps(context, separators=(",", ":"))
+        system += "\n\nANALYSIS (computed results for the current question):\n" + json.dumps(
+            _tag_analysis(context), separators=(",", ":"), ensure_ascii=False)
     if context_note:
         system += "\n\nCONTEXT: " + context_note
 
@@ -374,6 +411,8 @@ def generate(messages: list[dict], facts: dict | None = None,
                 if remaining <= 0:
                     break
                 try:
+                    log.info("LLM call provider=%s model=%s temperature=%s",
+                             p, pinned_model_id(p), settings.LLM_TEMPERATURE)
                     if on_delta is None:
                         text = PROVIDERS[p](system, messages, timeout=remaining)
                     else:
@@ -407,10 +446,57 @@ def generate(messages: list[dict], facts: dict | None = None,
     return _offline()
 
 
+def _dms_hundredths(deg: float) -> str:
+    """Degrees as D°M′S.ss″ (0.01 arcsecond)."""
+    total = round(float(deg) * 3600 * 100)
+    d, rem = divmod(total, 360000)
+    m, sec = divmod(rem, 6000)
+    return f"{d}°{m:02d}′{sec / 100:05.2f}″"
+
+
+def settings_summary(facts: dict) -> str:
+    """Calculation-settings line, reduced-precision banner, node-check flags and
+    engine warnings, as plain lines. Empty when the facts carry no meta."""
+    meta = (facts or {}).get("meta") or {}
+    if not meta:
+        return ""
+    lines = []
+    ay = meta.get("ayanamsa") or {}
+    dy = meta.get("dasha_year") or {}
+    eph = meta.get("ephemeris", "unknown")
+    if eph == "moshier":
+        lines.append("REDUCED PRECISION: the Swiss Ephemeris data files were not available, so "
+                     "the built-in Moshier ephemeris was used; positions can differ by several "
+                     "arcseconds and sign/nakshatra boundary cases are less reliable.")
+    lines.append(
+        f"Settings: ayanamsa {ay.get('id', '?')} {_dms_hundredths(ay.get('degrees', 0))}, "
+        f"{meta.get('node', '?')} node, {meta.get('positions', '?')} positions, "
+        f"dasha year {dy.get('mode', '?')} ({dy.get('days', '?')} days), ephemeris {eph}")
+    nc = (facts or {}).get("node_check") or {}
+    if nc:
+        flags = [k.split("_")[0].upper() for k in ("d1_differs", "d9_differs") if nc.get(k)]
+        lines.append("Node check (mean vs true node): " + (
+            f"signs differ in {', '.join(flags)} (separation {nc.get('separation_deg')}°); "
+            "node-based statements depend on the node setting" if flags
+            else f"same D1 and D9 signs (separation {nc.get('separation_deg')}°)"))
+    for w in meta.get("warnings") or []:
+        lines.append("Warning: " + str(w))
+    return "\n".join(lines)
+
+
 def _facts_brief(facts: dict) -> str:
+    """CHART FACTS lines, each tagged with a stable ID (F001, F002, ...)."""
+    return "\n".join(f"[F{i:03d}] {line}" for i, line in enumerate(_facts_lines(facts), 1))
+
+
+def _facts_lines(facts: dict) -> list[str]:
     p = facts["planets"]
     lag = facts["lagna"]
-    lines = [f"Lagna: {lag['sign_name']} {lag['degree']:.4f}°, lord {lag['lord']}"]
+    lines = []
+    banner = settings_summary(facts)
+    if banner:
+        lines.extend(banner.split("\n"))
+    lines += [f"Lagna: {lag['sign_name']} {lag['degree']:.4f}°, lord {lag['lord']}"]
     for name, rec in p.items():
         extra = []
         if rec["retrograde"]:
@@ -431,7 +517,7 @@ def _facts_brief(facts: dict) -> str:
     if facts.get("selected_chart"):
         lines.append("Selected divisional chart (houses counted from its own ascendant): " +
                      json.dumps(facts["selected_chart"], ensure_ascii=False))
-    return "\n".join(lines)
+    return lines
 
 
 # ------------------------------------------------------------------ offline

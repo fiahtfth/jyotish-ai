@@ -347,7 +347,7 @@ def test_health_domain_and_disclaimer():
     b, facts = make_facts()
     r = pillars.evaluate(facts, b, "health", date(2026, 1, 1), date(2027, 6, 30))
     assert set(r["pillars"]) == {"parashari", "jaimini", "tajika", "micro_timing"}
-    assert r["convergence"].split()[0].endswith("/4")
+    assert r["convergence"].startswith("Traditional convergence: ") and "/4 pillars" in r["convergence"]
 
     h = register_and_profile()
     client.get("/api/chat/history", headers=h)
@@ -892,7 +892,7 @@ def test_init_db_fresh_sqlite_reaches_head(tmp_path):
     assert {"users", "auth_tokens", "prediction_records", "alembic_version"} <= set(insp.get_table_names())
     assert "email_verified" in {c["name"] for c in insp.get_columns("users")}
     with eng.connect() as c:
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0010"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
 
 
 def test_init_db_upgrades_pre_alembic_database(tmp_path):
@@ -929,7 +929,7 @@ def test_init_db_upgrades_pre_alembic_database(tmp_path):
     with eng.connect() as c:
         row = c.exec_driver_sql("select token_nonce, email_verified from users").one()
         assert row[0] and not row[1]          # nonce backfilled, unverified
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0010"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
 
 
 # ---------- 8. Streaming chat ----------
@@ -1487,7 +1487,7 @@ def test_migration_0006_preserves_data_and_allows_many_profiles(tmp_path):
         assert c.exec_driver_sql("select profile_id from calibration_events").scalar() == 7
         # a second profile for the same user is now legal
         c.exec_driver_sql("INSERT INTO birth_profiles (id, user_id, relation) VALUES (10, 1, 'mother')")
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0010"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
     D.init_db(eng)       # idempotent
 
 

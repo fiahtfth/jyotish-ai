@@ -20,8 +20,10 @@ Lagna-dependent layers are skipped unless `calibrated` is true: the
 Lagna moves ~1 deg every 4 minutes, so they are meaningless (and
 misleading) without a trustworthy birth time.
 """
+import json
 import threading
 from collections import OrderedDict
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta
 
 from jhora import utils, const
@@ -33,7 +35,8 @@ from jhora.horoscope.transit import tajaka, tajaka_yoga
 
 from . import constants as K
 from . import pillars
-from .engine import BirthInput, birth_fingerprint, engine
+from . import varsha
+from .engine import BirthInput, apply as apply_settings, birth_fingerprint, calc_lock, engine
 
 # ------------------------------------------------------------------ frozen rules
 
@@ -75,6 +78,14 @@ def _to_date(s: str) -> date:
 
 def _mid(d1: date, d2: date) -> date:
     return d1 + (d2 - d1) / 2
+
+
+@contextmanager
+def _frame(birth: BirthInput):
+    """Hold the PyJHora global-state lock with this chart's calculation settings applied."""
+    with calc_lock:
+        apply_settings(birth.settings)
+        yield
 
 
 def _place(birth: BirthInput):
@@ -148,9 +159,10 @@ def _prastara(facts, birth: BirthInput):
             return _prastara_cache[key]
     out = None
     try:
-        rasi = charts.rasi_chart(_jd_birth(birth), _place(birth))
-        h2p = utils.get_house_planet_list_from_planet_positions(rasi)
-        _, _, out = ashtakavarga.get_ashtaka_varga(h2p)
+        with _frame(birth):
+            rasi = charts.rasi_chart(_jd_birth(birth), _place(birth))
+            h2p = utils.get_house_planet_list_from_planet_positions(rasi)
+            _, _, out = ashtakavarga.get_ashtaka_varga(h2p)
     except Exception:
         out = None
     with _prastara_lock:
@@ -221,8 +233,9 @@ def _yogini_score(facts, domain: str, lords: list[str]) -> tuple[int, list[str]]
 
 
 def _yogini_at(facts, birth: BirthInput, domain: str, when: date) -> dict:
-    rows = yogini.get_running_dhasa_for_given_date(
-        _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
+    with _frame(birth):
+        rows = yogini.get_running_dhasa_for_given_date(
+            _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
     if not rows:
         raise ValueError("yogini dasha unavailable")
     lords = [K.PLANET_NAMES[p] for row in rows for p in row[0]]
@@ -238,8 +251,9 @@ def _sudarshana_at(facts, birth: BirthInput, domain: str, when: date,
     advances them together); what differs is the actual sign activated in
     each frame, so each frame is judged by that sign's occupants and lord.
     """
-    rows = sudharsana_chakra.get_running_dhasa_for_given_date(
-        _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
+    with _frame(birth):
+        rows = sudharsana_chakra.get_running_dhasa_for_given_date(
+            _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=2)
     if not rows:
         raise ValueError("sudarshana chakra unavailable")
     leaf = rows[-1][0][-1]
@@ -498,7 +512,8 @@ def magnitude(facts, birth: BirthInput, mid: date, calibrated: bool) -> dict:
     req = pillars._SHADBALA_MIN.get(lord, 6.0)
     ratio = rupas / req if req else 0.0
     try:
-        ishta = strength._ishta_phala(_jd_birth(birth), _place(birth))[pid]
+        with _frame(birth):
+            ishta = strength._ishta_phala(_jd_birth(birth), _place(birth))[pid]
     except Exception:
         ishta = None
     basis = [f"{lord} shadbala {rupas:.2f} rupas vs required {req}"]
@@ -532,7 +547,8 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
         jd, found = jd0, 0
         while found < _MAX_ECLIPSES_PER_WINDOW:
             try:
-                ret = fn(jd, place)
+                with _frame(birth):
+                    ret = fn(jd, place)
             except Exception as exc:
                 raise ValueError(f"{kind} eclipse calculation unavailable") from exc
             if not ret or ret[0] == -1:
@@ -543,7 +559,8 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
             jd = ecl_jd + 1
             found += 1
             try:
-                pos = drik.dhasavarga(ecl_jd, place, divisional_chart_factor=1)
+                with _frame(birth):
+                    pos = drik.dhasavarga(ecl_jd, place, divisional_chart_factor=1)
                 pmap = {p: (s * 30 + d) % 360 for p, (s, d) in pos
                         if isinstance(p, int)}
                 ecl_long = pmap.get(0 if kind == "solar" else 1)
@@ -561,36 +578,53 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
     return hits
 
 
+_return_cache: dict = {}
+
+
+def solar_return_date(birth: BirthInput, k: int) -> date:
+    """Local date of the k-th solar return (k=0 is the birth date itself).
+
+    The instant is the Sun returning to its natal sidereal longitude, not the
+    calendar birthday, so it can fall a day either side of it.
+    """
+    if k <= 0:
+        return date(birth.year, birth.month, birth.day)
+    key = (birth_fingerprint(birth), k)
+    if key not in _return_cache:
+        with _frame(birth):
+            jd = drik.next_solar_date(_jd_birth(birth), _place(birth), years=k + 1)
+        if len(_return_cache) > 2048:
+            _return_cache.clear()
+        _return_cache[key] = _to_date(_ymd(jd))
+    return _return_cache[key]
+
+
+def completed_solar_years(birth: BirthInput, when: date) -> int:
+    """Completed years counted by solar returns: the k with return(k) <= when < return(k+1).
+
+    Negative (-1) before birth. Muntha and annual progressions advance on this count.
+    """
+    if when < date(birth.year, birth.month, birth.day):
+        return -1
+    k = max(0, when.year - birth.year - 1)
+    while solar_return_date(birth, k + 1) <= when:
+        k += 1
+    while k > 0 and solar_return_date(birth, k) > when:
+        k -= 1
+    return k
+
+
 def _annual_lord(annual, return_jd, birth, completed_years, natal_lagna):
     """Traditional seven-planet candidates, evaluated at the actual solar return.
 
-    PyJHora 5's public helper uses a mean-year instant, can nominate nodes,
-    and can return a list index instead of the candidate planet. Keep these
-    compatibility corrections local rather than patching library globals.
+    Implementation lives in `varsha.varsheshwara` (five office-bearers +
+    Pancha-vargiya bala) so the pillar and the ithasala watch share one rule
+    set. PyJHora 5's public helper uses a mean-year instant, can nominate
+    nodes, and can return a list index instead of the candidate planet.
     """
-    pos = dict(annual)
-    asc = pos["L"][0]
-    place = _place(birth)
-    hour = utils.jd_to_gregorian(return_jd)[3]
-    night = hour < drik.sunrise(return_jd, place)[0] or hour >= drik.sunset(return_jd, place)[0]
-    candidates = list(dict.fromkeys([
-        K.SIGN_LORD[pos[1 if night else 0][0]], K.SIGN_LORD[natal_lagna],
-        K.SIGN_LORD[(natal_lagna + completed_years) % 12], K.SIGN_LORD[asc],
-        (const.tri_rasi_nighttime_lords if night else const.tri_rasi_daytime_lords)[asc],
-    ]))
-    candidates = [p for p in candidates if p in range(7)]
-    houses = utils.get_house_planet_list_from_planet_positions(annual)
-    eligible = [p for p in candidates if tajaka.planet_has_benefic_aspect_on_house(houses, p, asc)]
-    if not eligible:
-        eligible = [p for p in candidates if tajaka.planet_has_malefic_aspect_on_house(houses, p, asc)]
-    if len(eligible) == 1:
-        return eligible[0]
-    pool = eligible or candidates
-    if not pool:
-        raise ValueError("no eligible annual lord")
-    bala = strength.pancha_vargeeya_bala(return_jd, place)
-    strongest = max(pool, key=lambda p: bala[p])
-    return strongest if bala[strongest] > const.pancha_vargeeya_bala_strength_threshold else pool[0]
+    with _frame(birth):
+        return varsha.varsheshwara(annual, return_jd, _place(birth),
+                                   completed_years, natal_lagna)["id"]
 
 
 def _ithasala_triggers(facts, birth: BirthInput, start: date, end: date) -> dict:
@@ -600,17 +634,20 @@ def _ithasala_triggers(facts, birth: BirthInput, start: date, end: date) -> dict
     for age in range(max(0, start.year - birth.year - 1), end.year - birth.year + 1):
         try:
             # PyJHora's years=1 is the natal year, not the first birthday.
-            ret = drik.next_solar_date(jd_birth, place, years=age + 1)
-            nxt = drik.next_solar_date(jd_birth, place, years=age + 2)
+            with _frame(birth):
+                ret = drik.next_solar_date(jd_birth, place, years=age + 1)
+                nxt = drik.next_solar_date(jd_birth, place, years=age + 2)
             vd, until = _to_date(_ymd(ret)), _to_date(_ymd(nxt))
             if vd > end or until <= start:
                 continue
-            annual, _ = tajaka.annual_chart(jd_birth, place, years=age + 1)
+            with _frame(birth):
+                annual, _ = tajaka.annual_chart(jd_birth, place, years=age + 1)
             lord = _annual_lord(annual, ret, birth, age, facts["lagna"]["sign"])
             asc_lord = K.SIGN_LORD[annual[0][1][0]]
             pairs = []
             if asc_lord != lord:
-                ok, kind = tajaka_yoga.ithasala_yoga(annual, lord, asc_lord)
+                with _frame(birth):
+                    ok, kind = tajaka_yoga.ithasala_yoga(annual, lord, asc_lord)
                 if ok:
                     pairs.append({"between": K.PLANET_NAMES[lord], "and": K.PLANET_NAMES[asc_lord],
                                   "role": "varsha lagna lord", "type": int(kind)})

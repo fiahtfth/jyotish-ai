@@ -60,6 +60,10 @@ class Settings:
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")
     LMSTUDIO_MODEL: str = os.environ.get("JYOTISH_LMSTUDIO_MODEL", "local-model")
 
+    # Sampling temperature for every provider call. Low by default so repeated
+    # questions about the same locked facts give near-identical answers.
+    LLM_TEMPERATURE: float = float(os.environ.get("JYOTISH_LLM_TEMPERATURE", "0.2"))
+
     # Consent gate: whether chart data may be sent to a third-party LLM.
     LLM_EXTERNAL_CONSENT: bool = os.environ.get("JYOTISH_LLM_EXTERNAL_CONSENT", "false").lower() == "true"
 

@@ -3,10 +3,8 @@ from calendar import monthrange
 from datetime import date
 import logging
 
-from jhora.panchanga import drik
-
-from . import constants as K, precision
-from .engine import VARGA_FUNCS, _dignity, engine
+from . import constants as K, precision, stability, yogas
+from .engine import _dignity, engine
 
 log = logging.getLogger(__name__)
 
@@ -40,18 +38,53 @@ def table(title, columns, rows):
     return {"title": title, "columns": columns, "rows": rows}
 
 
+AUDIT_VARGAS = tuple(f"D{n}" for n in (1, 2, 3, 4, 6, 7, 9, 10, 12, 16, 20, 24, 30, 40, 45, 60))
+
+
 def cusp_audit(birth):
-    place, jd = precision._place(birth), precision._jd_birth(birth)
-    rows, flips = [], {}
-    for offset in (-5, 0, 5):
-        sign, degree, *_ = drik.ascendant(jd + offset / 1440, place)
-        asc = [["L", (sign, degree)]]
-        rows.append([str(offset), *[K.SIGN_NAMES[VARGA_FUNCS[v](asc)[0][1][0]] for v in ("D9", "D10")]])
-    for i, v in enumerate(("D9", "D10"), 1):
-        flips[v] = len({r[i] for r in rows}) > 1
-    changed = [v for v, flip in flips.items() if flip]
-    label = ", ".join(changed) + " changes sign" if changed else "same ascendants at all three samples"
-    return flips, table("Birth-time sensitivity · " + label, ["Minutes", "D9 Lagna", "D10 Lagna"], rows)
+    """Stability window of every divisional Lagna around the stated birth time.
+
+    Returns ({varga: True when its Lagna sign changes within the birth-time
+    uncertainty}, table). Windows come from a fine scan with bisection, so a
+    change anywhere inside the span is found, not just at three samples.
+    """
+    wins = stability.lagna_windows(birth, vargas=AUDIT_VARGAS)
+    unc = stability.uncertainty_for(birth)
+    flips = {v: w["status"] == "cusp_sensitive" for v, w in wins.items()}
+    rows = []
+    for v, w in wins.items():
+        lo = f"{w['start_s']:.1f}" if any(c <= 0 for c in w["changes_s"]) else f"before {w['start_s']:.0f}"
+        hi = f"{w['end_s']:.1f}" if any(c > 0 for c in w["changes_s"]) else f"beyond {w['end_s']:.0f}"
+        rows.append([v, K.SIGN_NAMES[w["sign"]], lo, hi, "Cusp-sensitive" if flips[v] else "Stable"])
+    # the Moon's nakshatra-pada window drives Vimshottari balance at birth
+    try:
+        mp = stability.moon_pada_window(birth)
+        nak = K.NAKSHATRAS[mp["nakshatra"]]
+        lo = f"{mp['start_s']:.1f}" if any(c <= 0 for c in mp["changes_s"]) else f"before {mp['start_s']:.0f}"
+        hi = f"{mp['end_s']:.1f}" if any(c > 0 for c in mp["changes_s"]) else f"beyond {mp['end_s']:.0f}"
+        sensitive = mp["status"] == "cusp_sensitive"
+        rows.append(["Moon nakshatra pada", f"{nak} pada {mp['pada']}", lo, hi,
+                     "Cusp-sensitive" if sensitive else "Stable"])
+        flips["Moon pada"] = sensitive
+    except Exception:
+        pass
+    # planets sitting on a D9/D60 sign edge inside the clock uncertainty
+    try:
+        edges = stability.planet_edge_windows(birth)
+        for planet, per_varga in edges["flips"].items():
+            for vname, rec in per_varga.items():
+                nearest = min((abs(c) for c in rec["changes_s"]), default=0.0)
+                trans = ", ".join(f"{a}→{b}" for a, b in rec["transitions"])
+                rows.append([f"{planet} @ {vname}", f"{trans} (±{nearest:.0f} s)",
+                             "-", "-", "Sign flips within uncertainty"])
+                flips[f"{planet}@{vname}"] = True
+    except Exception:
+        pass
+    changed = [v for v, f in flips.items() if f]
+    label = (", ".join(changed) + f" change sign within ±{unc:.0f} s" if changed
+             else f"no divisional Lagna changes within ±{unc:.0f} s")
+    return flips, table("Birth-time sensitivity · " + label,
+                        ["Varga", "Lagna sign", "Window from (s)", "Window to (s)", "Status"], rows)
 
 
 def matrix(facts):
@@ -69,7 +102,10 @@ def matrix(facts):
             rec = chart[name]
             cells.append(f"{position(rec)} · H{house(rec['sign'], chart['Lagna']['sign'])}")
         rows.append([name, *cells])
-    return table("Lahiri planetary and divisional positions", ["Point", *names], rows)
+    ay = facts.get("meta", {}).get("ayanamsa") or {}
+    label = (ay.get("id") or "Lahiri").replace("_", " ").title()
+    degrees = f" ({ay['dms']})" if ay.get("dms") else ""
+    return table(f"Sidereal planetary and divisional positions · {label} ayanamsa{degrees}", ["Point", *names], rows)
 
 
 def natal_patterns(facts):
@@ -95,7 +131,12 @@ def natal_patterns(facts):
         aspects = sorted(house((p["sign"]+n-1) % 12, facts["lagna"]["sign"])
                          for n in K.ASPECTS.get(name, (7,)))
         rows.append([name, position(p), ", ".join(flags) or "—", ", ".join(map(str, aspects))])
-    return table("Natal dignity, yogas and graha drishti", ["Planet", "D1", "Conditions", "Houses aspected"], rows)
+    found = yogas.detect(facts)
+    for y in found:
+        rows.append([y["name"], f"yoga ({y['level']})", ", ".join(y["conditions_fired"]), "—"])
+    result = table("Natal dignity, yogas and graha drishti", ["Planet", "D1", "Conditions", "Houses aspected"], rows)
+    result["yogas"] = found
+    return result
 
 
 def promise(facts, domain):
@@ -141,8 +182,9 @@ def window_audit(facts, birth, domain, when, calibrated):
     vim = engine.running_vimshottari(birth, stamp)
     chara = engine.running_chara(birth, stamp)
     try:
-        yog = precision.yogini.get_running_dhasa_for_given_date(
-            precision._jd_noon(when), precision._jd_birth(birth), precision._place(birth), dhasa_level_index=2)
+        with precision._frame(birth):
+            yog = precision.yogini.get_running_dhasa_for_given_date(
+                precision._jd_noon(when), precision._jd_birth(birth), precision._place(birth), dhasa_level_index=2)
     except (ValueError, ArithmeticError, RuntimeError):
         yog = []
     timeline = [[label, " / ".join(row[key]), row["start"], row["end"]]
@@ -182,7 +224,8 @@ def window_audit(facts, birth, domain, when, calibrated):
              f"Chara {K.SIGN_NAMES[cs]} contacts {', '.join(touched) or 'none'}.")
     else:
         gate("Multi-dasha", False, False, "An active timeline or divisional chart is unavailable.")
-    age = when.year - birth.year - ((when.month, when.day) < (birth.month, birth.day))
+    # Muntha advances at each solar return (the Sun's return instant), not on the calendar birthday
+    age = precision.completed_solar_years(birth, when)
     refs = facts["vargas"]["D1"]
     ms = (refs["Lagna"]["sign"] + age) % 12
     ml = lord(ms)
@@ -247,8 +290,7 @@ def evaluate(facts, birth, domain, start, end, candidates, calibrated, natal=Non
     scores = []
     for a, b, sample in dict.fromkeys(spans):
         count, timeline, gates = window_audit(facts, birth, domain, sample, calibrated)
-        rating = {4: "Full", 3: "Moderate"}.get(count, "Limited")
-        tables.extend([timeline, table(f"{a} to {b} · {count}/4 · {rating} agreement",
+        tables.extend([timeline, table(f"{a} to {b} · {count}/4 traditional gates aligned",
                                       ["Gate", "At " + str(sample), "Evidence"], gates)])
         scores.append({"start": str(a), "end": str(b), "sample": str(sample), "count": count,
                        "complete": all(g[1] != "Unavailable" for g in gates),

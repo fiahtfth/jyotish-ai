@@ -179,45 +179,110 @@ def pillar_jaimini(facts, birth: BirthInput, domain: str, start: date, end: date
 
 
 def pillar_tajika(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
-    """P3 — Muntha sign progression for the year(s) covering the window.
+    """P3 — Varshaphala for the year(s) covering the window.
 
-    Simplified annual sign progression per spec (full Varshaphala chart is a
-    Phase-2+ item); labeled as such in evidence.
+    Muntha is read from the Varsha Lagna (Tajika reading) at the exact
+    sidereal solar return; the Varsheshwara (year lord) and its
+    Pancha-vargiya bala qualify the year's strength; the Muntha lord's
+    natal dignity qualifies its promise. If the annual chart is
+    unavailable the pillar falls back to the documented natal-lagna Muntha
+    simplification and says so.
     """
     lagna_sign = facts["lagna"]["sign"]
     evidence, rules = [], []
     supports, conflicts = 0, 0
     years_seen = set()
+    method = ("full Varshaphala at exact solar returns; Muntha read from the "
+              "Varsha Lagna and qualified by Varsheshwara + Pancha-vargiya bala")
+    from . import precision, varsha   # lazy: precision imports this module
     for t in [start, _mid(start, end), end]:
-        completed = t.year - birth.year - ((t.month, t.day) < (birth.month, birth.day))
+        # completed years are counted by solar returns, not the calendar birthday
+        completed = precision.completed_solar_years(birth, t)
         if completed < 0:
             continue
         years_seen.add(completed)
     for cy in sorted(years_seen):
-        ms = engine.muntha_sign(lagna_sign, cy) - 1  # -> 0-based
-        house = _house_of(ms, lagna_sign)
-        rules.append(f"muntha year {cy}: {K.SIGN_NAMES[ms]} (house {house})")
-        if house in K.DOMAINS[domain]["houses"]:
-            supports += 1
-            ordn = {1:"1st",2:"2nd",3:"3rd"}.get(house, f"{house}th")
-            evidence.append(f"Muntha in {K.SIGN_NAMES[ms]}, the {ordn} house — relevant to {domain}")
-        elif house in (6, 8, 12):
-            conflicts += 1
-            evidence.append(f"Muntha in dusthana (house {house})")
-        # Muntha lord's natal dignity qualifies the year's promise
-        mlord = K.SIGN_LORD[ms]
-        mrec = facts["planets"].get(K.PLANET_NAMES[mlord])
-        if mrec:
-            dign = mrec.get("dignity", [])
-            if "debilitated" in dign:
-                conflicts += 1
-                evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} debilitated in D1 — weakens the year's promise")
-            elif any(t in dign for t in ("exalted", "own sign", "moolatrikona")):
+        try:
+            v = varsha.varsha(birth, cy, natal_lagna_sign=lagna_sign)
+            ms = v["muntha"]["sign"]
+            house = v["muntha"]["house_from_varsha_lagna"]
+            vlagna = v["varsha_lagna"]["sign_name"]
+            yl = v.get("year_lord") or {}
+            pvb = v.get("pancha_vargeeya_bala") or {}
+            mudda = v.get("mudda") or {}
+            mudda_lords = mudda.get("periods", [])
+            rules.append(f"varsha year {cy + 1} (return {v['return']['local'][:10]}): "
+                         f"Varsha Lagna {vlagna}, Muntha {K.SIGN_NAMES[ms]} "
+                         f"({house}th from varsha lagna), year lord {yl.get('planet', '?')}")
+            if mudda_lords:
+                rules.append(f"mudda dasha year {cy + 1}: "
+                             f"{'/'.join('-'.join(p['lords']) for p in mudda_lords[:9])}")
+            if house in K.DOMAINS[domain]["houses"]:
                 supports += 1
-                evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} dignified ({'/'.join(dign)}) — strengthens the year")
+                ordn = {1: "1st", 2: "2nd", 3: "3rd"}.get(house, f"{house}th")
+                evidence.append(f"Muntha in {K.SIGN_NAMES[ms]}, the {ordn} house from the "
+                                f"Varsha Lagna {vlagna} — relevant to {domain}")
+            elif house in (6, 8, 12):
+                conflicts += 1
+                evidence.append(f"Muntha in dusthana ({house}th from the Varsha Lagna)")
+            # Varsheshwara: a capable year lord strengthens the year's promise
+            lord = yl.get("planet")
+            score = pvb.get(lord) if lord else None
+            if lord and score is not None:
+                if score > 10:   # pancha_vargeeya_bala_strength_threshold
+                    supports += 1
+                    evidence.append(f"Varsheshwara {lord} strong (pancha-vargiya bala {score}) "
+                                    f"— the year lord can deliver")
+                elif score < 5:
+                    conflicts += 1
+                    evidence.append(f"Varsheshwara {lord} weak (pancha-vargiya bala {score}) "
+                                    "— the year lord struggles to deliver")
+            # Tajika yogas touching the year lord are supporting evidence
+            for y in (v.get("tajika") or {}).get("yogas", []):
+                if lord and lord in y.get("planets", []) and y["yoga"] in (
+                        "Ithasala", "Gairi-Kamboola", "Kamboola", "Duhphali-kutta"):
+                    supports += 1
+                    evidence.append(f"{y['yoga']} yoga involving year lord {lord}: {y['detail']}")
+            # Muntha lord's natal dignity qualifies the year's promise
+            mlord = K.SIGN_LORD[ms]
+            mrec = facts["planets"].get(K.PLANET_NAMES[mlord])
+            if mrec:
+                dign = mrec.get("dignity", [])
+                if "debilitated" in dign:
+                    conflicts += 1
+                    evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} debilitated in D1 — weakens the year's promise")
+                elif any(t in dign for t in ("exalted", "own sign", "moolatrikona")):
+                    supports += 1
+                    evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} dignified ({'/'.join(dign)}) — strengthens the year")
+            for err in v.get("errors", []):
+                rules.append(f"varsha {err['section']} unavailable: {err['reason']}")
+        except Exception as exc:
+            method = ("annual chart unavailable — documented Muntha-only fallback "
+                      "read from the natal lagna")
+            ms = engine.muntha_sign(lagna_sign, cy) - 1  # -> 0-based
+            house = _house_of(ms, lagna_sign)
+            rules.append(f"muntha year {cy}: {K.SIGN_NAMES[ms]} (house {house}); "
+                         f"annual chart error: {type(exc).__name__}: {exc}")
+            if house in K.DOMAINS[domain]["houses"]:
+                supports += 1
+                ordn = {1: "1st", 2: "2nd", 3: "3rd"}.get(house, f"{house}th")
+                evidence.append(f"Muntha in {K.SIGN_NAMES[ms]}, the {ordn} house — relevant to {domain}")
+            elif house in (6, 8, 12):
+                conflicts += 1
+                evidence.append(f"Muntha in dusthana (house {house})")
+            mlord = K.SIGN_LORD[ms]
+            mrec = facts["planets"].get(K.PLANET_NAMES[mlord])
+            if mrec:
+                dign = mrec.get("dignity", [])
+                if "debilitated" in dign:
+                    conflicts += 1
+                    evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} debilitated in D1 — weakens the year's promise")
+                elif any(t in dign for t in ("exalted", "own sign", "moolatrikona")):
+                    supports += 1
+                    evidence.append(f"Muntha lord {K.PLANET_NAMES[mlord]} dignified ({'/'.join(dign)}) — strengthens the year")
     verdict = "support" if supports and not conflicts else ("conflict" if conflicts and not supports else "neutral")
     return {"verdict": verdict, "evidence": evidence, "rules": rules,
-            "method_note": "simplified Muntha progression, not the full Tajika return chart"}
+            "method_note": method}
 
 
 def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
@@ -305,6 +370,11 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
     return {"verdict": verdict, "evidence": evidence, "rules": rules}
 
 
+CONVERGENCE_DISCLAIMER = (
+    "Counts agreement among traditional techniques that share the same birth data and are "
+    "therefore not independent; not an empirically validated probability. Controlled studies "
+    "(Carlson 1985; Narlikar et al. 2009) have not found better-than-chance performance.")
+
 PILLARS = {"parashari": pillar_parashari, "jaimini": pillar_jaimini,
            "tajika": pillar_tajika, "micro_timing": pillar_micro_timing}
 
@@ -332,10 +402,7 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
     support = sum(1 for v in pillars.values() if v == "support")
     conflict = sum(1 for v in pillars.values() if v == "conflict")
     unavail = sum(1 for v in pillars.values() if v == "unavailable")
-    if support >= 3 and conflict == 0 and unavail == 0:
-        label = f"{support}/4 Strong rule agreement"
-    else:
-        label = f"{support}/4 Mixed or limited rule agreement"
+    label = f"Traditional convergence: {support}/4 pillars indicate this window"
     if conflict or unavail:
         label += f" ({conflict} conflicting, {unavail} unavailable)"
     return {
@@ -344,7 +411,8 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
         "pillars": pillars,
         "support_count": support, "conflict_count": conflict, "unavailable_count": unavail,
         "convergence": label,
+        "convergence_disclaimer": CONVERGENCE_DISCLAIMER,
         "calculation_evidence_ids": evidence_ids,
         "traditional_rule_ids": rule_ids,
-        "limitations": limitations + ["Rule agreement is not a measured probability; the methods share chart inputs."],
+        "limitations": limitations + [CONVERGENCE_DISCLAIMER],
     }

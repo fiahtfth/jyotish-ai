@@ -2,7 +2,8 @@
 from dataclasses import replace
 from datetime import datetime, timedelta
 
-from . import pillars, precision
+from . import pillars, precision, stability
+from .constants import DOMAINS
 from .engine import engine
 
 OFFSETS = {"exact": (-2, 0, 2), "approximate": (-60, -30, 0, 30, 60),
@@ -30,7 +31,13 @@ def evaluate(facts, birth, domain, start, end, calibrated, base=None):
     complete = not errors and len(samples) == len(OFFSETS[birth.birth_time_precision])
     verdict_stable = complete and all(s["pillars"] == samples[0]["pillars"] for s in samples)
     timing_stable = complete and all(s["windows"] == samples[0]["windows"] for s in samples)
-    return {"status": "sampled_stable" if verdict_stable and timing_stable else ("sensitive" if complete else "incomplete"),
+    # exact sign-change windows (seconds), not just the sampled offsets
+    try:
+        wanted = ("D1", DOMAINS[domain]["varga"], "D9")
+        windows = stability.lagna_windows(birth, vargas=tuple(dict.fromkeys(wanted)))
+    except Exception as exc:
+        windows = {"error": f"{type(exc).__name__}: {exc}"}
+    return {"stability_windows": windows, "status": "sampled_stable" if verdict_stable and timing_stable else ("sensitive" if complete else "incomplete"),
             "assumed_precision": birth.birth_time_precision, "tested_offsets_minutes": list(OFFSETS[birth.birth_time_precision]),
             "verdict_stable": verdict_stable, "timing_stable": timing_stable,
             "samples": samples, "errors": errors,

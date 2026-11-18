@@ -72,8 +72,33 @@ FUNCTIONAL = {
     11: {"benefics": {1, 2, 4}, "malefics": {0, 5, 6, 3}, "yogakaraka": None},       # Pisces
 }
 
-# Combustion orbs (degrees from Sun)
+# Per-row source tag of the functional role table above.
+FUNCTIONAL_SOURCE = "BPHS ch.34"
+for _row in FUNCTIONAL.values():
+    _row["source"] = FUNCTIONAL_SOURCE
+
+# Combustion orbs (degrees from Sun) — Surya Siddhanta defaults.
 COMBUST_ORB = {1: 12.0, 2: 17.0, 3: 14.0, 4: 11.0, 5: 10.0, 6: 15.0}
+# Retrograde Mercury / Venus are combust within a narrower orb.
+COMBUST_ORB_RETROGRADE = {3: 12.0, 5: 8.0}
+# Named tables selected by CalcSettings.combust_table. "wide_variant" is a
+# secondary-source variant (Jupiter 12°, Saturn 16°), not a second siddhanta.
+COMBUST_TABLES = {
+    "surya_siddhanta": (COMBUST_ORB, COMBUST_ORB_RETROGRADE),
+    "wide_variant": ({**COMBUST_ORB, 4: 12.0, 6: 16.0}, COMBUST_ORB_RETROGRADE),
+}
+
+
+def combust_orb(pid, retro=False, table="surya_siddhanta"):
+    """Orb (degrees from the Sun) inside which `pid` is combust; None if it cannot be."""
+    orbs, retro_orbs = COMBUST_TABLES[table]
+    if retro and pid in retro_orbs:
+        return retro_orbs[pid]
+    return orbs.get(pid)
+
+
+# Natural enemies (BPHS ch.3), used for enemy-sign tests.
+NATURAL_ENEMIES = {0: {5, 6}, 1: set(), 2: {3}, 3: {1}, 4: {3, 5}, 5: {0, 1}, 6: {0, 1, 2}}
 
 HEALTH_DISCLAIMER = ("These windows are preventive traditional indications from the "
                      "chart — not medical diagnoses, and not a substitute for "

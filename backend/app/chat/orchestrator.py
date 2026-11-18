@@ -4,17 +4,19 @@ Past-event checks and birth-time refinement are optional parts of a reading.
 """
 from dataclasses import asdict
 import json
+import logging
 import re
 import time
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import classical, calibration, panchang, precision, report, sensitivity, prediction
+from ..astro import classical, calibration, panchang, pillars, precision, report, sensitivity, prediction, verify
 from ..astro.constants import DOMAINS
 from .. import geo
 from ..policy import TERMS_VERSION
 from ..astro.engine import BirthInput, birth_fingerprint, engine
+from ..astro.settings import CalcSettings
 from ..db import (
     BirthProfile, CalibrationEvent, Conversation, Message, PredictionRecord, UserMilestone,
     _utcnow,
@@ -22,18 +24,24 @@ from ..db import (
 from ..llm import providers
 from . import language
 
+log = logging.getLogger(__name__)
+
 RECTIFY_STATES = ("rectify", "rectify_collect", "rectify_domain", "rectify_confirm")
 
 
 # ------------------------------------------------------------------ helpers
 
 def birth_input(profile: BirthProfile) -> BirthInput:
+    try:
+        calc = CalcSettings.from_preset(profile.calc_preset or "default")
+    except ValueError:
+        calc = CalcSettings()
     return BirthInput(
         name=profile.display_name or "", year=profile.year, month=profile.month,
         day=profile.day, hour=profile.hour, minute=profile.minute,
         second=profile.second or 0, lat=profile.latitude, lon=profile.longitude,
         tz_offset=profile.utc_offset_hours, place_label=profile.place_name,
-        birth_time_precision=profile.birth_time_precision,
+        birth_time_precision=profile.birth_time_precision, settings=calc,
     )
 
 
@@ -764,12 +772,30 @@ def _stamp(profile: BirthProfile) -> str:
             f"{profile.hour:02d}:{profile.minute:02d}:{(profile.second or 0):02d}")
 
 
+def _refresh_offset(profile: BirthProfile, dt: datetime):
+    """Re-derive the UTC offset for `dt` using the profile's stored time basis."""
+    basis = profile.time_basis or "zone"
+    if basis == "manual" and profile.utc_offset_manual is not None:
+        profile.utc_offset_hours = profile.utc_offset_manual
+        return
+    try:
+        r = geo.resolve_offset(
+            profile.latitude, profile.longitude, dt, country=profile.place_country,
+            state=profile.place_state, basis=basis, manual_offset=profile.utc_offset_manual,
+            fold=profile.dst_fold if profile.dst_fold is not None else 0)
+    except geo.NonexistentTime:
+        return                      # a rectified time inside a DST gap keeps the old offset
+    profile.utc_offset_hours = r["offset_hours"]
+    profile.offset_source = r["source"]
+    profile.tz_warnings = json.dumps(r["warnings"])
+    profile.tzdb_version = r["tzdb_version"]
+
+
 def _set_time(profile: BirthProfile, dt: datetime):
     profile.year, profile.month, profile.day = dt.year, dt.month, dt.day
     profile.hour, profile.minute, profile.second = dt.hour, dt.minute, dt.second
-    # the date may have shifted, so re-derive the historical UTC offset
-    profile.utc_offset_hours = geo.historical_utc_offset(
-        profile.latitude, profile.longitude, dt, profile.utc_offset_hours)
+    # the date may have shifted, so re-derive the UTC offset on the stored time basis
+    _refresh_offset(profile, dt)
     profile.chart_json = None
     profile.calc_fingerprint = birth_fingerprint(birth_input(profile))
 
@@ -1135,8 +1161,12 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                     pillar_line = ", ".join(
                         f"{k.replace('_', ' ')}: {v}" for k, v in a["pillars"].items())
                     ev = list(dict.fromkeys(a["calculation_evidence_ids"]))
-                    pretty = (f"Pillars — {pillar_line}.\n{a['convergence']}.\n\n"
+                    pretty = (f"Pillars — {pillar_line}.\n{a['convergence']}.\n"
+                              f"{a.get('convergence_disclaimer') or pillars.CONVERGENCE_DISCLAIMER}\n\n"
                               "Evidence:\n- " + "\n- ".join(ev[:12]))
+                    settings_text = providers.settings_summary(facts)
+                    if settings_text:
+                        pretty += "\n\n" + settings_text
                     prec = a.get("precision")
                     if prec:
                         extra = [f"Confirmation: {prec['confirmation']}"]
@@ -1306,6 +1336,15 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         allow_external=_external_ok(profile), on_delta=None if analysis else on_delta, routing_seconds=routing_seconds)
     if analysis and provider != "offline":
         reply = prediction.constrain_reply(reply, analysis, facts, history)
+    if provider != "offline":
+        # reject/strip degrees, signs, nakshatras, dates, durations and
+        # probability wording the model was never given
+        check = verify.verify_response(
+            reply, facts, {"grounding_text": providers.grounding_text(facts, analysis),
+                           "citations_provided": False})
+        if not check["ok"]:
+            log.warning("verifier stripped unsupported claims: %s", check["issues"][:5])
+            reply = verify.repair_response(reply, check["issues"])
     reply = _apply_disclaimer(reply, domain)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)

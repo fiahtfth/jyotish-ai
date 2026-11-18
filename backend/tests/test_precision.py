@@ -294,7 +294,7 @@ def test_all_gates_use_the_same_sample_and_missing_bindus_cannot_confirm():
     assert audit["scores"][0]["micro_aligned"] is False
     assert audit["tables"][-1]["rows"][-1][1] == "Unavailable"
     assert all(len(row) == len(t["columns"]) for t in audit["tables"] for row in t["rows"])
-    assert "| Point | D1 | D2 | D4 | D6 |" in classical.markdown(audit)
+    assert "| Point | D1 | D2 | D3 | D4 | D6 |" in classical.markdown(audit)
     assert not classical.rashi_reaches(8, 8-1)
     assert K.reaches("Jupiter", 0) & K.reaches("Saturn", 2) == {4, 8}
 

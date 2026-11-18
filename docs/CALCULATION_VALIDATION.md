@@ -4,13 +4,31 @@ Engine: **PyJHora 5.0.0** over **pyswisseph** (Swiss Ephemeris). All values belo
 
 ## Recorded settings
 
-| Setting | Value | Why |
+Every setting lives in `backend/app/astro/settings.py` (`CalcSettings`, frozen, validated) and is folded into the calc fingerprint and the chart cache key. Defaults reproduce the historical behaviour. `facts["meta"]` discloses the frame actually used (ayanamsa id/degrees/DMS, ephemeris, node, positions, centre, dasha-year mode/days, warnings).
+
+| Setting | Default | Options / notes |
 |---|---|---|
-| Ayanamsa | **LAHIRI** | PyJHora defaults to TRUE_PUSHYA (~1.14° off Lahiri); Lahiri is the standard reference. |
-| Nodes | **Mean** | PyJHora 5.0.0's TRUE_NODE path crashes pyswisseph (`swe.calc_ut` on negative jd). |
-| Chara karakas | **7-karaka** (AK…DK, Rahu excluded) | PyJHora's `get_chara_karakas` returns the 8-karaka scheme; spec requires 7. Implemented directly by within-sign advancement. |
-| Varga methods | PyJHora varga functions (Parashari counting), method=1 | D2/D4/D7/D9/D10/D12/D16/D20/D24/D40/D60. No trimshamsa function exists in 5.0.0. |
-| Geocoding | bundled `geonames_places_5k.csv` (~68k cities) + timezonefinder/zoneinfo | fully offline; historical UTC offset computed from IANA tzdb. |
+| `ayanamsa` | **LAHIRI** (Swiss Ephemeris) | LAHIRI_ICRC, LAHIRI_1940, LAHIRI_VP285, TRUE_CITRA. PyJHora's own default is TRUE_PUSHYA (~1.14 deg off Lahiri), so we always set one explicitly. Variants differ from SE Lahiri by about -1.1", -53", +23" (2022). |
+| `node` | **mean** | `true` is allowed only if a smoke test of PyJHora's true-node mode (Rahu equals `swe.TRUE_NODE`) passes; otherwise `ValueError`. `facts["node_check"]` compares mean vs true Rahu (D1 and D9 sign) so a chart sensitive to the choice is flagged. |
+| `positions` | **true** (geometric, `FLG_TRUEPOS`) | `apparent` clears the flag (adds aberration/deflection). |
+| `center` | **geocentric** | `topocentric` sets `swe.FLG_TOPOCTR` and the observer location; Moon moves up to ~1° (parallax), Sun <8". PyJHora exposes it via `PLANET_POSITIONS_GEOCENTRIC=False` — patched into the module's private globals (see note on `drik` patching below). |
+| `dasha_year` | **true_tropical** (PyJHora default, ~365.2407 d, computed per birth) | julian 365.25, gregorian 365.2425, sidereal 365.256364 (PyJHora/JH constant), savana_360 360, true_sidereal (solar return to the same sidereal longitude). Constant-length modes are applied by wrapping PyJHora's `_get_dhasa_start_jd/_end_jd`; PyJHora's native true-year paths use solar-arc searches. Changes dasha dates by months over a lifetime (savana_360 moves a Jupiter MD ~212 days earlier at age 40). |
+| `chara_school`, `karaka_scheme`, `colord_rule`, `arudha_exception` | KNRao, 7_KNRao, school, standard | Read by the Jaimini layer. The engine's running Chara dasha maps KNRao and PVR; Rath raises `ValueError` (not implemented). |
+| `d24` | **forward** | `reverse` = PyJHora D24 method 2 (even signs counted from Cancer in reverse). |
+| `combust_table` | **surya_siddhanta** | `wide_variant` = the wider set of combustion orbs. Applied when the engine marks planets combust; recorded in `meta.arcs`. |
+| `gandanta_arc`, `sandhi_arc` | 10/3 deg (one nakshatra pada), 1.5 deg | Recorded for downstream consumers. |
+| Ephemeris | **Swiss (.se1 files)** | `backend/data/ephe/` ships `sepl_18`, `semo_18`, `seas_18` (1800-2400 AD). Without them pyswisseph silently falls back to Moshier; the engine logs a warning and records `meta.ephemeris`. PyJHora's own `data/ephe` is on the path too (fixed stars for True Chitra). |
+| Chara karakas | **7-karaka** (AK...DK, Rahu excluded) | PyJHora's `get_chara_karakas` returns the 8-karaka scheme; implemented directly by within-sign advancement. |
+| Varga methods | PyJHora varga functions (Parashari counting) | D2 (Leo/Cancer), D3 (Uma-Shambu), D4, D6, D7, D9, D10, D12, D16, D20, D24, D30 (Parashari, 5 unequal parts), D40, D45, D60. D30 was previously absent because the lookup used the wrong function name (`trimshamsa_chart`; the library has `trimsamsa_chart`). |
+| Geocoding | bundled `geonames_places_5k.csv` + timezonefinder/zoneinfo | fully offline; historical UTC offset from IANA tzdb. |
+
+Presets `default`, `drik`, `jh`, `iae` are approximations of Drik Panchang / Jagannatha Hora / IAE-Rashtriya-Panchang conventions and **must be verified against your own JH / Drik / IAE install** before being described as matching either.
+
+`drik.X` patching note: PyJHora 5 loads `drik` into a private globals dict while the visible module's `__dict__` is a copy. The engine patches the private dict (`drik.sidereal_longitude.__globals__`) — `drik.PLANET_FLAGS = ...` alone would be inert for PyJHora-internal calls, which is how `positions`/`center` propagate.
+
+PyJHora keeps calculation state in process globals; the engine serialises compute / running_vimshottari / running_chara / transit_positions under one re-entrant lock (`engine.calc_lock`) and re-applies settings only when they change. Other modules calling `drik` directly (panchang, precision) should hold `calc_lock` if they must be isolated from a settings switch.
+
+Known upstream defect: PyJHora `navamsa_chart` places an exact multiple of 10/3 deg into the previous part (float floor); covered by a strict-xfail test in `test_engine_frame.py`. Effect on real ephemeris longitudes is negligible.
 
 ## Regression checks (automated, `backend/tests/`)
 
@@ -18,7 +36,12 @@ Engine: **PyJHora 5.0.0** over **pyswisseph** (Swiss Ephemeris). All values belo
   Sun 0.22° Taurus (just ingressed sidereal Taurus on May 15), Moon 27.7° Sagittarius (Uttara Ashadha), Lagna Taurus 7.4°, Rahu Capricorn / Ketu Cancer (correct node axis for mid-1990), Saturn ~1.5° Capricorn (Saturn ingressed Capricorn Feb 1990). All assertions tolerate small deltas and pin sign + nakshatra.
 - **Determinism**: same input → byte-identical planets JSON.
 - **Sensitivity**: +20 min moves Lagna degree while Sun sign is stable — lagna boundaries are genuinely time-critical (hence the timing caution when past-event checks are inconclusive).
-- **Vimshottari**: period list spans ~120 years end-to-end; every antardasha ordered.
+- **Vimshottari**: period list spans ~120 years end-to-end; every antardasha ordered. `test_edge_cases.py` additionally asserts the nine mahadashas are contiguous, each lord appears exactly once, and total coverage equals 120 dasha-years (exact for savana_360; within drift for true_tropical).
+- **Edge/property** (`test_edge_cases.py`): every varga row has 9 grahas + Lagna with valid sign/degree; D1 sign = floor(lon/30); lagna boundary flags fire within 2° of a sign edge; southern-hemisphere charts compute; `meta.ephemeris` matches the backend actually used.
+- **Node/center** (`test_engine_frame.py`): mean-vs-true node sensitivity reports D1/D9 sign flips, Chara-dasha year changes for Scorpio/Aquarius, and karaka-rank ambiguity; topocentric Moon differs from geocentric by parallax; `apparent` positions differ by aberration.
+- **Time stability** (`test_time_stability.py`): divisional-lagna sign windows and Moon nakshatra-pada windows are computed by grid-scan + bisection and surfaced in the cusp audit; ambiguous D9/D60 and pada boundaries are flagged, never guessed.
+- **Varshaphala** (`test_varsha.py`): solar-return, Muntha, office-bearers, bala, Mudda dasha and yoga rows against the Bhadohi fixture.
+- **Mode B** (`test_modeb.py`): pasted degree-table parser — precision detection (deg / deg.dec / D:M / D:M:S / retrograde / Lagna), ambiguous varga/karaka flags at coarse precision, explicit `unavailable` list for layers needing birth data (houses, dashas, Chara dasha); authenticated endpoint returns 422 on unparseable input.
 
 ## Reference check vs other software
 
@@ -26,7 +49,7 @@ Sun at sidereal Taurus ingress on 15-May-1990, Moon in Uttara Ashadha, Rahu in C
 
 ## Pillar caveats
 
-- **Tajika**: Muntha progression only (`(lagna_sign - 1 + completed_years) % 12`), labeled "simplified" — a full Varshaphala (solar-return chart, sahams, Tajika yogas, Mudda dasha) is not implemented.
+- **Tajika**: full Varshaphala (`backend/app/astro/varsha.py`): exact solar return solved against `swe` to ~1e-6", Varsha Lagna, Muntha, five office-bearers (Varsheshwara via Pancha-vargiya bala, Muntha-lord, Varsha-lagna lord, birth-lagna lord, Trirashi-lord), Mudda dasha, and the classical Tajika yogas (Ithasala, Ishrafa, Kamboola…) via PyJHora's `tajaka`/`annual`/`mudda` APIs. Sahams are not implemented; the solar-return pillar reports that explicitly.
 - **KP/micro-timing**: implemented as monthly Jupiter/Saturn transit-over-domain-house + SAV≥28 bindu strength + ashtama-Shani flag. No cuspal sub-lord KP.
 - **Jaimini**: Chara dasha sign vs karaka sign / A10 / UL via rashi drishti (movable↔fixed, dual↔dual).
 - The four pillars can each return `unavailable` — missing data is reported, never guessed.
@@ -60,3 +83,22 @@ backend/.venv/bin/python backend/scripts/evaluate_predictions.py private-export.
 Do not commit private exports. Synthetic regression fixtures verify evaluation behavior; they are not evidence of prediction accuracy. A real prospective cohort with event-negative observations, complete follow-up, adequate sample size and uncertainty estimates is still required. Future rule changes need a new untouched holdout; fitting weights to this test set is not permitted.
 
 Repeated forecasts for the same profile, event definition and interval are scored once (the earliest record). The API also returns a Wilson interval around the observed hit rate; it describes uncertainty in the self-reported scored subset and does not correct selection bias or prove predictive validity.
+
+## Calibrated probabilities (not implemented)
+
+The software deliberately emits no probabilities. The convergence badge ("Traditional convergence: n/4 pillars indicate this window") counts agreement among techniques that share the same birth data; it is not a probability and carries a fixed disclaimer (Carlson 1985; Narlikar et al. 2009 found no better-than-chance performance in controlled studies). A calibrated-probability mode would require, in order:
+
+1. Birth data of AA (Rodden) rating, with recorded time source.
+2. Pre-registered rules and event definitions, fixed before any outcome is seen.
+3. Base rates for each event type and window length.
+4. A train / held-out split, scored with Brier score, log loss and reliability (calibration) curves against the base-rate baseline.
+5. A shuffled-chart null: the same rules run on charts paired with other people's outcomes, to show the real result beats chance.
+6. Publication of the method, data description and negative results.
+
+`backend/app/astro/validation.py::evaluate_dataset` already implements the cutoff / held-out-profile split and majority-event baseline for step 4; it does not yet compute Brier/log loss or the shuffled null.
+
+## LLM output controls
+
+Provider temperature defaults to 0.2 (`JYOTISH_LLM_TEMPERATURE`); the model id and temperature are logged on every call. Facts are sent with stable IDs (F001..), and computed evidence/rules with E###/R### IDs, and the model is asked to cite them inline. The verifier checks degrees, sign and nakshatra names, ISO and "Month YYYY" dates, dasha year durations and probability wording against the text the model was shown. Strict JSON-schema output is deferred: it does not fit the current streaming plain-text response path.
+
+Golden-chart scaffolding is in `backend/tests/golden/` (see its README); the only fixture so far is a self-snapshot, which is a regression guard and not an external reference.
