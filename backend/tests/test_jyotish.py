@@ -3,6 +3,7 @@ import os, sys, json, uuid
 
 os.environ["JYOTISH_DATABASE_URL"] = "sqlite:////tmp/jyotish_test.db"
 os.environ["JYOTISH_LLM_PROVIDER"] = "offline"
+os.environ["JYOTISH_JWT_SECRET"] = "test-only-jwt-secret-" + uuid.uuid4().hex
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest
@@ -569,6 +570,39 @@ def test_successful_logins_do_not_consume_email_budget():
         M._auth_attempts.pop("ip:testclient", None)
     r = client.post("/api/auth/login", json={"email": email, "password": "password123"})
     assert r.status_code == 429
+
+
+# ---------- JWT secret configuration ----------
+
+def test_jwt_secret_required(monkeypatch):
+    from app.config import _load_jwt_secret
+    monkeypatch.delenv("JYOTISH_JWT_SECRET", raising=False)
+    monkeypatch.delenv("JYOTISH_DEV_INSECURE_JWT", raising=False)
+    with pytest.raises(RuntimeError, match="not set"):
+        _load_jwt_secret()
+    monkeypatch.setenv("JYOTISH_JWT_SECRET", "too-short")
+    with pytest.raises(RuntimeError, match="shorter than 32 bytes"):
+        _load_jwt_secret()
+
+def test_jwt_secret_accepts_strong_value(monkeypatch):
+    from app.config import _load_jwt_secret
+    monkeypatch.setenv("JYOTISH_JWT_SECRET", "x" * 32)
+    assert _load_jwt_secret() == "x" * 32
+
+def test_jwt_secret_dev_flag_uses_random_secret(monkeypatch):
+    from app.config import _load_jwt_secret
+    monkeypatch.delenv("JYOTISH_JWT_SECRET", raising=False)
+    monkeypatch.setenv("JYOTISH_DEV_INSECURE_JWT", "true")
+    a, b = _load_jwt_secret(), _load_jwt_secret()
+    assert a != b and len(a.encode()) >= 32
+
+def test_jwt_secret_dev_flag_ignored_in_prod(monkeypatch):
+    from app.config import _load_jwt_secret
+    monkeypatch.delenv("JYOTISH_JWT_SECRET", raising=False)
+    monkeypatch.setenv("JYOTISH_DEV_INSECURE_JWT", "true")
+    monkeypatch.setenv("JYOTISH_ENV", "prod")
+    with pytest.raises(RuntimeError, match="not set"):
+        _load_jwt_secret()
 
 
 # ---------- resource-exhaustion guards ----------
