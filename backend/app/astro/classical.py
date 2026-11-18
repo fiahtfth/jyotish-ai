@@ -237,12 +237,29 @@ def window_audit(facts, birth, domain, when, calibrated):
         annual_hits += int(s in targets or ruler in contacts)
         annual.append(f"{ref} {K.SIGN_NAMES[s]} ({', '.join(contacts) or 'no contacts'})")
     td = _dignity(PID[ml], transits[ml]["sign"], transits[ml]["degree"]) if ml in transits else []
+    blocked = []
+    if "debilitated" in planets[ml]["dignity"] + td:
+        blocked.append("debilitated")
+    if planets[ml].get("combust"):
+        blocked.append("natal combustion")
+    if planets[ml]["house"] in (6, 8, 12):
+        blocked.append(f"natal H{planets[ml]['house']}")
+    if ml in transits:
+        transit_house = house(transits[ml]["sign"], refs["Lagna"]["sign"])
+        if transit_house in (6, 8, 12):
+            blocked.append(f"transit H{transit_house}")
+        with precision._frame(birth):
+            retro = precision.drik.planets_in_retrograde(precision._jd_noon(when), precision._place(birth))
+        orb = K.combust_orb(PID[ml], PID[ml] in retro, birth.settings.combust_table)
+        if orb and "Sun" in transits and precision._sep(
+                precision._abs_long(transits[ml]), precision._abs_long(transits["Sun"])) < orb:
+            blocked.append("transit combustion")
     gate("Annual progression", age >= 0 and ml in transits, mh in (1, 2, 3, 5, 9, 10, 11)
-         and "debilitated" not in planets[ml]["dignity"] + td and annual_hits >= 2,
+         and not blocked and annual_hits >= 2,
          f"Muntha {K.SIGN_NAMES[ms]} H{mh}. {ml} natal {position(planets[ml])} "
          f"({', '.join(planets[ml]['dignity']) or 'ordinary'}), transit "
          f"{position(transits[ml]) if ml in transits else 'unavailable'} ({', '.join(td) or 'ordinary'}). "
-         + ". ".join(annual))
+         + ". ".join(annual) + (". Muntha lord moderates the year due to " + ", ".join(blocked) if blocked else ""))
     shared = set(targets)
     trans = []
     for name in ("Jupiter", "Saturn"):

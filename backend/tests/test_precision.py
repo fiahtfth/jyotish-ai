@@ -307,3 +307,25 @@ def test_weak_promise_vetoes_otherwise_supported_event():
                 "classical": {"promise": "Weak", "timing_sensitive": False,
                               "scores": [{"complete": True, "count": 4}]}}
     assert prediction.decide("Will I get a promotion?", analysis)["disposition"] == "abstain"
+
+
+@pytest.mark.parametrize("condition", ["natal_house", "natal_combust", "transit_house", "transit_combust", "clear"])
+def test_favorable_muntha_is_moderated_by_its_lord(monkeypatch, condition):
+    from copy import deepcopy
+    from app.astro import classical
+    b, original = make_facts()
+    facts = deepcopy(original)
+    when = date(2027, 7, 2)
+    monkeypatch.setattr(P, "completed_solar_years", lambda *a: 37)
+    transits = deepcopy(engine.transit_positions((2027, 7, 2), P._place(b)))
+    mercury = facts["planets"]["Mercury"]
+    mercury["house"] = 12 if condition == "natal_house" else 11
+    mercury["combust"] = condition == "natal_combust"
+    # The test chart has Taurus Lagna and Gemini Muntha. Mercury in Gemini
+    # supports the annual progression unless the specific override applies.
+    transits["Mercury"] = {"sign": 0 if condition == "transit_house" else 2, "degree": 14.0}
+    transits["Sun"] = {"sign": 2 if condition == "transit_combust" else 6, "degree": 14.0}
+    monkeypatch.setattr(engine, "transit_positions", lambda *a: transits)
+    annual = classical.window_audit(facts, b, "finance", when, True)[2][1]
+    assert annual[1] == ("Aligned" if condition == "clear" else "Limited")
+    assert ("Muntha lord moderates" in annual[2]) == (condition != "clear")
