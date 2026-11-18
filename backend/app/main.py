@@ -72,16 +72,19 @@ async def no_store_api(request, call_next):
         response.headers["Vary"] = "Authorization"
     return response
 
-_rate: dict[int, deque] = defaultdict(deque)
+_rate: dict[tuple[str, int], deque] = defaultdict(deque)
 
 
-def _rate_limit(user_id: int):
+def _rate_limit(user_id: int, bucket: str = "chat", limit: int | None = None,
+                detail: str = "slow down — too many messages"):
+    if limit is None:
+        limit = settings.CHAT_RATE_LIMIT_PER_MIN
     now = time.time()
-    q = _rate[user_id]
+    q = _rate[(bucket, user_id)]
     while q and q[0] < now - 60:
         q.popleft()
-    if len(q) >= settings.CHAT_RATE_LIMIT_PER_MIN:
-        raise HTTPException(429, "slow down — too many messages")
+    if len(q) >= limit:
+        raise HTTPException(429, detail)
     q.append(now)
 
 
@@ -327,6 +330,8 @@ def delete_me(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 @app.get("/api/geo/search", response_model=list[PlaceSearchOut])
 def geo_search(q: str = Query(min_length=2), user: User = Depends(current_user)):
+    _rate_limit(user.id, "geo", settings.GEO_RATE_LIMIT_PER_MIN,
+                "slow down — too many place searches")
     return geo.search_places(q)
 
 
@@ -434,6 +439,8 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
     p.utc_offset_hours = resolved["utc_offset_hours"]
 
     if material_change:
+        _rate_limit(user.id, "profile", settings.PROFILE_RATE_LIMIT_PER_MIN,
+                    "slow down — too many birth-detail changes")
         # recompute the locked chart + fingerprint; never silently mutate them
         b = orchestrator.birth_input(p)
         facts = engine.compute(b)
