@@ -361,14 +361,14 @@ def test_panchang_chat_unauthenticated_gate_free():
     assert "Rahu Kaalam" in m["content"]
 
 
-def test_timing_chat_gated_then_allowed():
+def test_timing_chat_before_and_after_checks():
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
-    # uncalibrated: timing question routed through the prediction gate
+    # Asking for timing before the checks opens a qualified reading.
     r = c.post("/api/chat/send",
                json={"text": "when should I buy a car?"}, headers=h)
     body = " ".join(m["content"] for m in r.json()).lower()
-    assert "suggested window" not in body
+    assert "less accurate" in body and r.json()[-1]["kind"] == "timing"
 
     c, h = _calibrated_client()
     r = c.post("/api/chat/send",
@@ -394,13 +394,13 @@ def test_report_chat_calibrated():
     assert "%" not in m["content"]
 
 
-def test_report_chat_gated():
+def test_report_chat_with_unchecked_birth_time():
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
     r = c.post("/api/chat/send",
                json={"text": "show me my report"}, headers=h)
     body = " ".join(m["content"] for m in r.json()).lower()
-    assert "twelve-month outlook" not in body
+    assert "less accurate" in body and "twelve-month outlook" in body
 
 
 def test_panchang_during_calibration_keeps_event_pending():

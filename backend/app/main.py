@@ -447,7 +447,7 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
         p.chart_json = json.dumps(facts)
         p.calc_fingerprint = birth_fingerprint(b)
         p.rectified_from = None  # user-edited birth details supersede any rectification
-        # new birth data gets a fresh chance at automatic and milestone rectification
+        # A material edit starts a new set of optional checks.
         p.rectification_attempted = False
         p.milestone_search_done = False
         if not is_new:
@@ -563,9 +563,13 @@ def _profile_conversation(db: Session, p: BirthProfile) -> Conversation:
 def chat_history(user: User = Depends(current_user), db: Session = Depends(get_db)):
     p = _require_profile(user)
     conv = _profile_conversation(db, p)
-    if not conv.messages:
+    if not conv.messages or conv.state == "cal_intro":
         orchestrator.start_conversation(db, conv, p)
         db.refresh(conv)
+    elif conv.state in ("open", "rectify") and orchestrator.needs_reading_notice(conv, p):
+        # Give returning clients a way forward when their last exchange ended in a refusal.
+        orchestrator.invite_reading(db, conv, p)
+        db.commit()
     ids = [m.id for m in conv.messages]
     ratings = dict(db.query(MessageFeedback.message_id, MessageFeedback.rating)
                    .filter(MessageFeedback.user_id == user.id,
@@ -580,7 +584,7 @@ def chat_send(body: ChatIn, user: User = Depends(current_user),
     p = _require_profile(user)
     _rate_limit(user.id)
     conv = _profile_conversation(db, p)
-    if not conv.messages:
+    if not conv.messages or conv.state == "cal_intro":
         orchestrator.start_conversation(db, conv, p)
         db.refresh(conv)
     new_msgs = orchestrator.handle_message(db, conv, p, body.text)
@@ -628,7 +632,7 @@ def chat_stream(body: ChatIn, user: User = Depends(current_user)):
             prof = db.get(BirthProfile, profile_id)
             conv = _profile_conversation(db, prof)
             conv_id = conv.id
-            if not conv.messages:
+            if not conv.messages or conv.state == "cal_intro":
                 orchestrator.start_conversation(db, conv, prof)
                 db.refresh(conv)
             new_msgs = orchestrator.handle_message(
@@ -731,14 +735,8 @@ def chat_reset(user: User = Depends(current_user), db: Session = Depends(get_db)
     db.flush()
     conv.pending_event_id = ""
     state = p.calibration_state or "pending"
-    if p and state == "uncalibrated":
-        conv.state = "rectify"
-        text, options = orchestrator.rectify_invite(p)
-        orchestrator._add_msg(db, conv, "assistant", text, kind="options",
-                              meta={"options": options, "actions": {"Edit birth details": "edit_birth"}})
-    elif p and state == "insufficient_history":
-        conv.state = "open"
-        orchestrator._add_msg(db, conv, "assistant", orchestrator.insufficient_msg(p))
+    if state in ("uncalibrated", "insufficient_history", "skipped"):
+        orchestrator.invite_reading(db, conv, p)
     elif p and state == "pending":
         # keep answered checks; the next history load asks the next unanswered one
         conv.state = "cal_intro"

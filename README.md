@@ -4,7 +4,7 @@ A conversational Vedic astrology app — **not** a chart dashboard. You sign in,
 
 ## What it does
 
-- **Calibration first**: the backend generates three dated life-domain windows (career, education, relocation, …) from your chart, asks you one at a time, and records confirmed / partial / rejected. 3 confirmations → calibrated; 2 → partial (reads with a caution flag); 0–1 → the app **auto-rectifies**: it scores nearby birth times (±30–120 min by stated precision) against your feedback, adopts a clearly better fit, and re-asks — otherwise predictions stay locked, even against prompt injection.
+- **Optional birth-time checks.** Answer three questions about past events or go straight to a reading. When the checks are inconclusive, the chat uses the recorded time and explains that dates may be less accurate. Clients can share dated milestones to explore an adjustment and choose whether to use it.
 - **Locked chart facts**: PyJHora + Swiss Ephemeris compute everything (signs, degrees, nakshatras, dignity, combustion, retrograde, gandanta, house lords, yogakaraka/maraka/badhaka, Vimshottari, Jaimini 7-karakas + arudhas + Chara dasha, divisional charts D1/D2/D7/D9/D10/D24/D60…, Sarvashtakavarga, Binnashtakavarga, Shadbala, Bhava Chalit, Muntha). The LLM receives these as authoritative facts and is forbidden from computing or stating degrees — enforced by a deterministic verifier on every reply.
 - **Four-pillar convergence** for forward-looking questions: Parashari (dasha lordship + varga dignity + bhava-chalit + Shadbala strength), Jaimini (Chara dasha + rashi drishti vs karaka and domain arudhas), Tajika (Muntha house + Muntha-lord dignity), and micro-timing (Jupiter–Saturn double transit, Sun/Mars fast transits, SAV/BAV bindus, nakshatra sub-period lord). Each window is badged `N/4 Confirmed` or `N/4 Conditional` — support / conflict counts only, never numerical probabilities. A `health` domain exists (houses 1/6/8/12, D30, Gnatikaraka) and always appends a not-medical-diagnosis disclaimer.
 - **Chat-first UI**: plain conversation, quick-reply buttons for calibration, inline North-Indian chart cards on request, "why do you say that?" reveals the pillar evidence. Light/dark theme, mobile-friendly.
@@ -58,7 +58,7 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 cd backend && python3 -m pytest tests/ -q
 ```
 
-17 tests: engine determinism + reference positions, locked-facts shape, birth-time sensitivity, Vimshottari span, verifier (wrong-sign, probabilities, degree injection), full calibration → gate opens, gate blocks predictions pre-calibration, failed calibration locks predictions + survives a prompt-injection attempt + triggers rectification search, unauthenticated rejection, API no-store headers, health-domain disclaimer, pillar gap features.
+The backend suite covers chart calculations, optional birth-time checks, readings after a mismatch, time refinement, access controls, and chat delivery.
 
 See `docs/CALCULATION_VALIDATION.md` for calculation choices and caveats, and `docs/LICENSING.md` for the AGPL/GPL licensing situation before you deploy this anywhere public.
 
@@ -78,7 +78,6 @@ The app ships as **one service**: `frontend/` builds to a static export committe
 - Set env vars on the service: `JYOTISH_LLM_PROVIDER=gemini`, `GEMINI_API_KEY`, optional `GROQ_API_KEY` / `OPENROUTER_API_KEY` fallbacks, `JYOTISH_LLM_EXTERNAL_CONSENT=true`, `JYOTISH_JWT_SECRET`, and optionally `JYOTISH_DATABASE_URL`.
 - **Free-tier caveats**: sleeps after ~15 min idle (~30s cold start); without `JYOTISH_DATABASE_URL` the SQLite file lives on ephemeral disk — **accounts reset on every redeploy**. Point `JYOTISH_DATABASE_URL` at a free Postgres (e.g. Neon: `postgresql+psycopg2://…`) to make accounts permanent.
 - After editing the frontend, rebuild the export (`npm run build`) and force-add it (`git add -f frontend/out`) — the directory is git-ignored; auto-deploy pulls from `main`.
-- Rectification flow is a placeholder (asks for better birth data; does not run a full rectification algorithm).
 - Google sign-in not implemented (email/password only).
 - Gemini free tier can return transient 503s; the app retries, then falls back to Groq and OpenRouter free models when their keys are set, and finally to the offline responder.
 

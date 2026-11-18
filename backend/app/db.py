@@ -85,7 +85,7 @@ class BirthProfile(Base):
     birth_time_precision = Column(String, default="exact")  # exact|approximate|unknown
     chart_json = Column(Text, default="")          # locked facts cache
     calc_fingerprint = Column(String, default="")
-    calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated|insufficient_history
+    calibration_state = Column(String, default="pending")  # pending|calibrated|partial|uncalibrated|insufficient_history|skipped
     predictions_allowed = Column(Boolean, default=False)
     rectified_from = Column(String, nullable=True)  # original "YYYY-MM-DD HH:MM:SS" if rectified
     # automatic (feedback-based) rectification already tried for this birth data

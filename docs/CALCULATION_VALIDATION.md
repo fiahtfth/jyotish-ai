@@ -17,7 +17,7 @@ Engine: **PyJHora 5.0.0** over **pyswisseph** (Swiss Ephemeris). All values belo
 - **Reference positions** — 1990-05-15 06:15 IST, Chennai (Lahiri, mean nodes):
   Sun 0.22° Taurus (just ingressed sidereal Taurus on May 15), Moon 27.7° Sagittarius (Uttara Ashadha), Lagna Taurus 7.4°, Rahu Capricorn / Ketu Cancer (correct node axis for mid-1990), Saturn ~1.5° Capricorn (Saturn ingressed Capricorn Feb 1990). All assertions tolerate small deltas and pin sign + nakshatra.
 - **Determinism**: same input → byte-identical planets JSON.
-- **Sensitivity**: +20 min moves Lagna degree while Sun sign is stable — lagna boundaries are genuinely time-critical (this is why the calibration gate exists).
+- **Sensitivity**: +20 min moves Lagna degree while Sun sign is stable — lagna boundaries are genuinely time-critical (hence the timing caution when past-event checks are inconclusive).
 - **Vimshottari**: period list spans ~120 years end-to-end; every antardasha ordered.
 
 ## Reference check vs other software

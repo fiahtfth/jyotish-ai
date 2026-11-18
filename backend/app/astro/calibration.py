@@ -177,27 +177,22 @@ def evaluate_feedback(statement: dict, feedback: str, actual_date: str | None = 
 
 
 def calibration_outcome(statements: list[dict]) -> dict:
-    """Gate decision, per spec: 3 confirmed -> matched; 2 -> partial;
-    0-1 -> locked, rectification required. Unknowns never count as matches."""
+    """Record the strength of the past-event match for the reading."""
     confirmed = sum(1 for s in statements if s.get("user_feedback") == "confirmed")
     partial = sum(1 for s in statements if s.get("user_feedback") == "partial")
     unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
     if confirmed == 3:
         state = "calibrated"
-        label = "All three checks matched — the chart agrees with your past. The birth details hold up well."
-        predictions_allowed = True
+        label = "All three periods matched the events you remember."
     elif confirmed == 2:
         state = "partial"
-        label = "Two of the three matched — good enough to work with; I'll keep a little caution on timing."
-        predictions_allowed = True
+        label = "Two of the three periods matched. I'll treat dates in the reading as approximate."
     else:
         state = "uncalibrated"
-        label = ("The chart and your past didn't quite line up, so I'm not going to "
-                 "make predictions from it yet.")
-        predictions_allowed = False
+        label = "The past-event checks didn't establish a consistent match."
     return {"state": state, "label": label, "confirmed": confirmed,
             "partial": partial, "unknown": unknown,
-            "predictions_allowed": predictions_allowed}
+            "predictions_allowed": True}
 
 
 def _win_date(s: str, end=False) -> date:

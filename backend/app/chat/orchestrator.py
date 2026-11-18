@@ -1,8 +1,6 @@
 """Conversation orchestrator.
 
-State machine:
-    cal_intro -> cal_ask -> (cal_followup) -> cal_ask -> ... -> open | rectify
-The prediction gate is enforced HERE — server-side — never by the LLM.
+Past-event checks and birth-time refinement are optional parts of a reading.
 """
 import calendar
 from dataclasses import asdict
@@ -151,11 +149,6 @@ DOMAIN_KEYWORDS = {
     "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical"],
 }
 
-FUTURE_PAT = re.compile(
-    r"(will i|will it|next year|next month|in 20\d\d|this year|future|"
-    r"promot\w+|marry|marriage|job change|switch|get a job|abroad|"
-    r"predict|forecast|when will|shall i)", re.I)
-WHY_PAT = re.compile(r"\b(why|reason|reasoning|evidence|explain|show me the calculation|how do you know|details)\b", re.I)
 # an explicit request to SEE a chart — bare mentions of "chart" don't count
 CHART_PAT = re.compile(
     r"(navamsa|navamsha|dasamsa|dashamsha|saptamsa|chaturvimshamsa|shashtiamsa|"
@@ -189,7 +182,7 @@ DAILY_PAT = re.compile(
 ANSWER_MAP = {"yes": "yes", "confirmed": "yes", "that happened": "yes",
               "partial": "partial", "similar": "partial", "close": "partial",
               "something similar": "partial", "yes but different time": "partial",
-              "no": "no", "didn't": "no", "not really": "no", "nope": "no",
+              "no": "no", "didn't": "no", "not really": "no", "doesn't match": "no", "didn't happen": "no", "nope": "no",
               "not sure": "unknown", "unknown": "unknown", "don't know": "unknown",
               "don't remember": "unknown", "n/a": "unknown"}
 
@@ -234,8 +227,12 @@ def detect_varga(text: str) -> str | None:
 def _conversation_history(conv: Conversation) -> list[dict]:
     # Structured replies still contain conversational text. Dropping them left
     # the model unable to understand follow-ups to charts, timing and reports.
+    # A turn can add a timing notice before generating its answer. The provider
+    # (including the offline responder) must still receive the actual question last.
+    end = next((i for i in range(len(conv.messages), 0, -1)
+                if conv.messages[i - 1].role == "user"), 0)
     return [{"role": m.role, "content": m.content}
-            for m in conv.messages[-16:] if m.role in ("user", "assistant")]
+            for m in conv.messages[max(0, end - 16):end] if m.role in ("user", "assistant")]
 
 
 def _target_window(text: str) -> tuple[date, date]:
@@ -410,24 +407,13 @@ def _next_pending_event(db: Session, conv: Conversation, profile: BirthProfile) 
 
 def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=False):
     prefix = ""
-    prof = ev.profile
-    if first and prof is not None and _is_other(prof):
-        w = _words(prof)
-        prefix = (f"Before we get into what's ahead, I'd like to check three periods from "
-                  f"{w['poss']} past against {w['subj']}'s birth chart. Please answer from what "
-                  f"you know of {w['poss']} life — ideally from someone who knows "
-                  f"{w['subj']} well. It helps me see whether the birth details and the timing "
-                  "methods we're using are consistent — and it keeps me honest. "
-                  "Can we start with the first?\n\n")
-    elif first:
-        prefix = ("Before we get into what's ahead, I'd like to check three periods from your "
-                  "past against your birth chart. It helps me see whether the birth details "
-                  "and the timing methods we're using are consistent — and it keeps me honest. "
-                  "Can we start with the first?\n\n")
+    if first:
+        poss = _words(ev.profile)["poss"]
+        prefix = (f"I can compare three periods in {poss} chart with events you remember. "
+                  "You can answer the checks or ask your own question at any point.\n\n")
     _add_msg(db, conv, "assistant", prefix + ev.chat_text,
              kind="options",
-             meta={"options": ["Yes, that happened", "Something similar, different time",
-                               "No, that didn't happen", "Not sure / doesn't apply"],
+             meta={"options": CHECK_OPTIONS,
                    "event_id": ev.event_id})
     ev.asked = True
     conv.pending_event_id = ev.event_id
@@ -436,28 +422,47 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
 
 # ------------------------------------------------------------------ entry
 
-INSUFFICIENT_MSG = (
-    "I can't verify your chart yet — there isn't enough past timeline for me to form "
-    "three reliable checks against it. Until I can, I won't look ahead for you. Ask me "
-    "anything factual about the chart meanwhile — and if the birth details change, "
-    "tell me and I'll try again.")
+CONTINUE = "Continue with the reading"
+CHECK_OPTIONS = ["Yes, that happened", "Something similar, different time",
+                 "No, that didn't happen", "Not sure / doesn't apply", CONTINUE]
 
 
-def insufficient_msg(profile: BirthProfile) -> str:
-    if not _is_other(profile):
-        return INSUFFICIENT_MSG
-    return (f"I can't verify {_words(profile)['poss']} chart yet — there isn't enough "
-            "past timeline for me to form three reliable checks against it. Until I can, "
-            "I won't look ahead. Ask me anything factual about the chart meanwhile — and "
-            "if the birth details change, tell me and I'll try again.")
+def reading_note(profile: BirthProfile) -> str:
+    poss = _words(profile)["poss"]
+    reason = {
+        "uncalibrated": "The past-event checks didn't establish a consistent match.",
+        "insufficient_history": "There isn't enough past history to check the birth time.",
+        "skipped": "We've left the birth-time checks incomplete.",
+    }[profile.calibration_state]
+    return (f"{reason} I'll use {poss} recorded birth time. "
+            "If that time is off, predictions may be less accurate, especially dates.")
 
 
-def _mark_insufficient(db: Session, conv: Conversation, profile: BirthProfile) -> Message:
-    profile.calibration_state = "insufficient_history"
-    profile.predictions_allowed = False
+def _notice_meta(profile):
+    return {"birth_time_notice": profile.calc_fingerprint}
+
+
+def invite_reading(db, conv, profile):
     conv.state = "open"
     conv.pending_event_id = ""
-    return _add_msg(db, conv, "assistant", insufficient_msg(profile))
+    if profile.calibration_state == "uncalibrated":
+        _enter_rectify(db, conv, profile)
+    else:
+        _add_msg(db, conv, "assistant", reading_note(profile) + " What would you like to explore?",
+                 meta=_notice_meta(profile))
+
+
+def needs_reading_notice(conv, profile):
+    if profile.calibration_state not in ("uncalibrated", "skipped", "insufficient_history"):
+        return False
+    return not any(json.loads(m.meta_json or "{}").get("birth_time_notice") == profile.calc_fingerprint
+                   for m in reversed(conv.messages) if m.role == "assistant")
+
+
+def _mark_insufficient(db: Session, conv: Conversation, profile: BirthProfile):
+    profile.calibration_state = "insufficient_history"
+    profile.predictions_allowed = True
+    invite_reading(db, conv, profile)
 
 
 def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
@@ -554,12 +559,13 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
 
     # ---------- calibration phase ----------
     if conv.state in ("cal_intro", "cal_ask", "cal_followup"):
-        _calibration_turn(db, conv, profile, facts, text)
+        _calibration_turn(db, conv, profile, facts, text, on_delta)
         db.commit()
         return conv.messages[start_len:]
 
-    # ---------- rectify: factual answers still allowed, future gated ----------
-    if conv.state in RECTIFY_STATES:
+    # A user may return to the optional time check from an open conversation.
+    if conv.state in RECTIFY_STATES or (profile.calibration_state == "uncalibrated"
+                                        and _norm_reply(text) == _norm_reply(SHARE_EVENTS)):
         _rectify_turn(db, conv, profile, facts, birth, text, on_delta)
         db.commit()
         return conv.messages[start_len:]
@@ -579,7 +585,7 @@ _QUESTIONISH = re.compile(
 
 
 def _classify_answer(text: str) -> str | None:
-    t = text.strip().lower().strip(".!")
+    t = _norm_reply(text)
     if t in ANSWER_MAP:
         return ANSWER_MAP[t]
     if _QUESTIONISH.search(t) or len(t) >= 60:
@@ -592,58 +598,32 @@ def _classify_answer(text: str) -> str | None:
     return None
 
 
-def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
-    new_msgs = []
+def _calibration_turn(db, conv, profile, facts, text, on_delta):
     ev = (db.query(CalibrationEvent)
           .filter(CalibrationEvent.event_id == conv.pending_event_id,
                   CalibrationEvent.profile_id == profile.id).first())
 
-    # panchang/daily are factual — answer in any calibration sub-state,
-    # then re-ask the pending check
-    if ev and (PANCHANG_PAT.search(text.lower())
-               or DAILY_PAT.search(text.lower())):
-        _panchang_reply(db, conv, profile, facts, birth_input(profile),
-                        text.lower())
-        _ask_event(db, conv, ev, first=False)
-        return conv.messages[-3:]
+    norm = _norm_reply(text)
+    skip = norm in (_norm_reply(CONTINUE), "skip checks", "skip the checks", "skip calibration",
+                    "continue", "skip for now") or (norm == "skip" and conv.state != "cal_followup")
+    asks_about_check = re.fullmatch(r"(why|why (?:this question|are you asking(?: this)?)|"
+                                    r"how do you know|show me the calculation)[?!. ]*", norm)
+    if ev and asks_about_check:
+        _add_msg(db, conv, "assistant",
+                 f"The chart points to {ev.domain} between {ev.predicted_window_start} and "
+                 f"{ev.predicted_window_end}. Does that period fit what you remember?",
+                 kind="options", meta={"options": CHECK_OPTIONS, "event_id": ev.event_id})
+        return
 
-    if conv.state == "cal_followup" and ev:
-        # expect a month/year
-        m = re.search(r"(20\d\d|19\d\d)", text)
-        mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", text, re.I)
-        if not m:
-            if _norm_reply(text) in ("not sure", "don't know", "skip", "don't remember"):
-                _advance_calibration(db, conv, profile, new_msgs,
-                                     note="That's okay — I'll leave the actual date unknown.")
-                return new_msgs
-            _add_msg(db, conv, "assistant",
-                     "Roughly which year did it happen? You can also say 'not sure'.")
-            return new_msgs
-        year = int(m.group(1))
-        if year < profile.year or year > date.today().year:
-            _add_msg(db, conv, "assistant", "Please give a year between the birth year and today.")
-            return new_msgs
-        ev.actual_date = f"{year}-{mon.group(1)[:3] if mon else ''}".strip("-")
-        _advance_calibration(db, conv, profile, new_msgs,
-                             note="Noted — the timing was different. I'll remember the actual period.")
-        return new_msgs
-
-    if conv.state == "cal_intro":
-        if _ensure_events(db, profile, facts) < 3:
-            new_msgs.append(_mark_insufficient(db, conv, profile))
-            return new_msgs
-        ev = _next_pending_event(db, conv, profile)
-        if ev:
-            _ask_event(db, conv, ev, first=True)
-            return new_msgs
-
-    if ev is None:
-        conv.state = "open"
-        new_msgs.append(_add_msg(db, conv, "assistant", "Let's talk — what's on your mind?"))
-        return new_msgs
+    # Keep factual lookups available without interrupting the check (or its date follow-up).
+    if ev and (PANCHANG_PAT.search(text) or DAILY_PAT.search(text)):
+        _panchang_reply(db, conv, profile, facts, birth_input(profile), text.lower())
+        if conv.state == "cal_ask":
+            _ask_event(db, conv, ev)
+        return
 
     # chart requests are factual — answer them without losing the pending check
-    if CHART_PAT.search(text.lower()) and detect_varga(text.lower()):
+    if ev and conv.state == "cal_ask" and CHART_PAT.search(text.lower()) and detect_varga(text.lower()):
         varga = detect_varga(text.lower()) or "D1"
         data = facts["vargas"].get(varga)
         if data:
@@ -651,56 +631,79 @@ def _calibration_turn(db, conv, profile, facts, text) -> list[Message]:
                      f"Here's {_words(profile)['poss']} {varga} chart.",
                      kind="chart", meta={"varga": varga, "chart": data})
             _ask_event(db, conv, ev, first=False)
-            return conv.messages[-3:]
+            return
 
-    # free-text intent overrides: a real question, not an answer
     feedback = _classify_answer(text)
-    if feedback is None:
-        if WHY_PAT.search(text):
+    year_match = _YEAR_RE.search(text)
+    date_reply = conv.state == "cal_followup" and (
+        norm in ("not sure", "don't know", "skip", "don't remember")
+        or (year_match and not _QUESTIONISH.search(text)
+            and (int(year_match[1]) <= date.today().year or norm == year_match[1])))
+    if skip or (feedback is None and not date_reply):
+        profile.calibration_state = "skipped"
+        profile.predictions_allowed = True
+        conv.state = "open"
+        conv.pending_event_id = ""
+        if skip:
+            invite_reading(db, conv, profile)
+        else:
+            _open_turn(db, conv, profile, facts, birth_input(profile), text, on_delta)
+        return
+
+    if conv.state == "cal_followup" and ev:
+        # expect a month/year
+        m = re.search(r"(20\d\d|19\d\d)", text)
+        mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", text, re.I)
+        if not m:
+            if _norm_reply(text) in ("not sure", "don't know", "skip", "don't remember"):
+                _advance_calibration(db, conv, profile,
+                                     note="That's okay — I'll leave the actual date unknown.")
+                return
             _add_msg(db, conv, "assistant",
-                     f"This question comes from {_words(profile)['poss']} actual chart — here's the reasoning behind it: "
-                     f"{ev.predicted_event} "
-                     f"(window {ev.predicted_window_start} → {ev.predicted_window_end}). "
-                     f"Rule agreement: {json.loads(ev.pillars_json)}. "
-                     "Does the event ring true?")
-            return conv.messages[-2:]
-        # keep the quick-reply buttons alive on the re-ask
-        _add_msg(db, conv, "assistant",
-                 f"Take your time — was anything like that happening for {_words(profile)['obj']} in that period? "
-                 "A rough 'yes', 'something similar', 'no' or 'not sure' is all I need.",
-                 kind="options",
-                 meta={"options": ["Yes, that happened", "Something similar, different time",
-                                   "No, that didn't happen", "Not sure / doesn't apply"],
-                       "event_id": ev.event_id})
-        return conv.messages[-2:]
+                     "Roughly which year did it happen? You can also say 'not sure'.")
+            return
+        year = int(m.group(1))
+        if year < profile.year or year > date.today().year:
+            _add_msg(db, conv, "assistant", "Please give a year between the birth year and today.")
+            return
+        ev.actual_date = f"{year}-{mon.group(1)[:3] if mon else ''}".strip("-")
+        _advance_calibration(db, conv, profile,
+                             note="Noted — the timing was different. I'll remember the actual period.")
+        return
+
+    if conv.state == "cal_intro":
+        if _ensure_events(db, profile, facts) < 3:
+            _mark_insufficient(db, conv, profile)
+            return
+        ev = _next_pending_event(db, conv, profile)
+        if ev:
+            _ask_event(db, conv, ev, first=True)
+            return
+
+    if ev is None:
+        conv.state = "open"
+        _add_msg(db, conv, "assistant", "What would you like to explore?")
+        return
 
     if feedback == "partial":
         ev.user_feedback = "partial"
         ev.matched = False
         conv.state = "cal_followup"
         _add_msg(db, conv, "assistant",
-                 "Close but not exact — that's useful. Roughly when did it happen? "
+                 "When do you remember it happening? "
                  "A month and year is enough, or just the year.")
-        return conv.messages[-2:]
+        return
 
     _CANON = {"yes": "confirmed", "partial": "partial",
               "no": "rejected", "unknown": "unknown"}
     ev.user_feedback = _CANON[feedback]
     ev.matched = (feedback == "yes")
-    note = None
-    if feedback == "yes":
-        note = "That matches. Good — the chart is speaking consistently."
-    elif feedback == "no":
-        note = "Understood — I'll record that honestly as a miss."
-    else:
-        note = "No problem, that's recorded as unknown."
-    _advance_calibration(db, conv, profile, new_msgs, note=note)
-    return conv.messages[-(len(new_msgs) + 2):]
+    _advance_calibration(db, conv, profile)
 
 
-def _advance_calibration(db, conv, profile, new_msgs, note=None):
+def _advance_calibration(db, conv, profile, note=None):
     if note:
-        new_msgs.append(_add_msg(db, conv, "assistant", note))
+        _add_msg(db, conv, "assistant", note)
     ev = _next_pending_event(db, conv, profile)
     if ev is not None:
         _ask_event(db, conv, ev, first=False)
@@ -717,45 +720,15 @@ def _advance_calibration(db, conv, profile, new_msgs, note=None):
             # the checks at an ADJUSTED time failed too — never leave the user
             # on a time that matched neither their input nor their history
             _restore_original_time(db, profile)
-            new_msgs.append(_add_msg(
+            _add_msg(
                 db, conv, "assistant",
                 f"The adjusted time didn't match {_words(profile)['poss']} past either, so I've "
-                "gone back to the time you entered."))
-            _enter_rectify(db, conv, profile, new_msgs)
-            return
-        # try rectification: a slightly different birth time may fit the
-        # recorded feedback better — only adopt on a clearly better score.
-        # At most ONE automatic attempt per set of birth data, so repeated
-        # failures can't drift the birth time away from what the user entered.
-        rect = None
-        if not profile.rectification_attempted:
-            profile.rectification_attempted = True
-            rect = calibration.try_rectify(birth_input(profile), chart_facts(profile), evs, engine)
-        if rect:
-            nb = rect["birth"]
-            _apply_birth_time(db, profile, nb)
-            for e in evs:
-                db.delete(e)
-            db.flush()
-            sign = "+" if rect["delta_minutes"] > 0 else ""
-            new_msgs.append(_add_msg(
-                db, conv, "assistant",
-                f"The past checks didn't line up, so I tried slightly different birth "
-                f"times. {nb.hour:02d}:{nb.minute:02d} ({sign}{rect['delta_minutes']} min) "
-                "may fit better — let's check it against three different periods."))
-            _start_fresh_checks(db, conv, profile, new_msgs)
-            return
-        new_msgs.append(_add_msg(db, conv, "assistant", outcome["label"]))
-        _enter_rectify(db, conv, profile, new_msgs)
+                "gone back to the time you entered.")
+        _enter_rectify(db, conv, profile)
         return
     conv.state = "open"
-    closing = outcome["label"]
-    if outcome["state"] == "calibrated":
-        closing += " With that grounding done — what's on your mind?"
-    elif outcome["state"] == "partial":
-        closing += (" Two out of three lined up, which is a reasonable working basis. "
-                    "I'll keep a light caution flag on timing — what would you like to look at?")
-    new_msgs.append(_add_msg(db, conv, "assistant", closing))
+    conv.pending_event_id = ""
+    _add_msg(db, conv, "assistant", outcome["label"] + " What would you like to explore?")
 
 
 # ------------------------------------------------------------------ rectification
@@ -794,25 +767,24 @@ def _restore_original_time(db: Session, profile: BirthProfile):
     profile.rectified_from = None
     profile.rectification_attempted = True
     profile.calibration_state = "uncalibrated"
-    profile.predictions_allowed = False
+    profile.predictions_allowed = True
     # the rejected checks belonged to the adjusted chart
     db.query(CalibrationEvent).filter(CalibrationEvent.profile_id == profile.id).delete()
     db.flush()
 
 
-def _start_fresh_checks(db: Session, conv: Conversation, profile: BirthProfile, new_msgs):
-    """Three NEW checks for the (re)timed chart — the only way to unlock."""
+def _start_fresh_checks(db: Session, conv: Conversation, profile: BirthProfile):
+    """Three NEW checks for the (re)timed chart."""
     conv.state = "cal_intro"
     conv.pending_event_id = ""
     profile.calibration_state = "pending"
     profile.predictions_allowed = False
     if _ensure_events(db, profile, chart_facts(profile)) < 3:
-        new_msgs.append(_mark_insufficient(db, conv, profile))
+        _mark_insufficient(db, conv, profile)
         return
     ev = _next_pending_event(db, conv, profile)
     if ev:
         _ask_event(db, conv, ev, first=False)
-        new_msgs.append(conv.messages[-1])
 
 
 def _complete_milestones(db: Session, profile: BirthProfile) -> list:
@@ -820,43 +792,19 @@ def _complete_milestones(db: Session, profile: BirthProfile) -> list:
 
 
 def rectify_invite(profile: BirthProfile) -> tuple[str, list[str]]:
-    """What to offer a user whose chart failed calibration."""
-    if _is_other(profile):
-        w = _words(profile)
-        if not profile.milestone_search_done:
-            return ("I won't read ahead from this chart yet. Two things can help: "
-                    f"check {w['poss']} birth time against a birth certificate or "
-                    f"hospital record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 "
-                    f"big events from {w['poss']} life with the month and year — like "
-                    "\"started the first job in July 2012\", \"got married March 2016\" or "
-                    "\"moved to Pune in 2019\" — and I'll try nearby birth times against "
-                    "them. Meanwhile, ask me anything in the chart.",
-                    [SHARE_EVENTS, EDIT_BIRTH])
-        return ("I won't read ahead from this chart yet. Best next step: check "
-                f"{w['poss']} birth time against a birth certificate or hospital "
-                f"record and use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me "
-                "anything in the chart.", [EDIT_BIRTH])
+    options = [CONTINUE]
     if not profile.milestone_search_done:
-        return ("I won't read ahead from your chart yet. Two things can help: "
-                "check your birth time against a birth certificate or hospital "
-                f"record and use \"{EDIT_BIRTH}\" in the menu, or tell me 2–3 big "
-                "life events with the month and year — like \"started my first job in "
-                "July 2012\", \"got married March 2016\" or \"moved to Pune in 2019\" — "
-                "and I'll try nearby birth times against them. Meanwhile, ask me "
-                "anything in your chart.",
-                [SHARE_EVENTS, EDIT_BIRTH])
-    return ("I won't read ahead from your chart yet. Best next step: check "
-            "your birth time against a birth certificate or hospital record and "
-            f"use \"{EDIT_BIRTH}\" in the menu. Meanwhile, ask me anything "
-            "in your chart.", [EDIT_BIRTH])
+        options.append(SHARE_EVENTS)
+    options.append(EDIT_BIRTH)
+    return reading_note(profile) + " What would you like to explore?", options
 
 
-def _enter_rectify(db: Session, conv: Conversation, profile: BirthProfile, new_msgs):
+def _enter_rectify(db: Session, conv: Conversation, profile: BirthProfile):
     conv.state = "rectify"
     conv.pending_event_id = ""
     text, options = rectify_invite(profile)
-    new_msgs.append(_add_msg(db, conv, "assistant", text, kind="options",
-                             meta={"options": options, "actions": _ACTIONS}))
+    _add_msg(db, conv, "assistant", text, kind="options",
+             meta={"options": options, "actions": _ACTIONS, **_notice_meta(profile)})
 
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
@@ -956,7 +904,7 @@ def _describe(m) -> str:
 
 def _rectify_options(profile: BirthProfile) -> list[str]:
     done = len(_complete_milestones(None, profile))
-    return [CHECK_NOW, EDIT_BIRTH] if done >= 2 else [EDIT_BIRTH]
+    return [CHECK_NOW, CONTINUE, EDIT_BIRTH] if done >= 2 else [CONTINUE, EDIT_BIRTH]
 
 
 def _ack_milestones(db, conv, profile, added: list, problems: list[str]):
@@ -999,12 +947,9 @@ def _run_milestone_search(db, conv, profile):
         conv.state = "rectify"
         conv.pending_event_id = ""
         _add_msg(db, conv, "assistant",
-                 "I tested nearby birth times against those events, and none of them fits "
-                 "clearly better than the time you entered — so I'm not going to move your "
-                 "chart on a guess. The most reliable next step is to check your birth time "
-                 f"against a birth certificate or hospital record and use \"{EDIT_BIRTH}\". "
-                 "Predictions stay paused until the chart passes its checks.",
-                 kind="options", meta={"options": [EDIT_BIRTH], "actions": _ACTIONS})
+                 "The nearby times I checked didn't fit those events more closely. "
+                 "I'll keep the recorded time and treat dates as approximate. What would you like to explore?",
+                 kind="options", meta={"options": [CONTINUE, EDIT_BIRTH], "actions": _ACTIONS})
         return
     nb = res["birth"]
     sign = "+" if res["delta_minutes"] > 0 else ""
@@ -1015,18 +960,24 @@ def _run_milestone_search(db, conv, profile):
     _add_msg(db, conv, "assistant",
              f"Your events line up noticeably better with a birth time of {hhmm} "
              f"({sign}{res['delta_minutes']} min from what you entered). If you'd like, I'll "
-             "use that time and check it against three new periods from your past. "
-             "Predictions only open up if those checks pass.",
+             "use that time for the chart and offer three new checks.",
              kind="options", meta={"options": [f"Yes, use {hhmm}", "No, keep my time"]})
 
 
 def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
     """Turn handler for a chart that failed calibration. Collects dated
-    milestones for a one-off time search; future questions stay gated."""
+    milestones for an optional birth-time check."""
     norm = _norm_reply(text)
 
+    if norm in (_norm_reply(CONTINUE), "continue", "skip", "skip for now"):
+        conv.state = "open"
+        conv.pending_event_id = ""
+        _add_msg(db, conv, "assistant", "What would you like to explore in the chart?")
+        return
+
     if conv.state == "rectify_confirm":
-        if norm.startswith("yes"):
+        proposed_time = conv.pending_event_id.split(" ")[-1][:5]
+        if norm in ("yes", f"yes, use {proposed_time}"):
             stamp = conv.pending_event_id[2:]
             nb = datetime.strptime(stamp, "%Y-%m-%d %H:%M:%S")
             _apply_birth_time(db, profile, BirthInput(
@@ -1036,19 +987,17 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
             db.query(CalibrationEvent).filter(
                 CalibrationEvent.profile_id == profile.id).delete()
             db.flush()
-            msgs = [_add_msg(db, conv, "assistant",
-                             f"Done — your chart now uses {nb:%H:%M}. Here's the first new check.")]
-            _start_fresh_checks(db, conv, profile, msgs)
+            _add_msg(db, conv, "assistant", f"The chart now uses {nb:%H:%M}.")
+            _start_fresh_checks(db, conv, profile)
             return
-        if norm.startswith("no"):
+        if norm in ("no", "no, keep my time"):
             conv.state = "rectify"
             conv.pending_event_id = ""
             _add_msg(db, conv, "assistant",
-                     "Okay — I'll keep the time you entered. Predictions stay paused; "
-                     f"you can update it any time with \"{EDIT_BIRTH}\".",
+                     "I'll keep the time you entered. What would you like to explore?",
                      kind="options", meta={"options": [EDIT_BIRTH], "actions": _ACTIONS})
             return
-        # anything else: fall through to normal handling, keeping the offer open
+        # Other questions continue with the current birth time.
 
     if norm == _norm_reply(EDIT_BIRTH):
         _add_msg(db, conv, "assistant",
@@ -1080,25 +1029,18 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
     if conv.state == "rectify_domain":
         mid = conv.pending_event_id[2:] if conv.pending_event_id.startswith("m:") else ""
         m = next((x for x in profile.milestones if str(x.id) == mid), None)
-        dom = _DOMAIN_WORDS.get(norm) or (detect_domain(text) if m else None)
+        dom = _DOMAIN_WORDS.get(norm)
         if m is not None and dom:
             m.domain = dom
             conv.pending_event_id = ""
             _ack_milestones(db, conv, profile, [m], [])
             return
-        if m is not None and not _YEAR_RE.search(text):
-            _add_msg(db, conv, "assistant",
-                     "Which area was it — career, education, relationship, relocation, "
-                     "finance or health?", kind="options",
-                     meta={"options": ["Career", "Education", "Relationship", "Relocation",
-                                       "Finance", "Health"]})
-            return
         conv.state = "rectify_collect"   # they moved on to a new event
 
-    collecting = conv.state == "rectify_collect"
-    if not profile.milestone_search_done and (
-            looks_like_event(text) or (collecting and _YEAR_RE.search(text)
-                                       and "?" not in text)):
+    year = _YEAR_RE.search(text)
+    dated_reply = (conv.state == "rectify_collect" and year and int(year[1]) <= date.today().year
+                   and not _QUESTIONISH.search(text))
+    if not profile.milestone_search_done and (looks_like_event(text) or dated_reply):
         born = date(profile.year, profile.month, profile.day)
         events, problems = parse_milestones(text, born, date.today())
         room = MAX_MILESTONES - len(profile.milestones)
@@ -1112,37 +1054,19 @@ def _rectify_turn(db, conv, profile, facts, birth, text, on_delta=None):
             _ack_milestones(db, conv, profile, [m for m in added if m.domain], problems)
             return
 
-    # ---- not a milestone: factual chat, future still gated ----
-    if CHART_PAT.search(text.lower()) and detect_varga(text.lower()):
-        varga = detect_varga(text.lower()) or "D1"
-        data = facts["vargas"].get(varga)
-        if data:
-            _add_msg(db, conv, "assistant",
-                     f"Here's {_words(profile)['poss']} {varga} chart. Note: we still haven't "
-                     f"confirmed {_words(profile)['poss']} birth time is exact — keep that in mind.",
-                     kind="chart", meta={"varga": varga, "chart": data})
-            return
-    if (FUTURE_PAT.search(text) or TIMING_PAT.search(text.lower())
-            or REPORT_PAT.search(text.lower())):
-        text_, options = rectify_invite(profile)
-        _add_msg(db, conv, "assistant",
-                 "Since the past checks didn't match, the honest thing is to set "
-                 "the birth time right before I say anything about what's ahead. "
-                 + text_.split(". ", 1)[1],
-                 kind="options", meta={"options": options, "actions": _ACTIONS})
-        return
-    run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-    history = _conversation_history(conv)
-    reply, provider = providers.generate(
-        history, facts=facts,
-        context_note=_context_prefix(profile)
-        + "The past checks did not line up; explain chart facts only, no predictions.",
-        allow_external=_external_ok(profile), on_delta=on_delta)
-    _add_msg(db, conv, "assistant", reply, meta={"provider": provider})
+    conv.state = "open"
+    conv.pending_event_id = ""
+    _open_turn(db, conv, profile, facts, birth, text, on_delta)
 
 
 def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Message]:
     t = text.lower()
+    # Conversations created before advisory checks may end in an old refusal.
+    if profile.calibration_state == "pending":
+        profile.calibration_state = "skipped"
+        profile.predictions_allowed = True
+    if needs_reading_notice(conv, profile):
+        _add_msg(db, conv, "assistant", reading_note(profile), meta=_notice_meta(profile))
 
     # chart request — always allowed
     if CHART_PAT.search(t) and ("show" in t or "chart" in t or "kundli" in t or "see" in t or detect_varga(t)):
@@ -1164,7 +1088,6 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
 
     wants_report = bool(REPORT_PAT.search(t))
     wants_timing = bool(TIMING_PAT.search(t))
-    is_future = bool(FUTURE_PAT.search(text)) or wants_report or wants_timing
     if (re.fullmatch(r"\s*(why|why is that|tell me why|explain( that)?|details|"
                      r"(show me( the)? )?(reasoning|evidence|calculation)|how do you know)[?.! ]*", t)
             and len(conv.messages) >= 2):
@@ -1213,29 +1136,6 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
 
     domain = detect_domain(text)
 
-    # ---- prediction gate: enforced in code, not the prompt ----
-    if is_future and not profile.predictions_allowed:
-        if profile.calibration_state == "pending":
-            if _ensure_events(db, profile, facts) < 3:
-                _mark_insufficient(db, conv, profile)
-                return conv.messages[-2:]
-            conv.state = "cal_ask"
-            ev = _next_pending_event(db, conv, profile)
-            if ev:
-                _add_msg(db, conv, "assistant",
-                         "I want to answer that properly — so let me first finish "
-                         "checking your chart against your past. Three quick questions.")
-                _ask_event(db, conv, ev, first=False)
-                return conv.messages[-3:]
-        if profile.calibration_state == "insufficient_history":
-            _add_msg(db, conv, "assistant", insufficient_msg(profile))
-            return conv.messages[-2:]
-        _add_msg(db, conv, "assistant",
-                 f"I don't want to guess at {_words(profile)['poss']} future before the "
-                 "chart has earned some trust — the earlier checks didn't line up. Let's "
-                 "set the birth data right first, then I'll gladly look ahead with you.")
-        return conv.messages[-2:]
-
     # report — computed chart + 12-month outlook, deterministic text.
     # Domain outlooks are abstaining "general outlook" verdicts, not
     # predictions made to the user — they stay in meta, not PredictionRecord,
@@ -1270,42 +1170,20 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                  kind="timing", meta={"timing": sug})
         return conv.messages[-2:]
 
-    # future-domain question with permission → four-pillar + precision analysis
-    if is_future and domain:
-        start, end = _target_window(text)
-        analysis, prec = _precision_analysis(facts, birth, domain, start, end, profile, question=text)
-        run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-        messages = _conversation_history(conv)
-        reply, provider = providers.generate(
-            messages, facts=facts, analysis=analysis,
-            context_note=_context_prefix(profile) +
-                         f"The user's calibration is '{profile.calibration_state}'. "
-                         f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
-            allow_external=_external_ok(profile), on_delta=None)
-        reply = _apply_disclaimer(reply, domain)
-        _add_msg(db, conv, "assistant", reply,
-                 meta={"analysis": analysis, "provider": provider})
-        _save_prediction(db, profile, text, analysis, reply)
-        return conv.messages[-2:]
-
-    # general / factual chat — allowed regardless of gate
-    # a domain-flavoured analysis is itself predictive content, so it is only
-    # computed when predictions are allowed (phrasing like "how's my career
-    # looking?" is not caught by FUTURE_PAT)
-    if domain and profile.predictions_allowed:
+    # Both specific forecasts and general domain questions use the same analysis.
+    if domain:
         start, end = _target_window(text)
         analysis, _prec = _precision_analysis(facts, birth, domain, start, end, profile, question=text)
     else:
         analysis = None
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
     history = _conversation_history(conv)
-    reply, provider = providers.generate(history, facts=facts, analysis=analysis,
-                                         context_note=_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
-                                         + ("Chart facts only; no predictions or future timing. "
-                                            if not profile.predictions_allowed else "") +
-                                         f"Current Vimshottari: {'/'.join('/'.join(r['lords']) for r in run[:2])}.",
-                                         allow_external=_external_ok(profile),
-                                         on_delta=None if analysis else on_delta)
+    periods = "/".join("/".join(period["lords"]) for period in run[:2])
+    reply, provider = providers.generate(
+        history, facts=facts, analysis=analysis,
+        context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
+                      f"Current Vimshottari: {periods}."),
+        allow_external=_external_ok(profile), on_delta=None if analysis else on_delta)
     reply = _apply_disclaimer(reply, domain)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)

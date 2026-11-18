@@ -23,24 +23,24 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
 
   // Chat: opening message + calibration
   await page.waitForURL(/\/chat/);
-  const yes = page.getByRole("button", { name: /yes, that happened/i });
-  await expect(yes.first()).toBeVisible({ timeout: 30_000 });
+  const no = page.getByRole("button", { name: "No, that didn't happen" });
+  const continueReading = page.getByRole("button", { name: "Continue with the reading" });
+  await expect(continueReading).toBeVisible();
   for (let i = 0; i < 3; i++) {
-    await yes.first().click();
-    // next calibration question (or end of calibration) arrives
-    await page.waitForTimeout(500);
-    if (i < 2) await expect(yes.first()).toBeVisible({ timeout: 30_000 });
+    await Promise.all([
+      page.waitForResponse(r => r.url().endsWith("/api/chat/stream") && r.ok()),
+      no.click(),
+    ]);
+    await expect(page.getByText("No, that didn't happen", { exact: true }).and(page.locator(".chat-message"))).toHaveCount(i + 1);
+    await expect(page.getByPlaceholder(/ask anything/i)).toBeEnabled();
   }
-
-  // Ask a question, expect a reply (offline responder)
+  await expect(page.getByText(/predictions may be less accurate/)).toBeVisible();
+  // A typed question must work immediately, without pressing Continue or editing the time.
   const box = page.getByPlaceholder(/ask anything/i);
-  await expect(box).toBeVisible();
-  await box.fill("What does my chart say about career?");
-  const before = await page.locator("div.whitespace-pre-wrap").count();
-  await page.keyboard.press("Enter");
-  await expect(async () => {
-    expect(await page.locator("div.whitespace-pre-wrap").count()).toBeGreaterThan(before + 1);
-  }).toPass({ timeout: 45_000 });
+  await box.fill("Will I change jobs next year?");
+  await box.press("Enter");
+  await expect(page.locator(".chat-message").last()).toContainText(/career/i);
+  await expect(continueReading).toHaveCount(0);
 
   // Sign out / in
   await page.getByRole("button", { name: /sign out/i }).or(
