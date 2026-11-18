@@ -1915,3 +1915,38 @@ def test_conversational_periods_are_calendar_intervals():
         requested_window("31 February 2027", today)
     with pytest.raises(ValueError):
         requested_window("2027-01-01 to 2099-12-31", today)
+
+
+
+def test_initial_checks_use_recent_adult_periods_and_score_displayed_window(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    scored = []
+    def evaluate(facts, birth, domain, start, end):
+        scored.append((start, end))
+        return {"support_count": 2, "conflict_count": 0, "traditional_rule_ids": [],
+                "pillars": {}, "convergence": "support"}
+    monkeypatch.setattr(C.pillars, "evaluate", evaluate)
+    statements = C.generate_statements(facts, birth, "fp")
+    assert len(statements) == 3
+    for statement in statements:
+        start = date.fromisoformat(statement["predicted_window"]["start"] + "-01")
+        end_month = date.fromisoformat(statement["predicted_window"]["end"] + "-01")
+        assert start.year >= date.today().year - 5
+        assert start.year >= birth.year + 18
+        assert (end_month - start).days <= 397
+        assert any(a == start and b.year == end_month.year and b.month == end_month.month for a, b in scored)
+
+
+def test_untouched_old_checks_refresh_on_history_load():
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    db, conv, prof = _db_profile_and_conv(h)
+    for event in prof.calibrations:
+        event.event_id = event.event_id.replace("recent_", "")
+    conv.pending_event_id = conv.pending_event_id.replace("recent_", "")
+    db.commit()
+    db.close()
+    history = client.get("/api/chat/history", headers=h).json()
+    assert history[-1]["meta"]["event_id"].startswith("recent_calibration_")
+    assert client.get("/api/chat/history", headers=h).json() == history

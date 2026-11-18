@@ -556,6 +556,7 @@ def _profile_conversation(db: Session, p: BirthProfile) -> Conversation:
         db.add(conv)
         db.commit()
         db.refresh(conv)
+    orchestrator.refresh_initial_checks(db, conv, p)
     return conv
 
 

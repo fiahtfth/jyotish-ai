@@ -60,24 +60,28 @@ def _age_today(birth: BirthInput) -> float:
 
 
 def _past_ad_windows(facts, birth: BirthInput) -> list[dict]:
-    """Candidate windows: completed Antardasha periods before today."""
+    """Recent, memorable checks within five years and the relevant life stage."""
     today = date.today()
+    born = date(birth.year, birth.month, birth.day)
+    minimum_age = 18 if _age_today(birth) >= 18 else 12
+    life_stage = born.replace(year=born.year + minimum_age, day=min(born.day, 28))
+    recent = today.replace(year=today.year - 5, day=min(today.day, 28))
+    earliest = max(life_stage, recent)
+    latest = today - timedelta(days=45)
     out = []
     for p in facts["vimshottari"]["periods"]:
-        if len(p["lords"]) < 2:
+        if len(p["lords"]) != 2:
             continue
-        s, e = _to(p["start"]), _to(p["end"])
-        if e >= today:
-            if s < today:
-                e = today
-            else:
-                continue
-        if (e - s).days < 60:
-            continue
-        if (today - e).days < 45:   # keep windows clearly in the past
-            continue
-        out.append({"lords": p["lords"], "start": s, "end": e})
-    return out
+        start, end = max(_to(p["start"]), earliest), min(_to(p["end"]), latest)
+        # Each candidate is scored over the same months shown in the question.
+        if start.day != 1:
+            start = (start.replace(day=28) + timedelta(days=4)).replace(day=1)
+        end = end.replace(day=1) - timedelta(days=1)
+        while (end - start).days >= 60:
+            window_start = max(start, end.replace(year=end.year - 1, day=1))
+            out.append({"lords": p["lords"], "start": window_start, "end": end})
+            end = window_start - timedelta(days=1)
+    return sorted(out, key=lambda window: window["end"], reverse=True)
 
 
 def _to(s: str) -> date:
@@ -95,11 +99,6 @@ def _fmt_range(s: date, e: date) -> str:
 def pick_domains(age: float) -> list[str]:
     ok = [d for d in _DOMAIN_ORDER
           if age >= K.MIN_CALIBRATION_AGE_FOR_DOMAIN.get(d, 0)]
-    for d in ("direction", "education"):
-        if len(ok) >= 3:
-            break
-        if d not in ok:
-            ok.append(d)
     return ok[:3]
 
 
@@ -118,7 +117,6 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
     # minimum age (at window end) for a domain window to be testable
     WINDOW_MIN_AGE = {"career": 16, "education": 8, "relationship": 18,
                       "relocation": 10, "finance": 18, "direction": 12}
-    MAX_WINDOW_DAYS = 550
 
     for i, domain in enumerate(domains):
         best = None
@@ -127,8 +125,8 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
             # avoid overlapping windows across the three questions
             if any(not (w["end"] < u0 or w["start"] > u1) for u0, u1 in used_spans):
                 continue
-            age_at_end = (w["end"] - date(birth.year, birth.month, birth.day)).days / 365.25
-            if age_at_end < min_age:
+            age_at_start = (w["start"] - date(birth.year, birth.month, birth.day)).days / 365.25
+            if age_at_start < min_age:
                 continue
             ev = pillars.evaluate(facts, birth, domain, w["start"], w["end"])
             score = ev["support_count"] - ev["conflict_count"]
@@ -138,17 +136,13 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
             continue
         w, score, ev = best
         used_spans.append((w["start"], w["end"]))
-        # bound the stated window to ~18 months max so it stays falsifiable
-        if (w["end"] - w["start"]).days > MAX_WINDOW_DAYS:
-            w = dict(w)
-            w["end"] = w["start"].fromordinal(w["start"].toordinal() + MAX_WINDOW_DAYS)
         sm, em = _fmt_range(w["start"], w["end"])
         weak = score <= 0
         text = _STATEMENTS[domain].format(start=sm, end=em, **words)
         if weak:
             text = ("The timing indicators here are weaker, so treat this one as tentative. " + text)
         statements.append({
-            "event_id": f"calibration_{i+1:03d}",
+            "event_id": f"recent_calibration_{i+1:03d}",
             "domain": domain,
             "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, **words),
             "chat_text": text,

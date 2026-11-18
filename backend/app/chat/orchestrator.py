@@ -458,7 +458,9 @@ def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
     existing = (db.query(CalibrationEvent)
                 .filter(CalibrationEvent.profile_id == profile.id).all())
     if existing and existing[0].calc_fingerprint == profile.calc_fingerprint:
-        return len(existing)
+        if any(e.user_feedback for e in existing) or all(
+                e.event_id.startswith("recent_calibration_") for e in existing):
+            return len(existing)
     for e in existing:
         db.delete(e)
     db.flush()
@@ -479,6 +481,20 @@ def _ensure_events(db: Session, profile: BirthProfile, facts: dict) -> int:
             calc_fingerprint=s["calculation_fingerprint"]))
     db.flush()
     return len(stmts)
+
+
+def refresh_initial_checks(db, conv, profile):
+    """Refresh an untouched opening questionnaire after the date policy changes."""
+    if conv.state != "cal_ask" or conv.pending_event_id.startswith("recent_calibration_"):
+        return
+    events = db.query(CalibrationEvent).filter(CalibrationEvent.profile_id == profile.id).all()
+    if not events or any(e.user_feedback for e in events):
+        return
+    if _ensure_events(db, profile, chart_facts(profile)) < 3:
+        _mark_insufficient(db, conv, profile)
+    else:
+        _ask_event(db, conv, _next_pending_event(db, conv, profile), first=True)
+    db.commit()
 
 
 def refresh_event_wording(db: Session, profile: BirthProfile):
