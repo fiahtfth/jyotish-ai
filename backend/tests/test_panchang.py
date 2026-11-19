@@ -404,8 +404,7 @@ def test_report_chat_with_unchecked_birth_time():
 
 
 def test_panchang_during_calibration_keeps_event_pending():
-    """Mid-calibration, a panchang question is answered factually and the
-    pending check is re-asked — not swallowed or treated as an answer."""
+    """A factual lookup preserves the pending check without repeating it."""
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
     r = c.post("/api/chat/send", json={"text": "what's today's panchang?"},
@@ -414,7 +413,15 @@ def test_panchang_during_calibration_keeps_event_pending():
     kinds = [m.get("kind") for m in r.json()]
     assert "panchang" in kinds, [(m.get("kind"), m.get("content"))
                                  for m in r.json()]
-    assert "options" in kinds                    # the check is re-asked
+    assert "options" not in kinds
+    history = c.get("/api/chat/history", headers=h).json()
+    questions = [m for m in history if m["meta"].get("event_id")]
+    assert len(questions) == 1
+    event_id = questions[0]["meta"]["event_id"]
+    reply = c.post("/api/chat/send", json={"text": "Yes, that happened"}, headers=h)
+    assert reply.status_code == 200
+    events = c.get("/api/calibration", headers=h).json()["events"]
+    assert next(e for e in events if e["event_id"] == event_id)["user_feedback"] == "confirmed"
     assert c.get("/api/profile",
                 headers=h).json()["calibration_state"] == "pending"
 

@@ -427,6 +427,15 @@ def _next_pending_event(db: Session, conv: Conversation, profile: BirthProfile) 
 
 
 def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=False):
+    conv.pending_event_id = ev.event_id
+    conv.state = "cal_ask"
+    # Factual lookups and repeated initialization must not append the same
+    # question again. The original question remains available in history.
+    for message in reversed(conv.messages):
+        meta = json.loads(message.meta_json or "{}")
+        if (message.role == "assistant" and meta.get("event_id") == ev.event_id
+                and meta.get("fingerprint", ev.calc_fingerprint) == ev.calc_fingerprint):
+            return
     prefix = ""
     if first:
         poss = _words(ev.profile)["poss"]
@@ -435,7 +444,7 @@ def _ask_event(db: Session, conv: Conversation, ev: CalibrationEvent, first=Fals
     _add_msg(db, conv, "assistant", prefix + ev.chat_text,
              kind="options",
              meta={"options": CHECK_OPTIONS,
-                   "event_id": ev.event_id})
+                   "event_id": ev.event_id, "fingerprint": ev.calc_fingerprint})
     ev.asked = True
     conv.pending_event_id = ev.event_id
     conv.state = "cal_ask"
@@ -566,6 +575,14 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
                  f"{facts['planets']['Moon']['sign_name']} "
                  f"({facts['planets']['Moon']['nakshatra']['name']} nakshatra).")
     _add_msg(db, conv, "assistant", hello)
+
+    if profile.calibration_state != "pending":
+        conv.state = "open"
+        conv.pending_event_id = ""
+        if needs_reading_notice(conv, profile):
+            invite_reading(db, conv, profile)
+        db.commit()
+        return conv.messages
 
     n = _ensure_events(db, profile, facts)
     ev = _next_pending_event(db, conv, profile)

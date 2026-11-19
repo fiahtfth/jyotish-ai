@@ -787,12 +787,8 @@ def chat_reset(user: User = Depends(current_user), db: Session = Depends(get_db)
         # keep answered checks; the next history load asks the next unanswered one
         conv.state = "cal_intro"
     else:
-        # calibrated/partial: a deliberate fresh start re-runs the checks
-        conv.state = "cal_intro"
-        if p:
-            db.query(CalibrationEvent).filter(CalibrationEvent.profile_id == p.id).delete()
-            p.calibration_state = "pending"
-            p.predictions_allowed = False
+        # Starting a new conversation preserves the chart's completed checks.
+        conv.state = "open"
     db.commit()
     return {"reset": True}
 

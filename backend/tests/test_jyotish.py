@@ -2020,3 +2020,32 @@ def test_frontend_assets_do_not_fall_back_to_html():
     assert response.status_code == 200
     assert "javascript" in response.headers["content-type"]
     assert "immutable" in response.headers["cache-control"]
+
+
+def test_reset_preserves_completed_birth_time_checks():
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    for _ in range(3):
+        send("Yes, that happened", h)
+    before = client.get("/api/calibration", headers=h).json()
+    assert before["state"] == "calibrated"
+    client.post("/api/chat/reset", headers=h)
+    history = client.get("/api/chat/history", headers=h).json()
+    after = client.get("/api/calibration", headers=h).json()
+    assert after["state"] == before["state"]
+    assert [(e["event_id"], e["user_feedback"]) for e in after["events"]] == [
+        (e["event_id"], e["user_feedback"]) for e in before["events"]]
+    assert all(not m["meta"].get("event_id") for m in history)
+
+
+def test_factual_chart_lookup_does_not_repeat_birth_time_question():
+    h = register_and_profile()
+    history = client.get("/api/chat/history", headers=h).json()
+    event_id = history[-1]["meta"]["event_id"]
+    send("show my D9 chart", h)
+    for _ in range(3):
+        history = client.get("/api/chat/history", headers=h).json()
+    assert sum(m["meta"].get("event_id") == event_id for m in history) == 1
+    send("Yes, that happened", h)
+    events = client.get("/api/calibration", headers=h).json()["events"]
+    assert events[0]["user_feedback"] == "confirmed"
