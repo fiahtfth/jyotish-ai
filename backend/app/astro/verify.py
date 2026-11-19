@@ -216,12 +216,15 @@ def repair_response(text: str, issues: list[str]) -> str:
             if not sentence.strip():
                 continue
             if bad(sentence):
-                # A run of unpunctuated rows reads as one sentence: drop only
-                # the offending rows, not the whole table.
-                if sentence.count("\n") >= 2:
+                # A run of list/table rows reads as one sentence: drop only
+                # the offending rows, not the whole table. Wrapped prose must
+                # still drop whole so a claim's leading fragment can't survive.
+                rows = sentence.split("\n")
+                rowish = sum(1 for ln in rows
+                             if re.match(r"\s*(?:[-*•|>]|\d+[.)])\s*\S", ln))
+                if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
                     sentence = "\n".join(
-                        ln for ln in sentence.split("\n")
-                        if ln.strip() and not bad(ln))
+                        ln for ln in rows if ln.strip() and not bad(ln))
                 else:
                     continue
             if sentence.strip():

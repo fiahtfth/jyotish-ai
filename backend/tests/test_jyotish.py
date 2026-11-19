@@ -2085,6 +2085,11 @@ def test_repair_response_preserves_line_breaks():
     table = V.repair_response(
         "| Work | grows\n| Health | 2027-08-09\n| Family | steady", issues)
     assert table == "| Work | grows\n| Family | steady"
+    # Wrapped prose in a 3-line sentence still drops whole — its leading
+    # fragment must not survive row recovery.
+    wrapped3 = V.repair_response(
+        "Intro line\nYou will\nreceive news on 2027-08-09.\nCloser stays.", issues)
+    assert wrapped3 == "Closer stays."
 
 
 def test_llm_markdown_is_flattened_to_plain_text():
