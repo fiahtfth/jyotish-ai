@@ -37,7 +37,30 @@ def requested_window(text, today, prior=None):
     return result
 
 
+def _shift_months(day, count):
+    year, month = divmod(day.year * 12 + day.month - 1 + count, 12)
+    month += 1
+    return date(year, month, min(day.day, calendar.monthrange(year, month)[1]))
+
+
 def _parse_window(t, today, prior):
+    numbers = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6,
+               "seven": 7, "eight": 8, "nine": 9, "ten": 10, "eleven": 11, "twelve": 12}
+    duration = re.search(
+        r"\b(?:(next|coming|past|last|for|over|within)\s+)?"
+        r"(\d{1,3}|" + "|".join(numbers) + r")\s+(days?|weeks?|months?|years?)\b", t)
+    if duration:
+        raw = duration[2]
+        count = int(raw) if raw.isdigit() else numbers[raw]
+        if count < 1:
+            raise ValueError("choose a positive duration")
+        past = duration[1] in ("past", "last")
+        unit = duration[3].rstrip("s")
+        if unit in ("month", "year"):
+            boundary = _shift_months(today, count * (12 if unit == "year" else 1) * (-1 if past else 1))
+        else:
+            boundary = today + timedelta(days=count * (7 if unit == "week" else 1) * (-1 if past else 1))
+        return (boundary, today - timedelta(days=1)) if past else (today, boundary - timedelta(days=1))
     relative_year = None
     if any(word in t for word in ("next year", "agle saal", "अगले साल")):
         relative_year = today.year + 1

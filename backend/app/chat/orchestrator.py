@@ -1229,15 +1229,31 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                 break  # Evidence from an older, unrelated reading does not answer this question.
         # Without a computed trail, answer conversationally using the history.
 
-    # report — computed chart + 12-month outlook, deterministic text.
+    # report — computed chart and outlook for the period selected in chat.
     # Domain outlooks are abstaining "general outlook" verdicts, not
     # predictions made to the user — they stay in meta, not PredictionRecord,
     # so they don't dilute the forecast scorecard.
-    if wants_report:
+    prior = _previous_reading(conv, profile)
+    pending_report = prior.get("pending_report") and not detect_domain(t)
+    report_window = None
+    report_error = None
+    if wants_report or pending_report:
+        try:
+            report_window = language.requested_window(text, _today_at(birth))
+        except ValueError as exc:
+            report_error = str(exc)
+    if wants_report or (pending_report and (report_window or report_error)):
+        if report_window is None:
+            prompt = ("I can assess up to one year at a time. Which part would you like the report to cover?"
+                      if report_error and "up to one year" in report_error else
+                      "What period would you like the report to cover? You can give a month, a date range, or a duration.")
+            _add_msg(db, conv, "assistant", prompt,
+                     meta={"pending_report": True})
+            return conv.messages[-2:]
         rep = report.build_report(facts, birth, calibrated=_calibrated(profile),
                                   predictions_allowed=True,
                                   subject=_subject(profile),
-                                  today=_today_at(birth))
+                                  today=_today_at(birth), window=report_window)
         reply = "\n\n".join(rep["reading"])
         if any(d["domain"] == "health" for d in rep["domains"]):
             reply = _apply_disclaimer(reply, "health")
@@ -1279,8 +1295,11 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     today = _today_at(birth)
     try:
         period = language.requested_window(focus, today, prior_window)
-    except ValueError:
-        _add_msg(db, conv, "assistant", "Which period would you like me to read? You can give a month and year.",
+    except ValueError as exc:
+        prompt = ("I can assess up to one year at a time. Which part of that period would you like to start with?"
+                  if "up to one year" in str(exc) else
+                  "Which dates did you mean? You can give a month and year or a date range.")
+        _add_msg(db, conv, "assistant", prompt,
                  meta={"pending_domain": domain or previous.get("domain"),
                        "pending_event": prediction.event_spec(focus, domain) or (
                            previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
@@ -1305,7 +1324,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                              r"ascendant|dasha|nakshatra|rashi|chart|kundli)\b", t))
     routing_seconds = 0
     social = re.fullmatch(r"(hi|hello|hey|namaste|thanks|thank you|ok|okay)[.! ]*", t)
-    unclear_topic = not domain and not (previous and (period or references_reading))
+    unclear_topic = not domain and not ((previous or prior.get("pending_domain")) and (period or references_reading))
     possible_event = domain and not event and re.search(r"\b(will|might|chance|likely|could i)\b", t)
     if (unclear_topic or possible_event) and not (varga or factual or social):
         routing_started = time.monotonic()
@@ -1346,12 +1365,21 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     if not event and same_topic and continuing and not re.search(r"\b(?:instead|actually|not|generally)\b", t):
         event = previous.get("decision", {}).get("event")
     keep_period = same_topic or references_reading or (not previous and prior.get("requested_window"))
-    window = period or (prior_window if keep_period else None) or (today, today + timedelta(days=365))
+    inherited_period = prior_window if keep_period and (
+        previous.get("period_requested") or (not previous and prior.get("requested_window"))) else None
+    window = period or inherited_period
     analysis = None
-    if domain and (not selected or event or period):
+    wants_forecast = bool(re.search(
+        r"\b(will|when|predict|prediction|forecast|outlook|future|coming|next|likely|soon)\b", focus, re.I)
+        or (event and not re.search(r"\b(considering|thinking about|discuss|explore)\b", focus, re.I)))
+    if domain and window is None and wants_forecast:
+        _add_msg(db, conv, "assistant",
+                 "What period would you like me to look at? You can give a month, a date range, or a duration such as the next three months.",
+                 meta={"pending_domain": domain, "pending_event": event, **({"varga": varga} if selected else {})})
+        return conv.messages[-2:]
+    if domain and window is not None and (not selected or event or period):
         analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=focus, event=event)
-        analysis["period_requested"] = bool(period or (keep_period and (
-            previous.get("period_requested") or (not previous and prior_window))))
+        analysis["period_requested"] = True
     if selected:
         facts = {**facts, "selected_chart": selected}
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
@@ -1360,7 +1388,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         history, facts=facts, analysis=analysis,
         context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
                       f"Current Vimshottari: {periods}. Use the resolved event and analysis window when supplied. "
-                      "Name the period when timing was requested. Answer using the selected divisional chart when present."),
+                      "Name the period when timing was requested. Answer using the selected divisional chart when present. "
+                      + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
+                         if window is None else "")),
         allow_external=_external_ok(profile), on_delta=None if analysis else on_delta, routing_seconds=routing_seconds)
     if analysis and provider != "offline":
         reply = prediction.constrain_reply(reply, analysis, facts, history)

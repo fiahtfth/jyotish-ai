@@ -384,13 +384,17 @@ def test_timing_chat_before_and_after_checks():
 def test_report_chat_calibrated():
     c, h = _calibrated_client()
     r = c.post("/api/chat/send",
-               json={"text": "give me a full report on my chart"}, headers=h)
+               json={"text": "give me a full report on my chart for next month"}, headers=h)
     assert r.status_code == 200
     m = next(m for m in reversed(r.json()) if m.get("kind") == "report")
     rep = m["meta"]["report"]
     assert rep["predictions_allowed"] is True
     assert len(rep["domains"]) == 7
-    assert "Twelve-month outlook" in m["content"]
+    assert "Outlook for " in m["content"]
+    assert "Twelve-month outlook" not in m["content"]
+    for domain in rep["domains"]:
+        window = domain["analysis"]["analysis_window"]
+        assert window["start"][:7] == window["end"][:7]
     assert "%" not in m["content"]
 
 
@@ -400,7 +404,13 @@ def test_report_chat_with_unchecked_birth_time():
     r = c.post("/api/chat/send",
                json={"text": "show me my report"}, headers=h)
     body = " ".join(m["content"] for m in r.json()).lower()
-    assert "less accurate" in body and "twelve-month outlook" in body
+    assert "less accurate" in body and "what period" in body
+    assert all(m.get("kind") != "report" for m in r.json())
+    longer = c.post("/api/chat/send", json={"text": "next two years"}, headers=h)
+    assert longer.json()[-1]["meta"]["pending_report"]
+    assert "up to one year" in longer.json()[-1]["content"]
+    r = c.post("/api/chat/send", json={"text": "next month"}, headers=h)
+    assert any(m.get("kind") == "report" for m in r.json())
 
 
 def test_panchang_during_calibration_keeps_event_pending():

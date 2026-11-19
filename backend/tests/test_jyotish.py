@@ -1799,14 +1799,15 @@ def test_frozen_prediction_and_dated_outcomes_are_owned_and_window_checked():
     assert client.post(endpoint,json={'outcome':'did_not'},headers=h).status_code == 409
 
 
-def test_general_domain_analysis_is_recorded_as_abstention():
+def test_general_domain_reading_does_not_create_an_implicit_forecast():
     h = register_and_profile(); _open_calibrated(h)
     out=send('How is my career looking?',h)
     r=client.get('/api/predictions',headers=h).json()
-    assert r['scorecard']['abstentions'] == 1
+    assert r['scorecard']['abstentions'] == 0
     assert r['scorecard']['scored'] == 0
     assert "can't make a reliable event forecast" not in out[-1]['content']
-    assert "key part of this chart" in out[-1]['content']
+    assert "analysis" not in out[-1]["meta"]
+    assert "coming year" not in out[-1]["content"]
 
 
 def test_career_followup_keeps_model_answer_instead_of_replaying_intro(monkeypatch):
@@ -1842,6 +1843,10 @@ def test_conversational_correction_uses_new_event_and_same_month_over_stream():
         done = _parse_sse(client.post("/api/chat/stream", json={"text": question}, headers=h))[-1]
         assert done["type"] == "done"
         reply = done["messages"][-1]
+        if index == 0:
+            assert reply["meta"]["pending_event"]["event_type"] == event
+            assert "analysis" not in reply["meta"]
+            continue
         analysis = reply["meta"]["analysis"]
         assert analysis["decision"]["event"]["event_type"] == event
         if index:
@@ -1893,7 +1898,9 @@ def test_semantic_topic_accepts_only_known_labels_and_respects_consent(monkeypat
     h = register_and_profile()
     _open_calibrated(h)
     monkeypatch.setattr(p, "generate", lambda *a, **k: ("Synthetic reading", "gemini"))
-    analysis = send(msg[0]["content"], h)[-1]["meta"]["analysis"]
+    pending = send(msg[0]["content"], h)[-1]["meta"]
+    assert pending["pending_event"]["event_type"] == "promotion"
+    analysis = send("next month", h)[-1]["meta"]["analysis"]
     assert analysis["decision"]["event"]["event_type"] == "promotion"
     assert p.conversation_topic(msg, allow_external=True) is None
     assert seen == [msg[0]["content"]] * 2
@@ -2049,3 +2056,31 @@ def test_factual_chart_lookup_does_not_repeat_birth_time_question():
     send("Yes, that happened", h)
     events = client.get("/api/calibration", headers=h).json()["events"]
     assert events[0]["user_feedback"] == "confirmed"
+
+
+def test_forecast_asks_for_period_and_uses_conversational_duration(monkeypatch):
+    from app.chat import orchestrator as O
+    from datetime import date
+    monkeypatch.setattr(O, "_today_at", lambda birth: date(2026, 11, 20))
+    h = register_and_profile()
+    send("Continue with the reading", h)
+    first = send("Will I get a promotion?", h)[-1]
+    assert first["meta"]["pending_domain"] == "career"
+    assert "analysis" not in first["meta"] and "period" in first["content"]
+    assert client.get("/api/predictions", headers=h).json()["predictions"] == []
+    answer = send("next three months", h)[-1]
+    a = answer["meta"]["analysis"]
+    assert a["decision"]["event"]["event_type"] == "promotion"
+    assert a["analysis_window"] == {"start": "2026-11-21", "end": "2027-02-19"}
+    assert a["period_requested"]
+    changed = send("Actually, only March 2027", h)[-1]["meta"]["analysis"]
+    assert changed["analysis_window"] == {"start": "2027-03-01", "end": "2027-03-31"}
+
+
+def test_duration_parser_handles_month_ends_and_short_periods():
+    from app.chat.language import requested_window
+    from datetime import date
+    today = date(2027, 1, 31)
+    assert requested_window("next one month", today) == (today, date(2027, 2, 27))
+    assert requested_window("next 2 weeks", today) == (today, date(2027, 2, 13))
+    assert requested_window("last six months", today) == (date(2026, 7, 31), date(2027, 1, 30))

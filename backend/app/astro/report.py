@@ -88,8 +88,8 @@ def _chart_section(facts) -> dict:
 
 
 def _outlook(facts, birth: BirthInput, calibrated: bool,
-             today: date) -> list[dict]:
-    end = today + timedelta(days=_OUTLOOK_DAYS)
+             today: date, end: date | None = None) -> list[dict]:
+    end = end or today + timedelta(days=_OUTLOOK_DAYS)
     out = []
     from . import classical
     for domain in ("career", "education", "relationship", "relocation", "finance", "direction", "health"):
@@ -138,7 +138,7 @@ def _domain_line(d: dict) -> str:
 
 def build_report(facts, birth: BirthInput, *, calibrated: bool,
                  predictions_allowed: bool, subject: str | None = None,
-                 today: date | None = None) -> dict:
+                 today: date | None = None, window: tuple[date, date] | None = None) -> dict:
     """Structured report for the active profile. `subject` is the chart
     owner's name when the chart belongs to a family member, else None."""
     today = today or date.today()
@@ -198,12 +198,16 @@ def build_report(facts, birth: BirthInput, *, calibrated: bool,
                      + f" — {run[0]['lords'][0]} period runs to {run[0]['end']}.")
 
     if predictions_allowed:
-        domains = _outlook(facts, birth, calibrated, today)
+        domains = _outlook(facts, birth, calibrated, *(window or (today, None)))
         watch = sorted({m for d in domains for m in d["watch_months"]})
         sections["domains"] = domains
         sections["watch_months"] = watch
-        lines.append("Twelve-month outlook (four-pillar verdict plus filters — "
-                     "the weeks where traditional indicators concentrate):")
+        if window:
+            from ..chat.language import window_label
+            lines.append("Outlook for " + window_label(window))
+        else:
+            lines.append("Twelve-month outlook (four-pillar verdict plus filters — "
+                         "the weeks where traditional indicators concentrate):")
         lines += ["- " + _domain_line(d) for d in domains]
         if watch:
             lines.append("Watch months (eclipse near a natal planet): "
