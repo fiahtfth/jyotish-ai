@@ -2152,6 +2152,9 @@ def test_llm_markdown_is_flattened_to_plain_text():
     out = _plain_reply(text)
     assert "###" not in out and "|" not in out and "**" not in out
     assert "Health outlook" in out and "Work · grows · steady" in out
+    # Indentation marks a wrapped continuation — repair_response needs it.
+    wrapped = _plain_reply("- Saturn sits\n  in Aries\n- Home steady")
+    assert wrapped == "- Saturn sits\n  in Aries\n- Home steady"
 
 
 

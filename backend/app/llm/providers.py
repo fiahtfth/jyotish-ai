@@ -79,7 +79,9 @@ def _plain_reply(text: str) -> str:
     text = re.sub(r"(?:^|(?<=[ \t]))#{1,6}[ \t]+", "\n\n", text, flags=re.M)
     lines = []
     for raw in text.split("\n"):
-        line = raw.strip()
+        # Leading indent marks a wrapped continuation — downstream reply
+        # filters need it to recognize a claim split across lines.
+        line = raw.rstrip()
         if "|" in line:
             cells = [c.strip() for c in line.strip("|").split("|")]
             if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
