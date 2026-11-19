@@ -21,6 +21,17 @@ def active_dashas(birth, when):
             "date_convention": "Calendar dates use the recorded birth UTC offset."}
 
 
+def vimshottari_mahadashas(facts):
+    """Group the saved antardasha rows from the same calculation into mahadashas."""
+    periods = []
+    for row in facts.get("vimshottari", {}).get("periods", []):
+        if periods and periods[-1]["lord"] == row["maha"]:
+            periods[-1]["end"] = row["end"]
+        else:
+            periods.append({"lord": row["maha"], "start": row["start"], "end": row["end"]})
+    return periods
+
+
 def chart_details(facts, birth, when, tzdb_version):
     aspects = [{"from": name, "to": K.SIGN_NAMES[(p["sign"] + distance - 1) % 12], "distance": distance}
                for name, p in facts["planets"].items() for distance in (7, *_EXTRA_ASPECTS.get(name, ()))]

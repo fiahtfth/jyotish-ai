@@ -649,6 +649,11 @@ def _facts_lines(facts: dict) -> list[str]:
                  f"yogakaraka: {func['yogakaraka']}; maraka: {', '.join(func['maraka_lords'])}")
     jk = facts["jaimini"]["karakas"]
     lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    for period in facts.get("current_vimshottari", []):
+        lords = " → ".join(period["lords"])
+        lines.append(f"Active Vimshottari {lords}: {period['start']} through {period['end']}")
+    for period in facts.get("referenced_mahadashas", []):
+        lines.append(f"Vimshottari mahadasha of {period['lord']}: {period['start']} through {period['end']}")
     if facts.get("selected_chart"):
         lines.append("Selected divisional chart (houses counted from its own ascendant): " +
                      json.dumps(facts["selected_chart"], ensure_ascii=False))

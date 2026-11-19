@@ -1014,7 +1014,10 @@ def admin_feedback(limit: int = Query(default=100, ge=1, le=500),
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "llm_provider": settings.LLM_PROVIDER}
+    status = {"ok": True, "llm_provider": settings.LLM_PROVIDER}
+    if revision := os.environ.get("RENDER_GIT_COMMIT"):
+        status["revision"] = revision
+    return status
 
 
 # ------------------------------------------------------------- frontend

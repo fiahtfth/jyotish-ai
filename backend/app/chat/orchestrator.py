@@ -605,6 +605,67 @@ def start_conversation(db: Session, conv: Conversation, profile: BirthProfile) -
 
 # ------------------------------------------------------------------ main turn
 
+def _vimshottari_lookup(db, conv, profile, facts, birth, text):
+    focus = language.focus_text(text)
+    lord = language.named_mahadasha(focus)
+    accident = language.specific_accident(focus)
+    dates_requested = language.asks_dasha_dates(focus)
+    sequence = not lord and language.asks_mahadasha_sequence(focus)
+    reported = None
+    continued = False
+    if not (lord or sequence):
+        previous = _previous_reading(conv, profile)
+        prior = previous.get("vimshottari_lookup", {})
+        followup = language.follows_dasha_lookup(focus)
+        if not prior and followup and previous.get("fingerprint") == profile.calc_fingerprint:
+            # Conversations from before this lookup used the model for the
+            # same question. Recover the named period from that exchange.
+            exchange = _conversation_history(conv)[-3:-1]
+            if [m["role"] for m in exchange] == ["user", "assistant"]:
+                question = exchange[0]["content"]
+                if language.specific_accident(question) and (previous_lord := language.named_mahadasha(question)):
+                    prior = {"lord": previous_lord, "accident": True}
+        if prior.get("accident") and not followup:
+            reported = language.reported_accident_window(focus, _today_at(birth))
+        if (prior.get("lord") or prior.get("accident")) and (reported or followup):
+            lord, accident = prior["lord"], prior["accident"]
+            continued = True
+    if not (sequence or continued or dates_requested and (lord or accident) or lord and accident):
+        return False
+
+    periods = inspection.vimshottari_mahadashas(facts)
+    matching = [p for p in periods if p["lord"] == lord] if lord else periods
+    if sequence and periods:
+        rows = "\n".join(f"- **{p['lord']}** from {p['start']} to {p['end']}" for p in periods)
+        lines = [f"Here are the Vimshottari mahādashas for the saved chart.\n\n{rows}"]
+    elif lord and matching:
+        lines = [f"The saved chart places the **{lord} mahādasha** from {p['start']} to {p['end']}."
+                 for p in matching]
+    elif lord or sequence:
+        lines = ["I couldn’t find that period in the saved Vimshottari timeline."]
+    else:
+        lines = []
+    if accident:
+        if reported is None and not continued:
+            reported = language.reported_accident_window(focus, _today_at(birth))
+        if reported:
+            start, end = (day.isoformat() for day in reported)
+            rows = [p for p in facts.get("vimshottari", {}).get("periods", [])
+                    if p["start"] <= end and start <= p["end"]]
+            label = language.window_label(reported)
+            if rows:
+                clocks = ", ".join(f"{p['maha']}–{p['antar']}" for p in rows)
+                lines.append(f"During {label}, the saved timeline shows **{clocks}** at the mahādasha and antardasha levels.")
+            else:
+                lines.append(f"{label} falls outside the saved Vimshottari timeline.")
+        else:
+            lines.append("The chart can’t establish the month of an accident. If you remember the approximate year or month and year, I can check which dasha was active.")
+    _add_msg(db, conv, "assistant", "\n\n".join(lines),
+             meta={"fingerprint": profile.calc_fingerprint,
+                   "vimshottari_lookup": {"lord": lord, "accident": accident}})
+    return True
+
+
 def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
                    text: str, on_delta=None) -> list[Message]:
     """`on_delta(str)` receives LLM text chunks as they stream (optional)."""
@@ -648,6 +709,9 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
         entries.append(feedback)
     if entries:
         msg.meta_json = json.dumps({memory.KEY: entries}, ensure_ascii=False)
+    if _vimshottari_lookup(db, conv, profile, facts, birth, text):
+        db.commit()
+        return conv.messages[start_len:]
     if feedback and not re.search(r"\?|\b(?:tell me|explain|show me|can you|please|what about)\b", text, re.I):
         _add_msg(db, conv, "assistant",
                  "Thanks for telling me. I’ve noted your feedback on the earlier reading.")
@@ -1529,8 +1593,10 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         analysis["period_requested"] = True
     if selected:
         facts = {**facts, "selected_chart": selected}
-    run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
-    periods = "/".join("/".join(period["lords"]) for period in run[:2])
+    run = engine.running_vimshottari(birth, (today.year, today.month, today.day))
+    lord = language.named_mahadasha(focus)
+    referenced = [p for p in inspection.vimshottari_mahadashas(facts) if p["lord"] == lord] if lord else []
+    facts = {**facts, "current_vimshottari": run, "referenced_mahadashas": referenced}
     recent_user_text = [m["content"] for m in providers._prompt_history(history) if m["role"] == "user"]
     remembered = memory.relevant(memory.saved(conv.messages, profile.calc_fingerprint), domain, focus, recent_user_text)
     # Official outcomes stay attached to their original forecasts and are
@@ -1551,7 +1617,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     reply, provider = providers.generate(
         history, facts=facts, analysis=analysis,
         context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
-                      f"Current Vimshottari: {periods}. Use the resolved event and analysis window when supplied. "
+                      "Use the supplied Vimshottari dates for period boundaries. Use the resolved event and analysis window when supplied. "
                       "Name the period when timing was requested. Answer using the selected divisional chart when present. "
                       + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
                          if window is None else "")),
@@ -1576,6 +1642,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
+                   **({"vimshottari_lookup": {"lord": lord, "accident": False}} if referenced else {}),
                    **({"reading_domain": domain} if domain else {}),
                    **({"analysis": analysis, "requested_window": [d.isoformat() for d in window]} if analysis else {}),
                    **({"career_match": prior["career_match"], "pending_domain": "career"}

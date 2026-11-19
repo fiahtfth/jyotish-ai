@@ -13,6 +13,85 @@ _MONTHS.update({name: month for month, name in enumerate(
     "जनवरी फ़रवरी मार्च अप्रैल मई जून जुलाई अगस्त सितंबर अक्टूबर नवंबर दिसंबर".split(), 1)})
 _MONTHS.update({"फरवरी": 2, "सितम्बर": 9, "दिसंबर": 12})
 _MONTH = re.compile(r"(?<!\w)(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")(?!\w)\.?", re.I)
+_CALENDAR_YEAR = r"(?:19|20)\d{2}"
+
+_DASHA_LORDS = {
+    "sun": "Sun", "surya": "Sun", "सूर्य": "Sun",
+    "moon": "Moon", "chandra": "Moon", "चंद्र": "Moon", "चन्द्र": "Moon",
+    "mars": "Mars", "mangal": "Mars", "मंगल": "Mars",
+    "mercury": "Mercury", "budh": "Mercury", "बुध": "Mercury",
+    "jupiter": "Jupiter", "guru": "Jupiter", "गुरु": "Jupiter", "बृहस्पति": "Jupiter",
+    "venus": "Venus", "shukra": "Venus", "शुक्र": "Venus",
+    "saturn": "Saturn", "shani": "Saturn", "शनि": "Saturn",
+    "rahu": "Rahu", "राहु": "Rahu", "राहू": "Rahu", "ketu": "Ketu", "केतु": "Ketu",
+}
+_LORD = "|".join(_DASHA_LORDS)
+_MD = r"(?:mah[aā][\s-]*d[aā](?:sh|ś|s)[aā]|dasha|महादशा|दशा)"
+_NAMED_MD = re.compile(
+    rf"(?<!\w)(?:(?P<before>{_LORD})(?:['’]s)?\s*(?:(?:ki|की)\s+)?{_MD}|"
+    rf"{_MD}\s+(?:of\s+)?(?P<after>{_LORD}))(?!\w)", re.I)
+_MAHA = r"(?:mah[aā][\s-]*d[aā](?:sh|ś|s)[aā]s?|महादशा(?:एँ|ओं)?)"
+_DASHA_DATES = re.compile(
+    r"\b(?:when|dates?|(?:which|what) (?:month|year)|start and end|from when|kab|timeline)\b"
+    r"|कब|तारीख|समयावधि|शुरू|समाप्त", re.I)
+_ACCIDENT = re.compile(
+    r"\b(?:accident\w*|car crash|road crash|motorcycle crash|bike crash|durghatna|had a crash)\b"
+    r"|दुर्घटना|एक्सीडेंट", re.I)
+_TRANSIT = re.compile(r"\b(?:transit\w*|gochar)\b|गोचर", re.I)
+
+
+def named_mahadasha(text):
+    """A named Vimshottari major period, with room for ordinary phrasing."""
+    focus = focus_text(text).casefold()
+    matches = list(_NAMED_MD.finditer(focus))
+    if matches:
+        match = matches[-1]
+        return _DASHA_LORDS[match["before"] or match["after"]]
+    if specific_accident(text) and not _TRANSIT.search(focus):
+        match = re.search(rf"(?<!\w)({_LORD})(?:['’]s)?\s+(?:period|phase)(?!\w)", focus)
+        if match:
+            return _DASHA_LORDS[match[1]]
+    return None
+
+
+def specific_accident(text):
+    return bool(_ACCIDENT.search(text))
+
+
+def asks_dasha_dates(text):
+    return bool(_DASHA_DATES.search(text))
+
+
+def asks_mahadasha_sequence(text):
+    return bool(re.search(_MAHA, text, re.I)
+                and re.search(r"\b(?:all|sequence|timeline|schedule|list|order|table)\b|क्रम|सूची", text, re.I))
+
+
+def follows_dasha_lookup(text):
+    return bool(re.fullmatch(
+        r"\s*(?:(?:but |and )?(?:when(?: was it| did it happen| did it start| did it end)?|"
+        r"(?:which|what) (?:month|year|dates|timeframe|date range)|"
+        r"can you (?:check|try) again|please (?:check|look) again|show (?:me )?the dates|"
+        r"can you narrow it down)|kab|कब)[.?! ]*", text, re.I))
+
+
+def reported_accident_window(text, today):
+    """Use a reported calendar date without inferring a year from a bare month."""
+    t = text.casefold().strip(" .!?")
+    if not re.search(rf"\b{_CALENDAR_YEAR}\b", t):
+        return None
+    if not specific_accident(t):
+        t = re.sub(r"^(?:(?:it (?:was|happened)|i think(?: it was)?)\s+)?(?:in |on |around |about )?", "", t)
+        day = r"\d{1,2}(?:st|nd|rd|th)?"
+        month_date = rf"(?:{day}\s+(?:of\s+)?)?{_MONTH.pattern}(?:\s+{day})?[ ,]+{_CALENDAR_YEAR}"
+        if not re.fullmatch(rf"{_CALENDAR_YEAR}(?:-\d{{2}}-\d{{2}})?|{month_date}", t):
+            return None
+    try:
+        window = requested_window(t, today)
+    except ValueError:
+        return None
+    return window if window and window[0] <= today else None
+
 
 # Topic corrections often name the discarded subject as well as its replacement.
 def focus_text(text):
@@ -84,7 +163,7 @@ def _parse_window(t, today, prior):
         relative_year = today.year + 1
     elif any(word in t for word in ("this year", "is saal", "इस साल")):
         relative_year = today.year
-    iso = re.findall(r"\b20\d\d-\d\d-\d\d\b", t)
+    iso = re.findall(rf"\b{_CALENDAR_YEAR}-\d\d-\d\d\b", t)
     if iso:
         start, end = date.fromisoformat(iso[0]), date.fromisoformat(iso[-1])
         if end < start:
@@ -97,14 +176,14 @@ def _parse_window(t, today, prior):
         day_after = re.match(r"\s+(\d{1,2})(?:st|nd|rd|th)?\b", after)
         day = day_before or day_after
         suffix = after[day_after.end():] if day_after else after
-        year = re.match(r"[\s,]*(?:of )?(20\d\d)\b", suffix)
+        year = re.match(rf"[\s,]*(?:of )?({_CALENDAR_YEAR})\b", suffix)
         name = match[1]
         if name in ("may", "march") and not (day or year):
             if not (re.search(r"\b(in|during|about|for|to|through|until|and|next|this|of|by)\s*$", before)
                     or re.fullmatch(r"[?.!\s]*", after)):
                 continue
         months.append((_MONTHS[name], int(day[1]) if day else None, int(year[1]) if year else None))
-    year_match = re.search(r"\b(20\d\d)\b", t)
+    year_match = re.search(rf"\b({_CALENDAR_YEAR})\b", t)
     if months:
         if len(months) > 2 or (len(months) == 2 and re.search(r"\b(?:or|versus|vs)\b", t)):
             raise ValueError("multiple candidate periods")
@@ -124,7 +203,7 @@ def _parse_window(t, today, prior):
         if end < start:
             raise ValueError("reversed interval")
         return start, end
-    if len(set(re.findall(r"\b20\d\d\b", t))) > 1:
+    if len(set(re.findall(rf"\b{_CALENDAR_YEAR}\b", t))) > 1:
         raise ValueError("choose one year")
     if year_match or relative_year:
         year = int(year_match[1]) if year_match else relative_year

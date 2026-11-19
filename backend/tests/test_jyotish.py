@@ -977,6 +977,81 @@ def test_stream_calibration_turn_emits_only_done():
     assert hist[-len(ev[0]["messages"]):] == ev[0]["messages"]
 
 
+def test_past_accident_lookup_reads_saved_rahu_dates_and_handles_followups(monkeypatch):
+    from app.chat import orchestrator
+    from app.db import PredictionRecord
+    from app.llm import providers
+
+    def unexpected_model(*args, **kwargs):
+        pytest.fail("A timeline lookup should work without an external model")
+
+    monkeypatch.setattr(providers, "generate", unexpected_model)
+    h = register_and_profile()
+    client.get("/api/chat/history", headers=h)
+    db, conv, profile = _db_profile_and_conv(h)
+    initial_state = conv.state
+    periods = orchestrator.chart_facts(profile)["vimshottari"]["periods"]
+    rahu = [row for row in periods if row["maha"] == "Rahu"]
+    timeframe = f"from {rahu[0]['start']} to {rahu[-1]['end']}"
+    events = _parse_sse(client.post("/api/chat/stream", headers=h, json={
+        "text": "Can you tell me the month my accident happened during Rahu’s Mahādasha?",
+    }))
+    reply = events[-1]["messages"][-1]["content"]
+    assert timeframe in reply and "can’t establish the month" in reply
+
+    db.refresh(conv)
+    conv.messages[-1].meta_json = json.dumps({"fingerprint": profile.calc_fingerprint, "provider": "offline"})
+    db.commit()
+    reply = send("Which month?", h)[-1]["content"]
+    assert timeframe in reply and "can’t establish the month" in reply
+    midpoint = rahu[0]["start"][:4] + "-12-31"
+    reply = send(f"It happened on {midpoint}", h)[-1]["content"]
+    assert timeframe in reply and "Rahu–Rahu" in reply
+    assert "31 December" in reply
+
+    db.refresh(conv)
+    assert conv.state == initial_state
+    assert db.query(PredictionRecord).filter_by(profile_id=profile.id).count() == 0
+    db.close()
+
+
+def test_vimshottari_dates_and_sequence_use_saved_timeline(monkeypatch):
+    from app.llm import providers
+
+    def unexpected_model(*args, **kwargs):
+        pytest.fail("Mahadasha dates are deterministic")
+
+    monkeypatch.setattr(providers, "generate", unexpected_model)
+    h = register_and_profile()
+    timeline = send("Show me the full Mahadasha sequence", h)[-1]["content"]
+    assert len(timeline.split("\n- ")) == 10
+    rahu_dates = next(line.removeprefix("- **Rahu** ") for line in timeline.splitlines()
+                      if line.startswith("- **Rahu** "))
+    assert rahu_dates in send("Rahu ki Mahadasha kab shuru hui?", h)[-1]["content"]
+    assert rahu_dates in send("राहु की महादशा कब शुरू हुई?", h)[-1]["content"]
+
+
+def test_named_dasha_interpretation_grounds_provider_with_engine_dates(monkeypatch):
+    from app.llm import providers
+
+    seen = {}
+
+    def generate(messages, *, facts, analysis, **kwargs):
+        seen.update(facts)
+        return "This is a traditional interpretation.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
+    h = register_and_profile()
+    _open_conv(h)
+    send("What is the traditional interpretation of my Rahu mahadasha?", h)
+    assert len(seen["current_vimshottari"]) == 3
+    assert [p["lord"] for p in seen["referenced_mahadashas"]] == ["Rahu"]
+    rahu = seen["referenced_mahadashas"][0]
+    grounding = providers.grounding_text(seen, None)
+    assert f"Vimshottari mahadasha of Rahu: {rahu['start']} through {rahu['end']}" in grounding
+    assert f"Active Vimshottari {seen['current_vimshottari'][0]['lords'][0]}:" in grounding
+
+
 def test_stream_same_guards_as_send():
     assert client.post("/api/chat/stream", json={"text": "hi"}).status_code == 401
     email, h = _register()
