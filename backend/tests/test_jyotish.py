@@ -2085,6 +2085,10 @@ def test_repair_response_preserves_line_breaks():
     table = V.repair_response(
         "| Work | grows\n| Health | 2027-08-09\n| Family | steady", issues)
     assert table == "| Work | grows\n| Family | steady"
+    # Rows already flattened to "a · b" by _plain_reply count as rows too.
+    flat = V.repair_response(
+        "Work · grows\nHealth · 2027-08-09\nFamily · steady", issues)
+    assert flat == "Work · grows\nFamily · steady"
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(
