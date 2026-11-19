@@ -220,13 +220,23 @@ def repair_response(text: str, issues: list[str]) -> str:
                 # the offending rows, not the whole table. Wrapped prose must
                 # still drop whole so a claim's leading fragment can't survive.
                 rows = sentence.split("\n")
-                # "·" lines are table rows already flattened by _plain_reply.
-                rowish = sum(1 for ln in rows
-                             if re.match(r"\s*(?:[-*•|>]|\d+[.)])\s*\S", ln)
-                             or "·" in ln)
+
+                def is_row(ln: str) -> bool:
+                    # "·" lines are table rows already flattened by _plain_reply.
+                    return bool(re.match(r"\s*(?:[-*•|>]|\d+[.)])\s*\S", ln)
+                                or "·" in ln)
+
+                rowish = sum(1 for ln in rows if is_row(ln))
                 if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
-                    sentence = "\n".join(
-                        ln for ln in rows if ln.strip() and not bad(ln))
+                    kept = [ln for i, ln in enumerate(rows)
+                            if ln.strip() and not bad(ln)
+                            # A non-row fragment that completes a bad claim on
+                            # the next line must go too (e.g. "you will"
+                            # before "receive <bad date>").
+                            and (is_row(ln) or ln.rstrip()[-1:] in ".!?"
+                                 or i + 1 >= len(rows)
+                                 or not bad(ln + " " + rows[i + 1]))]
+                    sentence = "\n".join(kept)
                 else:
                     continue
             if sentence.strip():

@@ -2089,6 +2089,12 @@ def test_repair_response_preserves_line_breaks():
     flat = V.repair_response(
         "Work · grows\nHealth · 2027-08-09\nFamily · steady", issues)
     assert flat == "Work · grows\nFamily · steady"
+    # A wrapped claim riding on a row run: the rows survive, both halves of
+    # the claim go.
+    tail = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nyou will\nreceive news on 2027-08-09.",
+        issues)
+    assert tail == "| Work | grows\n| Home | steady\n| Family | calm"
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(
