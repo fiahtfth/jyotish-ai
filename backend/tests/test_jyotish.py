@@ -2110,6 +2110,17 @@ def test_repair_response_preserves_line_breaks():
         "Key dates\n| Work | 2027-08-09\n| Home | 2027-08-09\n| Family | 2027-08-09",
         issues)
     assert "doesn't support" in empty
+    # A claim wrapped as a bullet plus continuation drops both halves.
+    wrapbullet = V.repair_response(
+        "- Saturn sits\n  in Aries\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert wrapbullet == "- Home steady"
+    # When rows all fail, a substantive prose takeaway still answers.
+    takeaway = V.repair_response(
+        "- Work | 2027-08-09\n- Home | 2027-08-09\n- Family | 2027-08-09\n"
+        "Overall the period still looks broadly supportive",
+        issues)
+    assert takeaway == "Overall the period still looks broadly supportive"
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(

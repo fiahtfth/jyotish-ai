@@ -252,16 +252,16 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                     rowish = sum(1 for ln in rows if is_row(ln))
                     if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
                         def fragment(i: int, ln: str) -> bool:
-                            # A non-row line that joins a bad claim wrapped
-                            # across lines goes too — but a caveat before a
-                            # bad *row* stays.
+                            # A line that wraps into another line forming a bad
+                            # claim goes too — but a caveat before a bad *row*
+                            # stays, and so does a row before a bad prose line.
                             nxt = rows[i + 1] if i + 1 < len(rows) else None
-                            if (not is_row(ln) and ln.rstrip()[-1:] not in ".!?"
-                                    and nxt is not None and not is_row(nxt)
-                                    and bad(ln + " " + nxt)):
+                            if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
+                                    and not is_row(nxt) and bad(ln + " " + nxt)
+                                    and (not is_row(ln) or not bad(nxt))):
                                 return True
                             prv = rows[i - 1] if i else ""
-                            if (prv and not is_row(prv)
+                            if (not is_row(ln) and prv
                                     and prv.rstrip()[-1:] not in ".!?"
                                     and not bad(prv) and bad(prv + " " + ln)):
                                 return True
@@ -269,9 +269,13 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                         kept_lines = [ln for i, ln in enumerate(rows)
                                       if ln.strip() and not bad(ln)
                                       and not fragment(i, ln)]
-                        # A lead-in with no surviving rows is no reply — drop it.
-                        sentence = ("\n".join(kept_lines)
-                                    if any(is_row(ln) for ln in kept_lines) else "")
+                        if not any(is_row(ln) for ln in kept_lines):
+                            # No rows survive: complete or substantive prose
+                            # still answers, but a bare lead-in is no reply.
+                            kept_lines = [ln for ln in kept_lines
+                                          if ln.rstrip()[-1:] in ".!?"
+                                          or len(ln.split()) >= 4]
+                        sentence = "\n".join(kept_lines)
                     else:
                         continue
                 if sentence.strip():
