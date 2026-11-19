@@ -46,6 +46,28 @@ facts, and do not use probability language ("chance of", "probability of").
 """
 
 
+def _completion_text(data: dict) -> str:
+    choices = data.get("choices") or []
+    message = (choices[0].get("message") or {}) if choices else {}
+    content = message.get("content")
+    return content.strip() if isinstance(content, str) else ""
+
+
+def _prompt_history(messages: list[dict]) -> list[dict]:
+    # Preserve the current request in full. Large historical reports remain
+    # stored in the conversation and available in the UI.
+    recent = []
+    remaining = 6000
+    for m in reversed(messages):
+        size = len(m["content"])
+        if not recent or size <= remaining:
+            recent.append(m)
+            remaining -= size
+        if remaining <= 0:
+            break
+    return list(reversed(recent))
+
+
 def _gemini(system: str, messages: list[dict], timeout: float = 45) -> str:
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY not set")
@@ -83,7 +105,7 @@ def _groq(system: str, messages: list[dict], timeout: float = 45) -> str:
                    headers={"Authorization": f"Bearer {settings.GROQ_API_KEY}"},
                    json=payload, timeout=timeout)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    return _completion_text(r.json())
 
 
 def _openrouter(system: str, messages: list[dict], timeout: float = 45) -> str:
@@ -103,7 +125,7 @@ def _openrouter(system: str, messages: list[dict], timeout: float = 45) -> str:
                          "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400},
                    timeout=timeout)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    return _completion_text(r.json())
 
 
 def _ollama(system: str, messages: list[dict], timeout: float = 120) -> str:
@@ -125,7 +147,7 @@ def _lmstudio(system: str, messages: list[dict], timeout: float = 120) -> str:
                          "temperature": settings.LLM_TEMPERATURE, "max_tokens": 600},
                    timeout=timeout)
     r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"].strip()
+    return _completion_text(r.json())
 
 
 # ------------------------------------------------------------ streaming
@@ -349,20 +371,26 @@ def generate(messages: list[dict], facts: dict | None = None,
     if analysis is not None:
         context = dict(analysis)
         if audit := context.get("classical"):
-            # Historical calibration evidence is for the reader. Only the current
-            # question's calculations belong in the interpretation prompt.
-            current_tables = []
-            for t in audit["tables"]:
-                if t["title"].startswith(("Past ", "Birth-time checks", "Reported milestones")):
-                    break
-                current_tables.append(t)
-            context["classical"] = {**audit, "tables": current_tables}
+            # The complete matrices and historical audits stay in message
+            # metadata. Send the current static audit and first gate scorecard.
+            tables = audit.get("tables", [])
+            static = next((t for t in tables if t["title"].startswith("Static promise")), None)
+            gates = next((t for t in tables if "/4" in t["title"]), None)
+            context["classical"] = {**audit, "tables": [t for t in (static, gates) if t],
+                                    "scores": audit.get("scores", [])[:3]}
             context.pop("sensitivity", None)
+            for key in ("calculation_evidence_ids", "traditional_rule_ids"):
+                if isinstance(context.get(key), list):
+                    context[key] = context[key][:12]
+            if context.get("precision"):
+                context["precision"] = {k: v for k, v in context["precision"].items()
+                                        if k != "ithasala"}
         system += "\n\nANALYSIS (computed results for the current question):\n" + json.dumps(
             _tag_analysis(context), separators=(",", ":"), ensure_ascii=False)
     if context_note:
         system += "\n\nCONTEXT: " + context_note
 
+    messages = _prompt_history(messages)
     provider = settings.LLM_PROVIDER
     providers_to_try = _available_providers(allow_external)
     emitted = 0

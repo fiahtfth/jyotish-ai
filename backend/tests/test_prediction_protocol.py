@@ -153,3 +153,35 @@ def test_offline_followup_does_not_repeat_previous_reading_or_question():
     assert first != second
     assert 'Are you mainly thinking' not in second
     assert 'support activity in career' in second and '2027' in second
+
+
+def test_ai_prompt_omits_large_historical_reports_but_preserves_current_request(monkeypatch):
+    from app.llm import providers as P
+    monkeypatch.setattr(P.settings, "LLM_PROVIDER", "groq")
+    monkeypatch.setattr(P.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(P.settings, "LLM_EXTERNAL_CONSENT", True)
+    captured = []
+    def provider(system, messages, timeout):
+        captured.append((system, messages))
+        return "OK"
+    monkeypatch.setitem(P.PROVIDERS, "groq", provider)
+    audit = {"tables": [
+        {"title": "Lahiri matrix", "rows": ["x" * 60000]},
+        {"title": "Static promise · Moderate", "rows": ["natal evidence"]},
+        {"title": "2027 · 3/4", "rows": ["timing evidence"]},
+    ], "scores": []}
+    request = {"role": "user", "content": "Explain my health indicators"}
+    P.generate([{"role": "assistant", "content": "x" * 60000}, request],
+               analysis={"classical": audit, "precision": {"ithasala": "x" * 60000}})
+    system, history = captured[0]
+    assert len(system) < 12000
+    assert "natal evidence" in system and "timing evidence" in system
+    assert history == [request]
+    assert len(audit["tables"]) == 3
+
+
+def test_empty_openai_content_can_fall_through_to_next_provider():
+    from app.llm import providers as P
+    assert P._completion_text({"choices": [{"message": {"content": None}}]}) == ""
+    assert P._completion_text({"choices": []}) == ""
+    assert P._completion_text({"choices": [{"message": {"content": " OK "}}]}) == "OK"
