@@ -215,7 +215,7 @@ def test_internal_references_are_hidden_in_streamed_and_final_replies(monkeypatc
     seen = []
     reply, provider = P.generate([{"role": "user", "content": "Explain"}], on_delta=seen.append)
     assert provider == "groq"
-    assert "".join(seen) == reply == "This reads as support . "
+    assert "".join(seen) == "This reads as support . " and reply == "This reads as support ."
     assert P.visible_reply("Keep [a normal note] and remove 【E012】.") == "Keep [a normal note] and remove ."
 
 

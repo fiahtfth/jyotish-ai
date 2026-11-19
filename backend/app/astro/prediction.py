@@ -217,22 +217,27 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
     prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?|20\d{2})\b", reply, re.I)
     internal = re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", reply, re.I)
     if dates - allowed or certainty or prose_date or internal:
-        # Remove only the offending sentences. A single unsupported claim
-        # must not erase the rest of an otherwise useful answer.
-        sentences = re.split(r"(?<=[.!?])\s+|\n\n", reply)
-        if len(sentences) > 1:
-            kept = []
-            for sentence in sentences:
-                bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
-                if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
-                    continue
-                if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
-                    continue
-                if re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I):
-                    continue
-                if sentence.strip():
-                    kept.append(sentence.strip())
-            if kept:
-                return " ".join(kept)
+        # Remove only the offending sentences, preserving the reply's line
+        # structure. A single unsupported claim must not erase the rest of an
+        # otherwise useful answer — or collapse every newline into one blob.
+        def bad(sentence: str) -> bool:
+            bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
+            if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
+                return True
+            if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
+                return True
+            return bool(re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I))
+        paragraphs = []
+        for para in re.split(r"\n\s*\n", reply):
+            kept_lines = []
+            for line in para.split("\n"):
+                kept = [s.strip() for s in re.split(r"(?<=[.!?])[ \t]+", line)
+                        if s.strip() and not bad(s)]
+                if kept:
+                    kept_lines.append(" ".join(kept))
+            if kept_lines:
+                paragraphs.append("\n".join(kept_lines))
+        if paragraphs:
+            return "\n\n".join(paragraphs)
         return interpretation_reading(analysis, facts, messages)
     return reply

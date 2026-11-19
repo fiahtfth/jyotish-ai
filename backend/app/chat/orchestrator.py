@@ -178,7 +178,7 @@ DOMAIN_KEYWORDS = {
     "litigation": ["litigation", "lawsuit", "court case"],
     "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest"],
     "direction": ["direction", "purpose", "path in life", "meaning"],
-    "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical"],
+    "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical", "accident", "injury", "injur"],
 }
 
 # panchang: the day's limbs — factual almanac, not a prediction
@@ -1481,14 +1481,42 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     try:
         period = language.requested_window(focus, today, prior_window)
     except ValueError as exc:
-        prompt = ("I can assess up to one year at a time. Which part of that period would you like to start with?"
-                  if "up to one year" in str(exc) else
-                  "Which dates did you mean? You can give a month and year or a date range.")
-        _add_msg(db, conv, "assistant", prompt,
-                 meta={"pending_domain": domain or previous.get("domain"),
-                       "pending_event": prediction.event_spec(focus, domain) or (
-                           previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
-        return conv.messages[-2:]
+        # A complaint or correction mentioning years ("…rahu dash in 2014… you
+        # are connecting it to 2027") is not a period selection — answer it
+        # conversationally instead of demanding dates.
+        correction = bool(
+            language.topic_correction(t) or language.specific_accident(t)
+            or language.named_mahadasha(t) or list(memory.reactions(text))
+            or re.search(r"\b(?:wrong|incorrect|disagree|mistaken?|"
+                         r"not (?:able|right|correct|working|accurate|proper))\b", t))
+        narrowed = None
+        if "up to one year" in str(exc) and not correction:
+            try:
+                full = language.raw_window(focus, today, prior_window)
+            except ValueError:
+                full = None
+            if full:
+                narrowed = (full[0], min(full[1], date(full[0].year, 12, 31)))
+        if narrowed is not None:
+            _add_msg(db, conv, "assistant",
+                     f"I can assess up to one year at a time. Shall I start with "
+                     f"{language.window_label(narrowed)}? Or name a different year in that span.",
+                     meta={"requested_window": [d.isoformat() for d in narrowed],
+                           "pending_domain": domain or previous.get("domain"),
+                           "pending_event": prediction.event_spec(focus, domain) or (
+                               previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
+            return conv.messages[-2:]
+        if correction:
+            period = None
+        else:
+            prompt = ("I can assess up to one year at a time. Which part of that period would you like to start with?"
+                      if "up to one year" in str(exc) else
+                      "Which dates did you mean? You can give a month and year or a date range.")
+            _add_msg(db, conv, "assistant", prompt,
+                     meta={"pending_domain": domain or previous.get("domain"),
+                           "pending_event": prediction.event_spec(focus, domain) or (
+                               previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
+            return conv.messages[-2:]
 
     event = prediction.event_spec(focus, domain)
     # A bare event label can answer a previous question, e.g. "an offer".
@@ -1504,7 +1532,10 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         r"elaborate|same (?:period|time)|what then|what do you mean|my current (?:role|company)|please continue|"
         r"explain (?:it|that|this)|how so|aur batao|(?:it|that|this) (?:happen|happening|likely)|"
         r"likely is (?:it|that)|within (?:my|the) same (?:team|company))\b", t))
-    references_reading = references_reading or bool(re.fullmatch(r"(why|explain|yes please|go ahead|and then|and me|and why)[.?! ]*", t))
+    references_reading = references_reading or bool(re.fullmatch(
+        r"(why|explain|yes please|go ahead|and then|and me|and why|yes|yeah|yep|sure|"
+        r"ok(?:ay)?|please|please do|go for it|assess it|do it|start|"
+        r"(?:the )?(?:first|earliest|next) (?:year|one)|haan(?: ji)?|ha)[.?! ]*", t))
     explicit_reuse = language.prior_period_request(t)
     references_reading |= explicit_reuse is True
     factual = bool(re.search(r"\b(moon|sun|mars|mercury|venus|jupiter|saturn|rahu|ketu|lagna|"
@@ -1596,7 +1627,16 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     run = engine.running_vimshottari(birth, (today.year, today.month, today.day))
     lord = language.named_mahadasha(focus)
     referenced = [p for p in inspection.vimshottari_mahadashas(facts) if p["lord"] == lord] if lord else []
-    facts = {**facts, "current_vimshottari": run, "referenced_mahadashas": referenced}
+    # The model must ground dasha claims in the period the user asked about,
+    # not in whatever is running today ("my accident in Jan 2014" ≠ current MD).
+    window_periods = []
+    if window:
+        ws, we = (d.isoformat() for d in window)
+        window_periods = [p for p in facts.get("vimshottari", {}).get("periods", [])
+                          if p["start"] <= we and ws <= p["end"]]
+    facts = {**facts, "current_vimshottari": run, "referenced_mahadashas": referenced,
+             "window_vimshottari": window_periods,
+             "window_label": language.window_label(window) if window else None}
     recent_user_text = [m["content"] for m in providers._prompt_history(history) if m["role"] == "user"]
     remembered = memory.relevant(memory.saved(conv.messages, profile.calc_fingerprint), domain, focus, recent_user_text)
     # Official outcomes stay attached to their original forecasts and are
@@ -1617,7 +1657,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     reply, provider = providers.generate(
         history, facts=facts, analysis=analysis,
         context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
-                      "Use the supplied Vimshottari dates for period boundaries. Use the resolved event and analysis window when supplied. "
+                      "Use the supplied Vimshottari dates for period boundaries. Periods marked 'running today' "
+                      "describe the present only; for a question about another time, use the 'active during' "
+                      "lines for that period. Use the resolved event and analysis window when supplied. "
                       "Name the period when timing was requested. Answer using the selected divisional chart when present. "
                       + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
                          if window is None else "")),

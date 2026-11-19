@@ -184,28 +184,37 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
 
 
 def repair_response(text: str, issues: list[str]) -> str:
-    """Strip sentences that carry unverifiable/false astro claims."""
+    """Strip sentences that carry unverifiable/false astro claims.
+
+    Paragraph and line structure is preserved — joining kept sentences with
+    spaces once collapsed every newline in a reply into one blob."""
     if not issues:
         return text
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    kept = []
-    for s in sentences:
-        bad = False
+
+    def bad(s: str) -> bool:
         for it in issues:
             quoted = re.search(r"'([^']+)'", it)
             if quoted:
                 if quoted.group(1).lower() in s.lower():
-                    bad = True
-                    break
+                    return True
                 continue
             # crude: if the sentence contains both nouns involved in the issue
             words = [w for w in re.findall(r"[A-Za-z]+", it) if len(w) > 2]
             if sum(1 for w in words if w.lower() in s.lower()) >= 2:
-                bad = True
-                break
-        if not bad and s.strip():
-            kept.append(s.strip())
-    if kept:
-        return " ".join(kept)
+                return True
+        return False
+
+    paragraphs = []
+    for para in re.split(r"\n\s*\n", text):
+        kept_lines = []
+        for line in para.split("\n"):
+            kept = [s.strip() for s in re.split(r"(?<=[.!?])[ \t]+", line)
+                    if s.strip() and not bad(s)]
+            if kept:
+                kept_lines.append(" ".join(kept))
+        if kept_lines:
+            paragraphs.append("\n".join(kept_lines))
+    if paragraphs:
+        return "\n\n".join(paragraphs)
     return ("I'd rather not state that — the calculated chart doesn't support "
             "the claim as phrased. Let me answer from what the chart actually shows.")

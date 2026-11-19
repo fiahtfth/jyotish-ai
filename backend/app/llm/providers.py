@@ -68,6 +68,27 @@ def visible_reply(text: str) -> str:
     return _INTERNAL_REFERENCE.sub("", text)
 
 
+def _plain_reply(text: str) -> str:
+    """Flatten stray markdown into the plain text the chat client renders.
+
+    The persona asks for paragraphs, but models still emit headings and
+    tables; left as-is they show literally in the client."""
+    text = visible_reply(text)
+    text = re.sub(r"[*_`]{1,2}", "", text)
+    # A heading marker becomes a blank line so the heading stands on its own.
+    text = re.sub(r"(?:^|(?<=[ \t]))#{1,6}[ \t]+", "\n\n", text, flags=re.M)
+    lines = []
+    for raw in text.split("\n"):
+        line = raw.strip()
+        if "|" in line:
+            cells = [c.strip() for c in line.strip("|").split("|")]
+            if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue                      # markdown table separator
+            line = " · ".join(c for c in cells if c)
+        lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
+
 def _completion_text(data: dict) -> str:
     choices = data.get("choices") or []
     message = (choices[0].get("message") or {}) if choices else {}
@@ -553,8 +574,8 @@ def generate(messages: list[dict], facts: dict | None = None,
                     else:
                         text = STREAM_PROVIDERS[p](system, provider_messages, _emit, timeout=remaining)
                     if text:
-                        # the persona demands plain text; strip stray markdown
-                        return visible_reply(re.sub(r"[*_`]{1,2}", "", text)), p
+                        # the persona demands plain text; flatten stray markdown
+                        return _plain_reply(text), p
                     log.warning("LLM provider %s returned empty text", p)
                     retryable = False
                 except httpx.HTTPStatusError as exc:
@@ -651,7 +672,13 @@ def _facts_lines(facts: dict) -> list[str]:
     lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
     for period in facts.get("current_vimshottari", []):
         lords = " → ".join(period["lords"])
-        lines.append(f"Active Vimshottari {lords}: {period['start']} through {period['end']}")
+        lines.append(f"Vimshottari running today: {lords} ({period['start']} through {period['end']})")
+    window_periods = facts.get("window_vimshottari") or []
+    if window_periods:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['maha']}–{p.get('antar') or p['maha']} "
+                          f"({p['start']} to {p['end']})" for p in window_periods[:8])
+        lines.append(f"Vimshottari active during {label}: {spans}")
     for period in facts.get("referenced_mahadashas", []):
         lines.append(f"Vimshottari mahadasha of {period['lord']}: {period['start']} through {period['end']}")
     if facts.get("selected_chart"):

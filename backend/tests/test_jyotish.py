@@ -1049,7 +1049,50 @@ def test_named_dasha_interpretation_grounds_provider_with_engine_dates(monkeypat
     rahu = seen["referenced_mahadashas"][0]
     grounding = providers.grounding_text(seen, None)
     assert f"Vimshottari mahadasha of Rahu: {rahu['start']} through {rahu['end']}" in grounding
-    assert f"Active Vimshottari {seen['current_vimshottari'][0]['lords'][0]}:" in grounding
+    assert f"Vimshottari running today: {seen['current_vimshottari'][0]['lords'][0]}" in grounding
+
+
+def test_asked_period_grounds_provider_with_window_vimshottari(monkeypatch):
+    from app.llm import providers
+
+    seen = {}
+
+    def generate(messages, *, facts, analysis, **kwargs):
+        seen.update(facts)
+        return "This is a traditional interpretation.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
+    h = register_and_profile()
+    _open_conv(h)
+    send("i had an accident way back in Jan 2014", h)
+    assert seen["window_label"] == "January 2014"
+    covering = seen["window_vimshottari"]
+    assert covering and all(p["start"] <= "2014-01-31" and "2014-01-01" <= p["end"] for p in covering)
+    grounding = providers.grounding_text(seen, seen.get("analysis"))
+    assert "Vimshottari active during January 2014" in grounding
+
+
+def test_dasha_correction_complaint_gets_lookup_not_date_prompt():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("i think you are not able to predict properly...."
+             "my accident happened in rahu dash in 2014..."
+             "you are connecting it to 2027", h)
+    reply = r[-1]["content"]
+    assert "Which dates did you mean" not in reply
+    assert "Rahu" in reply and "2014" in reply
+
+
+def test_oversized_year_range_offers_the_first_year():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("tell me my future from 2027 to 2040", h)
+    reply = r[-1]
+    assert "one year at a time" in reply["content"] and "2027" in reply["content"]
+    assert reply["meta"]["requested_window"] == ["2027-01-01", "2027-12-31"]
+    # the offer is a real selection — "yes" must not be asked for dates again
+    r = send("yes", h)
+    assert "Which dates did you mean" not in r[-1]["content"]
 
 
 def test_stream_same_guards_as_send():
@@ -2003,6 +2046,45 @@ def test_conversational_periods_are_calendar_intervals():
         requested_window("31 February 2027", today)
     with pytest.raises(ValueError):
         requested_window("2027-01-01 to 2099-12-31", today)
+
+
+def test_year_ranges_parse_then_hit_the_one_year_cap():
+    from datetime import date
+    from app.chat.language import requested_window, raw_window
+    today = date(2026, 11, 18)
+    assert raw_window("2027 to 2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("between 2027 and 2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("2027-2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("nov 2027 to 2040", today) == (date(2027, 11, 1), date(2040, 12, 31))
+    for q in ("2027 to 2040", "nov 2027 to 2040", "between 2027 and 2040"):
+        with pytest.raises(ValueError, match="one year"):
+            requested_window(q, today)
+
+
+def test_bare_dash_names_a_mahadasha_and_accident_keeps_its_own_clause():
+    from datetime import date
+    from app.chat.language import named_mahadasha, reported_accident_window
+    today = date(2026, 11, 18)
+    complaint = ("i think you are not able to predict properly...."
+                 "my accident happened in rahu dash in 2014...you are connecting it to 2027")
+    assert named_mahadasha(complaint) == "Rahu"
+    assert reported_accident_window(complaint, today) == (date(2014, 1, 1), date(2014, 12, 31))
+
+
+def test_repair_response_preserves_line_breaks():
+    issues = ["unsupported date '2027-08-09'"]
+    fixed = V.repair_response(
+        "Fine sentence here.\n\n- bullet one stays.\n- Expect news on 2027-08-09.", issues)
+    assert fixed == "Fine sentence here.\n\n- bullet one stays."
+
+
+def test_llm_markdown_is_flattened_to_plain_text():
+    from app.llm.providers import _plain_reply
+    text = ("Intro sentence. ### Health outlook\n\n"
+            "| Theme | Jupiter | Saturn |\n|---|---|---|\n| Work | grows | steady |\n\n**Keep going.**")
+    out = _plain_reply(text)
+    assert "###" not in out and "|" not in out and "**" not in out
+    assert "Health outlook" in out and "Work · grows · steady" in out
 
 
 
