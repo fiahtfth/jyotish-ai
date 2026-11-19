@@ -1490,7 +1490,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             or re.search(r"\b(?:wrong|incorrect|disagree|mistaken?|"
                          r"not (?:able|right|correct|working|accurate|proper))\b", t))
         narrowed = None
-        if "up to one year" in str(exc) and not correction:
+        if "up to one year" in str(exc):
             try:
                 full = language.raw_window(focus, today, prior_window)
             except ValueError:
@@ -1502,9 +1502,11 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                      f"I can assess up to one year at a time. Shall I start with "
                      f"{language.window_label(narrowed)}? Or name a different year in that span.",
                      meta={"requested_window": [d.isoformat() for d in narrowed],
-                           "pending_domain": domain or previous.get("domain"),
+                           "pending_domain": domain or previous.get("domain") or prior.get("pending_domain"),
                            "pending_event": prediction.event_spec(focus, domain) or (
-                               previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
+                               previous.get("decision", {}).get("event")
+                               if domain in (None, previous.get("domain")) else None)
+                           or prior.get("pending_event")})
             return conv.messages[-2:]
         if correction:
             period = None
@@ -1513,9 +1515,11 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                       if "up to one year" in str(exc) else
                       "Which dates did you mean? You can give a month and year or a date range.")
             _add_msg(db, conv, "assistant", prompt,
-                     meta={"pending_domain": domain or previous.get("domain"),
+                     meta={"pending_domain": domain or previous.get("domain") or prior.get("pending_domain"),
                            "pending_event": prediction.event_spec(focus, domain) or (
-                               previous.get("decision", {}).get("event") if domain in (None, previous.get("domain")) else None)})
+                               previous.get("decision", {}).get("event")
+                               if domain in (None, previous.get("domain")) else None)
+                           or prior.get("pending_event")})
             return conv.messages[-2:]
 
     event = prediction.event_spec(focus, domain)

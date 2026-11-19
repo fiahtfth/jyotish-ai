@@ -2076,6 +2076,11 @@ def test_repair_response_preserves_line_breaks():
     fixed = V.repair_response(
         "Fine sentence here.\n\n- bullet one stays.\n- Expect news on 2027-08-09.", issues)
     assert fixed == "Fine sentence here.\n\n- bullet one stays."
+    # A claim wrapped across lines is still caught (the wrap must not bypass
+    # the filter), while kept sentences preserve their original newlines.
+    wrapped = V.repair_response(
+        "You will\nreceive news on 2027-08-09.\nFine line stays.", issues)
+    assert wrapped == "Fine line stays."
 
 
 def test_llm_markdown_is_flattened_to_plain_text():

@@ -229,14 +229,15 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
             return bool(re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I))
         paragraphs = []
         for para in re.split(r"\n\s*\n", reply):
-            kept_lines = []
-            for line in para.split("\n"):
-                kept = [s.strip() for s in re.split(r"(?<=[.!?])[ \t]+", line)
-                        if s.strip() and not bad(s)]
-                if kept:
-                    kept_lines.append(" ".join(kept))
-            if kept_lines:
-                paragraphs.append("\n".join(kept_lines))
+            # Sentences may wrap across newlines; keep each sentence's original
+            # trailing whitespace so kept text preserves the line structure.
+            pieces = re.split(r"((?<=[.!?])\s+)", para)
+            kept = "".join(
+                pieces[i] + (pieces[i + 1] if i + 1 < len(pieces) else "")
+                for i in range(0, len(pieces), 2)
+                if pieces[i].strip() and not bad(pieces[i]))
+            if kept.strip():
+                paragraphs.append(kept.strip())
         if paragraphs:
             return "\n\n".join(paragraphs)
         return interpretation_reading(analysis, facts, messages)
