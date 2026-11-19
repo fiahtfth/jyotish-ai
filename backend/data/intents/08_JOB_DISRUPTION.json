@@ -1,0 +1,53 @@
+{
+  "intent_id": "JOB_DISRUPTION",
+  "number": 8,
+  "phase": 2,
+  "template": "T_adverse",
+  "E": [
+    9,
+    5,
+    12,
+    8
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Rahu",
+    "Mars"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "A10",
+    "AmK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Saturn",
+      "Rahu",
+      "Ketu"
+    ],
+    "fast": [
+      "Mars"
+    ]
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [],
+  "forecast_events": []
+}

@@ -1,0 +1,54 @@
+{
+  "intent_id": "LEGAL_DISPUTE",
+  "number": 24,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    6,
+    11,
+    1
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [
+    7,
+    12,
+    8
+  ],
+  "K": [
+    "Mars",
+    "Saturn",
+    "Jupiter"
+  ],
+  "V": [
+    "D6"
+  ],
+  "J": [
+    "A6",
+    "GK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      6,
+      11,
+      1
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [],
+  "forecast_events": []
+}

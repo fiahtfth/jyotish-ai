@@ -1,0 +1,66 @@
+{
+  "intent_id": "BUSINESS_START",
+  "number": 19,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    7,
+    10,
+    11
+  ],
+  "E_optional": [
+    3
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Jupiter"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "A7",
+    "A10",
+    "AmK"
+  ],
+  "TAJ": {
+    "houses": [
+      7,
+      10,
+      11
+    ],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": [
+      "Mercury"
+    ]
+  },
+  "KP": {
+    "houses": [
+      2,
+      7,
+      10,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "muhurta"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [
+    "BUSINESS_LAUNCH"
+  ],
+  "forecast_events": [
+    "business_launch"
+  ]
+}

@@ -75,6 +75,24 @@ def test_interval_not_point_for_edges():
     assert r["ambiguity"]["varga_flips"].get("Mars")
 
 
+def test_hindi_and_hyphenated_rows_preserve_source_and_precision():
+    line = "  चंद्र 3 कर्क 20′00.20″  "
+    r = modeb.parse_degree_table(line + "\nMars Virgo 03-59-37", "astrosage")
+    moon = r["planets"]["Moon"]
+    assert moon["source_text"] == line
+    assert moon["sign_name"] == "Cancer"
+    assert moon["error_arcsec"] == pytest.approx(0.005)
+    assert r["planets"]["Mars"]["degree"] == pytest.approx(3 + 59 / 60 + 37 / 3600, abs=1e-6)
+    assert len(r["vargas"]) == 16
+
+
+def test_pada_and_high_varga_intervals_include_boundary_alternatives():
+    r = modeb.parse_degree_table("Moon 3°20′00″ Ari", "drik_panchang")
+    assert [row["pada"] for row in r["ambiguity"]["nakshatra_padas"]["Moon"]] == [1, 2]
+    assert r["vargas"]["D9"]["Moon"]["possible_signs"] == [0, 1]
+    assert r["vargas"]["D9"]["Moon"]["status"] == "ambiguous"
+
+
 def _client():
     c = TestClient(app)
     email = f"modeb-{uuid.uuid4().hex[:8]}@example.com"
@@ -86,7 +104,7 @@ def _client():
 def test_endpoint_parses_and_422s():
     c, h = _client()
     r = c.post("/api/tools/degree-table",
-               json={"text": JH_TABLE, "source_program": "jagannatha_hora"}, headers=h)
+               json={"text": JH_TABLE, "source_program": "jagannatha_hora", "ayanamsa_id": "LAHIRI"}, headers=h)
     assert r.status_code == 200
     body = r.json()
     assert body["planets"]["Mercury"]["retrograde"] is True

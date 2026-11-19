@@ -1,0 +1,122 @@
+[
+  {
+    "intent": "ADMISSION",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.002,
+    "mean_supportive_window_share": 0.00013972602739726028,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "BUSINESS_LAUNCH",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.003,
+    "mean_supportive_window_share": 0.00016147915263118494,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "ENGAGEMENT_TIMING",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.0,
+    "mean_supportive_window_share": 0.0,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "COMPETITIVE_EXAMS",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.002,
+    "mean_supportive_window_share": 0.00013972602739726028,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "GRADUATION",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.002,
+    "mean_supportive_window_share": 0.00013972602739726028,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "JOB_CHANGE",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.003,
+    "mean_supportive_window_share": 0.00016147915263118494,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "JOB_TIMING",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.003,
+    "mean_supportive_window_share": 0.00016147915263118494,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "MARRIAGE_TIMING",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.0,
+    "mean_supportive_window_share": 0.0,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "PROMOTION",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.003,
+    "mean_supportive_window_share": 0.00016147915263118494,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "RELOCATION",
+    "intent_version": "1.0",
+    "protocol": "2026-11-19.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.002,
+    "mean_supportive_window_share": 0.0001589041095890411,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  }
+]

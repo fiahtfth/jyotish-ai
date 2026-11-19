@@ -55,6 +55,7 @@ class Settings:
     GROQ_MODEL: str = os.environ.get("JYOTISH_GROQ_MODEL", "openai/gpt-oss-120b")
     OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
     OPENROUTER_MODEL: str = os.environ.get("JYOTISH_OPENROUTER_MODEL", "openrouter/free")
+    DECIDER_ENABLED: bool = os.environ.get("JYOTISH_DECIDER_ENABLED", "false").lower() == "true"
     OLLAMA_URL: str = os.environ.get("JYOTISH_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.environ.get("JYOTISH_OLLAMA_MODEL", "llama3.1")
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")

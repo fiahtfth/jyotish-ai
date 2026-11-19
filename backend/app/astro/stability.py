@@ -15,9 +15,10 @@ from jhora.panchanga import drik
 import swisseph as swe
 
 from . import constants as K
-from .engine import BirthInput, VARGA_FUNCS, apply, calc_lock
+from .engine import BirthInput, apply, calc_lock
+from .vargas import chart_functions, nakshatra_pada
 
-DEFAULT_VARGAS = (1, 2, 3, 7, 9, 10, 12, 16, 20, 24, 30, 40, 45, 60)
+DEFAULT_VARGAS = (1, 2, 3, 4, 7, 9, 10, 12, 16, 20, 24, 30, 40, 45, 60)
 UNCERTAINTY_S = {"exact": 120.0, "approximate": 1800.0, "unknown": 7200.0}
 
 
@@ -79,12 +80,7 @@ def windows_from_functions(fns: dict, span_s=900, grid_s=10, tol_s=0.5, uncertai
 # ------------------------------------------------------------------ Lagna
 
 def _varga_funcs(birth: BirthInput):
-    from functools import partial
-    from jhora.horoscope.chart import charts
-    funcs = dict(VARGA_FUNCS)
-    if birth.settings.d24 == "reverse":
-        funcs["D24"] = partial(charts.chaturvimsamsa_chart, chart_method=2)
-    return funcs
+    return chart_functions(birth.settings.d24)
 
 
 def lagna_windows(birth: BirthInput, vargas=DEFAULT_VARGAS, span_s=900, grid_s=10, tol_s=0.5,
@@ -96,9 +92,8 @@ def lagna_windows(birth: BirthInput, vargas=DEFAULT_VARGAS, span_s=900, grid_s=1
     unc = uncertainty_for(birth) if uncertainty_s is None else uncertainty_s
     span_s = max(span_s, unc)       # a margin can only be judged against the uncertainty if scanned that far
     names = [v if isinstance(v, str) else f"D{v}" for v in vargas]
-    place = drik.Place(birth.place_label, birth.lat, birth.lon, birth.tz_offset)
     jd0 = utils.julian_day_number((birth.year, birth.month, birth.day),
-                                  (birth.hour, birth.minute, birth.second))
+                                  (birth.hour, birth.minute, birth.second)) - birth.tz_offset / 24
     with calc_lock:
         apply(birth.settings)
         funcs = _varga_funcs(birth)
@@ -109,8 +104,9 @@ def lagna_windows(birth: BirthInput, vargas=DEFAULT_VARGAS, span_s=900, grid_s=1
 
         def asc(t):
             if t not in asc_cache:
-                sign, deg = drik.ascendant(jd0 + t / 86400.0, place)[:2]
-                asc_cache[t] = (sign, deg)
+                lon = swe.houses_ex(jd0 + t / 86400.0, birth.lat, birth.lon, b"W", swe.FLG_SIDEREAL)[1][0]
+                sign, deg = divmod(lon % 360, 30)
+                asc_cache[t] = (int(sign), deg)
             return asc_cache[t]
 
         def sign_fn(name):
@@ -143,15 +139,13 @@ def moon_pada_window(birth: BirthInput, span_s=86400, grid_s=600, tol_s=0.5,
     unc = uncertainty_for(birth) if uncertainty_s is None else uncertainty_s
     jd_utc0 = utils.julian_day_number((birth.year, birth.month, birth.day),
                                       (birth.hour, birth.minute, birth.second)) - birth.tz_offset / 24.0
-    width = 360.0 / 108
-
     with calc_lock:
         apply(birth.settings)
         _observer(birth)
 
         def pada(t):
             lon = swe.calc_ut(jd_utc0 + t / 86400.0, swe.MOON, drik.PLANET_FLAGS)[0][0] % 360
-            return int(lon // width)
+            return nakshatra_pada(lon)
 
         _, _, changes = scan_changes(pada, span_s, grid_s, tol_s)
         idx = pada(0.0)

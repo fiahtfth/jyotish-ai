@@ -1,0 +1,51 @@
+{
+  "intent_id": "FINANCIAL_DISRUPTION",
+  "number": 23,
+  "phase": 2,
+  "template": "T_adverse",
+  "E": [
+    12,
+    8,
+    10,
+    1
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Rahu",
+    "Mars"
+  ],
+  "V": [
+    "D2"
+  ],
+  "J": [
+    "AL_12",
+    "A12"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Saturn",
+      "Rahu",
+      "Ketu"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [],
+  "forecast_events": []
+}

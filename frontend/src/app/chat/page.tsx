@@ -36,6 +36,7 @@ export default function Chat() {
   const [predOpen, setPredOpen] = useState(false);
   const [preds, setPreds] = useState<PredictionsResponse | null>(null);
   const [predErr, setPredErr] = useState("");
+  const [followupBusy, setFollowupBusy] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
   const tempId = useRef(-1);
   const sending = useRef(false);
@@ -111,6 +112,15 @@ export default function Chat() {
     try { setPreds(await api.predictions()); } catch (e) { setPredErr(errMsg(e)); }
   }
 
+  async function changeFollowups(enabled: boolean) {
+    setFollowupBusy(true);
+    try {
+      const updated = await api.predictionFollowups(enabled);
+      setPreds(previous => previous ? { ...previous, ...updated } : previous);
+    } catch (e) { setPredErr(errMsg(e)); }
+    finally { setFollowupBusy(false); }
+  }
+
   async function acceptTerms() {
     if (!termsAgreed || termsBusy) return;
     setTermsBusy(true); setTermsError("");
@@ -174,6 +184,7 @@ export default function Chat() {
             {menu && (
               <div className="absolute right-0 mt-2 w-56 bg-card border border-bord rounded-lg shadow-lg text-sm z-20">
                 <button onClick={() => router.push("/birth")} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("editBirth")}</button>
+                <a href="/dashboard" className="block px-3 py-2 hover:bg-bgsoft">{t("chartDashboard")}</a>
                 <button onClick={openPreds} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("myPredictions")}</button>
                 <button onClick={() => { setLang(lang === "en" ? "hi" : "en"); setMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("language")}</button>
                 <button onClick={() => { setMenu(false); reset(); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("restart")}</button>
@@ -327,6 +338,11 @@ export default function Chat() {
               : !preds ? <div className="text-muted text-sm">{t("loading")}</div>
               : (
                 <>
+                  <label className="mb-4 flex items-center gap-2 text-sm">
+                    <input type="checkbox" disabled={followupBusy} checked={!!preds.followups_enabled}
+                      onChange={event => { void changeFollowups(event.target.checked); }} />
+                    {t("predictionFollowups")}
+                  </label>
                   {preds.scorecard && <section aria-label={t("scorecard")} className="mb-4 space-y-2">
                     <h3 className="font-semibold text-sm">{t("scorecard")}</h3>
                     <p className="text-xs text-muted">{t("scorecardNote")}</p>

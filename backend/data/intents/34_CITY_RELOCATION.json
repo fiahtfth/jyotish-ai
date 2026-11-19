@@ -1,0 +1,53 @@
+{
+  "intent_id": "CITY_RELOCATION",
+  "number": 34,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    3,
+    4,
+    12
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Moon",
+    "Mars",
+    "Saturn"
+  ],
+  "V": [
+    "D4"
+  ],
+  "J": [
+    "A4",
+    "MK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Saturn",
+      "Rahu",
+      "Ketu",
+      "Jupiter"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [
+    "RELOCATION"
+  ],
+  "forecast_events": [
+    "relocation"
+  ]
+}

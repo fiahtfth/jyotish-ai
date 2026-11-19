@@ -1,0 +1,47 @@
+{
+  "intent_id": "RETURN_HOME",
+  "number": 35,
+  "phase": 2,
+  "template": "N+T",
+  "E": [
+    4,
+    9
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [
+    12
+  ],
+  "K": [
+    "Moon",
+    "Mars"
+  ],
+  "V": [
+    "D4"
+  ],
+  "J": [
+    "A4"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [
+    "RETURN_TO_HOME_COUNTRY"
+  ],
+  "forecast_events": []
+}

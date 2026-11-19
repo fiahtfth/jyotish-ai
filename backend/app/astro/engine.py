@@ -12,8 +12,6 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 
-from functools import partial
-
 import swisseph as swe
 
 from jhora import const, utils
@@ -26,6 +24,8 @@ from jhora.horoscope import main as hmain
 
 from . import constants as K
 from . import jaimini as J
+from . import vargas as divisions
+from . import vimshottari as native_vimshottari
 from .settings import CalcSettings, DASHA_YEAR_DAYS, DEFAULT as DEFAULT_SETTINGS, as_settings
 from ..config import settings
 
@@ -45,35 +45,10 @@ _orig_start_jd = None
 
 EPHE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "ephe"))
 PYJHORA_VERSION = "5.0.0"
+_CLASSICAL_BODIES = (swe.SUN, swe.MOON, swe.MARS, swe.MERCURY, swe.JUPITER, swe.VENUS, swe.SATURN)
 
-def navamsa_chart(planet_positions_in_rasi, chart_method=None):
-    """D9 with half-open parts [k*10/3, (k+1)*10/3) degrees.
-
-    PyJHora floors `long // (30/9)`, and 30/9 is a hair above 10/3, so a point
-    exactly on a part boundary (e.g. 10 deg) lands in the previous part. Such
-    points are nudged by 1e-7 deg before the call; the reported degree is the
-    exact boundary value (0.0), not the nudged one.
-    """
-    out = []
-    for pid, (sign, deg) in planet_positions_in_rasi:
-        x = float(deg) * 9 / 30
-        n = round(x)
-        on_boundary = abs(x - n) < 1e-9 and n < 9
-        probe = [[pid, (sign, float(deg) + 1e-7 if on_boundary else deg)]]
-        res = charts.navamsa_chart(probe, chart_method)[0]
-        new_sign, new_deg = res[1]
-        out.append([res[0], (new_sign, 0.0 if on_boundary else new_deg)])
-    return out
-
-
-VARGA_FUNCS = {
-    "D1": charts.rasi_chart, "D2": partial(charts.hora_chart, chart_method=2), "D4": charts.chaturthamsa_chart,
-    "D6": partial(charts.shashthamsa_chart, chart_method=1), "D7": charts.saptamsa_chart, "D9": navamsa_chart, "D10": charts.dasamsa_chart,
-    "D12": charts.dwadasamsa_chart, "D16": charts.shodasamsa_chart,
-    "D20": charts.vimsamsa_chart, "D24": partial(charts.chaturvimsamsa_chart, chart_method=1),
-    "D30": charts.trimsamsa_chart, "D3": charts.drekkana_chart, "D45": charts.akshavedamsa_chart,
-    "D40": charts.khavedamsa_chart, "D60": charts.shashtyamsa_chart,
-}
+VARGA_FUNCS = divisions.chart_functions()
+navamsa_chart = VARGA_FUNCS["D9"]
 TIME_SENSITIVE_VARGAS = {"D10", "D12", "D16", "D20", "D24", "D30", "D40", "D45", "D60"}
 
 
@@ -116,7 +91,9 @@ def _dhasa_start_jd(jd_birth, place, fraction_elapsed, total_dasa_years, dasha_s
 def ephemeris_in_use(jd_utc: float) -> str:
     """'swiss' when .se1 files serve this date, else 'moshier'."""
     _, flag = swe.calc_ut(jd_utc, swe.MOON, swe.FLG_SWIEPH)
-    return "moshier" if flag & swe.FLG_MOSEPH else "swiss"
+    mode = "moshier" if flag & swe.FLG_MOSEPH else "swiss"
+    log.debug("Swiss Ephemeris Moon probe jd_ut=%.8f flag=%s mode=%s", jd_utc, flag, mode)
+    return mode
 
 
 def _drik_globals() -> dict:
@@ -236,8 +213,9 @@ def node_sensitivity(jd_utc: float, cs: CalcSettings = DEFAULT_SETTINGS, place=N
         out = {}
         for key, body in (("mean", swe.MEAN_NODE), ("true", swe.TRUE_NODE)):
             lon = swe.calc_ut(jd_utc, body, drik.PLANET_FLAGS)[0][0] % 360
-            out[key] = {"longitude": round(lon, 4), "sign": int(lon // 30),
-                        "d9_sign": int(lon * 9 // 30) % 12}
+            sign, deg = divmod(lon, 30)
+            out[key] = {"longitude": round(lon, 4), "sign": int(sign),
+                        "d9_sign": divisions.position(9, int(sign), deg)[0]}
         sep = abs(out["mean"]["longitude"] - out["true"]["longitude"])
         out["separation_deg"] = round(min(sep, 360 - sep), 4)
         out["d1_differs"] = out["mean"]["sign"] != out["true"]["sign"]
@@ -300,15 +278,12 @@ def fingerprint(settings: dict) -> str:
         "pyjhora": PYJHORA_VERSION, "pyswisseph": swe.version,
         "calc_settings": settings.get("calc_settings") or DEFAULT_SETTINGS.fingerprint_dict(),
         "houses": "whole-sign (sripati bhava for cusps)",
-        "vargas": "classical-v2: Leo/Cancer Hora, Parashari D6",
-        "dasha": "vimshottari, moon-star, tribhagi=false",
+        "vargas": divisions.VERSION,
+        "dasha": "vimshottari-v2, exact moon-star arc, UT for fixed years",
         "birth_time_precision": settings.get("birth_time_precision", "exact"),
         # birth inputs: a different birth time/place is a different chart
         "birth": [settings.get(k) for k in ("year", "month", "day", "hour", "minute", "second")]
-                 + [None if settings.get(k) is None else round(float(settings[k]), 4)
-                    for k in ("lat", "lon")]
-                 + [None if settings.get("tz_offset") is None
-                    else round(float(settings["tz_offset"]), 3)],
+                 + [settings.get(k) for k in ("lat", "lon", "tz_offset")],
     }
     raw = json.dumps(base, sort_keys=True)
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
@@ -334,10 +309,37 @@ def _pos_list_to_dict(positions) -> dict:
     return out
 
 
+def _planet_positions(jd_utc, place, cs):
+    if cs.center == "topocentric":
+        swe.set_topo(place.longitude, place.latitude, 0)
+    flags = drik.PLANET_FLAGS | swe.FLG_SPEED
+    node = swe.TRUE_NODE if cs.node == "true" else swe.MEAN_NODE
+    result, returned, retro = [], {}, set()
+    for pid, body in enumerate((*_CLASSICAL_BODIES, node)):
+        values, used = swe.calc_ut(jd_utc, body, flags)
+        sign, degree = divmod(values[0] % 360, 30)
+        result.append([pid, (int(sign), degree)])
+        returned[K.PLANET_NAMES[pid]] = used
+        log.debug("Swiss Ephemeris body=%s jd_ut=%.8f flags=%s", K.PLANET_NAMES[pid], jd_utc, used)
+        if values[3] < 0:
+            retro.add(pid)
+    rahu_sign, rahu_degree = result[7][1]
+    result.append([8, ((rahu_sign + 6) % 12, rahu_degree)])
+    if 7 in retro:
+        retro.add(8)
+    return result, returned, retro
+
+
+def _rasi_positions(jd_utc, place, cs):
+    lon = swe.houses_ex(jd_utc, place.latitude, place.longitude, b"W", swe.FLG_SIDEREAL)[1][0]
+    sign, degree = divmod(lon % 360, 30)
+    planets, flags, retro = _planet_positions(jd_utc, place, cs)
+    return [["L", (int(sign), degree)], *planets], flags, retro
+
+
 def _nakshatra(abs_long: float):
-    idx = int(abs_long // K.NAK_SPAN) % 27
-    pada = int((abs_long % K.NAK_SPAN) / (K.NAK_SPAN / 4)) + 1
-    return {"name": K.NAKSHATRAS[idx], "index": idx + 1, "pada": pada,
+    idx, pada = divmod(divisions.nakshatra_pada(abs_long), 4)
+    return {"name": K.NAKSHATRAS[idx], "index": idx + 1, "pada": pada + 1,
             "lord": K.PLANET_NAMES[K.NAK_LORD_SEQUENCE[idx % 9]]}
 
 
@@ -397,6 +399,42 @@ def _ashtakavarga_extras(bav, sav, h2p) -> dict:
     return out
 
 
+def _convergence_facts(jd, place, rasi) -> dict:
+    """Additive facts for the convergence engine, each best-effort via PyJHora:
+    vimshopaka, bhava_bala, compound_dignity. A missing key means the dependent
+    promise factor is reported NE (never fabricated)."""
+    out = {}
+    try:
+        vs = charts.vimsopaka_shodhasavarga_of_planets(jd, place)
+        out["vimshopaka"] = {K.PLANET_NAMES[pid]: round(float(v[2]), 3)
+                             for pid, v in vs.items() if pid in K.PLANET_NAMES}
+    except Exception:
+        log.exception("vimshopaka unavailable")
+    try:
+        bb = strength.bhava_bala(jd, place)
+        out["bhava_bala"] = {"virupas": [float(x) for x in bb[0]], "rupas": [float(x) for x in bb[1]],
+                             "ratio": [float(x) for x in bb[2]],
+                             "note": "index 0 = house 1; ratio = rupas / PyJHora minimum_bhava_bala_rupa"}
+    except Exception:
+        log.exception("bhava_bala unavailable")
+    try:
+        h_to_p = utils.get_house_planet_list_from_planet_positions(rasi)
+        cr = house_mod._get_compound_relationships_of_planets(h_to_p)
+        labels = ("adhishatru", "enemy", "neutral", "friend", "adhimitra")   # matrix values 0..4
+        cd = {}
+        for pid, (sign, _deg) in rasi:
+            if pid == "L":
+                continue
+            lord = K.SIGN_LORD[int(sign)]
+            cd[K.PLANET_NAMES[pid]] = (
+                {"sign_lord": K.PLANET_NAMES[pid], "relation": "own"} if lord == pid
+                else {"sign_lord": K.PLANET_NAMES[lord], "relation": labels[int(cr[pid][lord])]})
+        out["compound_dignity"] = cd
+    except Exception:
+        log.exception("compound_dignity unavailable")
+    return out
+
+
 def _date_tuple(dt):
     return (dt.year, dt.month, dt.day)
 
@@ -447,7 +485,7 @@ class ChartEngine:
 
     def compute(self, b: BirthInput) -> dict:
         key = (b.year, b.month, b.day, b.hour, b.minute, b.second,
-               round(b.lat, 4), round(b.lon, 4), round(b.tz_offset, 3),
+               b.lat, b.lon, b.tz_offset, b.place_label,
                b.birth_time_precision,
                json.dumps(b.settings.fingerprint_dict(), sort_keys=True))
         with self._cache_lock:
@@ -470,36 +508,25 @@ class ChartEngine:
         dob = drik.Date(b.year, b.month, b.day)
         tob = (b.hour, b.minute, b.second)
 
-        rasi = charts.rasi_chart(jd, place)
+        jd_utc = jd - b.tz_offset / 24.0
+        rasi, ephemeris_flags, retro = _rasi_positions(jd_utc, place, b.settings)
+        rasi_positions = dict(rasi)
         d1 = _pos_list_to_dict(rasi)
         lagna_sign = d1["Lagna"]["sign"]
         lagna_lord = K.SIGN_LORD[lagna_sign]
 
         # divisional charts
-        vargas = {"D1": d1}
-        varga_funcs = dict(VARGA_FUNCS)
-        if b.settings.d24 == "reverse":
-            varga_funcs["D24"] = partial(charts.chaturvimsamsa_chart, chart_method=2)
-        for name, fn in varga_funcs.items():
-            if fn is None or name == "D1":
-                continue
-            try:
-                vargas[name] = _pos_list_to_dict(fn(rasi))
-            except Exception:
-                pass  # unavailable varga is recorded as absent, never guessed
-
-        retro = set(drik.planets_in_retrograde(jd, place))
-        try:
-            retro = {r for r in retro if isinstance(r, int)}
-        except TypeError:
-            retro = set()
+        vargas = {name: _pos_list_to_dict(fn(rasi))
+                  for name, fn in divisions.chart_functions(b.settings.d24).items()}
+        vargas["D1"] = d1
 
         planets = {}
         sun_long = d1["Sun"]["abs_longitude"]
         for pid in K.GRAHA_IDS:
             pname = K.PLANET_NAMES[pid]
             rec = d1[pname]
-            nak = _nakshatra(rec["abs_longitude"])
+            sign, degree = rasi_positions[pid]
+            nak = _nakshatra(sign * 30 + degree)
             comb = False
             if pid not in (0, 7, 8):
                 sep = abs(rec["abs_longitude"] - sun_long)
@@ -520,6 +547,7 @@ class ChartEngine:
                 "sandhi": (rec["degree"] < b.settings.sandhi_arc
                            or rec["degree"] >= 30 - b.settings.sandhi_arc),
                 "dignity": _dignity(pid, rec["sign"], rec["degree"]),
+                "vargottama": rec["sign"] == vargas["D9"][pname]["sign"],
                 "boundary_flags": boundary_flags,
             }
 
@@ -541,13 +569,20 @@ class ChartEngine:
             lagna_flags.append("Lagna within 2° of a sign boundary — birth-time accuracy matters here")
 
         # nakshatra vimshottari
-        _, periods = vimsottari.get_dhasa_antardhasa(
-            dob, tob, place, dhasa_level_index=2, return_exact_bounds=True)
+        moon_sign, moon_degree = rasi_positions[1]
+        moon_longitude = moon_sign * 30 + moon_degree
+        balance_lord, _, balance_years = native_vimshottari.birth_balance(moon_longitude)
+        fixed_days = DASHA_YEAR_DAYS.get(b.settings.dasha_year) if b.settings.dasha_year != "true_tropical" else None
+        if fixed_days:
+            offset = b.tz_offset / 24
+            periods = [(lords, start + offset, end + offset)
+                       for lords, start, end in native_vimshottari.antar_periods(moon_longitude, jd - offset, fixed_days)]
+        else:
+            _, rows = vimsottari.get_dhasa_antardhasa(
+                dob, tob, place, dhasa_level_index=2, return_exact_bounds=True)
+            periods = [(lords, start, end) for lords, start, end, _ in rows]
         md = []
-        seen_md = set()
-        for lords, start_jd, end_jd, dur in periods:
-            if lords[0] not in seen_md:
-                seen_md.add(lords[0])
+        for lords, start_jd, end_jd in periods:
             md.append({
                 "lords": [K.PLANET_NAMES[l] for l in lords],
                 "maha": K.PLANET_NAMES[lords[0]],
@@ -586,10 +621,13 @@ class ChartEngine:
         except Exception:
             bhava = None
 
-        jd_utc = jd - b.tz_offset / 24.0
+        # additive facts for the convergence engine; an absent key means the
+        # dependent promise factor is reported NE (never fabricated)
+        extra = _convergence_facts(jd, place, rasi)
+
         cs = b.settings
         warnings = []
-        eph = ephemeris_in_use(jd_utc)
+        eph = "moshier" if any(flag & swe.FLG_MOSEPH for flag in ephemeris_flags.values()) else "swiss"
         if eph != "swiss":
             warnings.append("Swiss Ephemeris files unavailable for this date; Moshier "
                             "ephemeris used (slightly lower precision).")
@@ -607,16 +645,21 @@ class ChartEngine:
                 float(drik.dhasa_year_duration(jd=jd, place=place))))
         except Exception:
             node_check["chart_flags_unavailable"] = True
+        node_check["flag"] = bool(node_check["flag"] or node_check.get("karaka_rank_differs")
+                                  or node_check.get("chara_years_differ"))
 
         facts = {
             "meta": {
                 "ayanamsa": {"id": cs.ayanamsa, "degrees": round(ay, 6), "dms": _dms(ay)},
                 "ephemeris": eph, "node": cs.node, "positions": cs.positions,
+                "ephemeris_flags": ephemeris_flags,
                 "center": cs.center,
                 "dasha_year": {"mode": cs.dasha_year,
                                "days": round(float(drik.dhasa_year_duration(jd=jd, place=place)), 6)},
                 "warnings": warnings,
                 "calc_settings": cs.fingerprint_dict(),
+                "varga_rule_version": divisions.VERSION,
+                "varga_schemes": divisions.scheme_labels(cs.d24),
                 "arcs": {"gandanta_deg": cs.gandanta_arc, "sandhi_deg": cs.sandhi_arc,
                          "combust_table": cs.combust_table},
                 "place": b.place_label, "lat": b.lat, "lon": b.lon,
@@ -627,7 +670,7 @@ class ChartEngine:
             },
             "lagna": {"sign": lagna_sign, "sign_name": K.SIGN_NAMES[lagna_sign],
                       "degree": lagna_deg, "lord": K.PLANET_NAMES[lagna_lord],
-                      "nakshatra": _nakshatra(d1["Lagna"]["abs_longitude"]),
+                      "nakshatra": _nakshatra(rasi[0][1][0] * 30 + rasi[0][1][1]),
                       "boundary_flags": lagna_flags},
             "planets": planets,
             "houses": houses,
@@ -639,7 +682,8 @@ class ChartEngine:
                 "maraka_lords": maraka,
                 "badhaka": {"house": badhaka_house, "lord": houses[badhaka_house]["lord"]},
             },
-            "vimshottari": {"periods": md},
+            "vimshottari": {"periods": md, "birth_balance": {"lord": K.PLANET_NAMES[balance_lord], "years": balance_years},
+                            "basis": "native fixed-year UT" if fixed_days else "PyJHora variable solar-year convention"},
             "jaimini": jaimini,
             "sarvastakavarga": sav,
             "ashtakavarga": ashtaka,
@@ -650,6 +694,7 @@ class ChartEngine:
             "vargas": vargas,
             "node_check": node_check,
         }
+        facts.update(extra)
         return facts
 
     # ---------- jaimini ----------
@@ -686,6 +731,16 @@ class ChartEngine:
         place = drik.Place(b.place_label, b.lat, b.lon, b.tz_offset)
         jd_birth = utils.julian_day_number((b.year, b.month, b.day), (b.hour, b.minute, b.second))
         jd_now = utils.julian_day_number(when, (12, 0, 0))
+        fixed_days = DASHA_YEAR_DAYS.get(b.settings.dasha_year) if b.settings.dasha_year != "true_tropical" else None
+        if fixed_days:
+            offset = b.tz_offset / 24
+            positions, _, _ = _planet_positions(jd_birth - offset, place, b.settings)
+            moon_sign, moon_degree = positions[1][1]
+            rows = native_vimshottari.active_periods(
+                moon_sign * 30 + moon_degree, jd_birth - offset, fixed_days, jd_now - offset)
+            return [{"lords": [K.PLANET_NAMES[l] for l in lords],
+                     "start": _ymd(start + offset), "end": _ymd(end + offset)}
+                    for lords, start, end in rows]
         rows = vimsottari.get_running_dhasa_for_given_date(jd_now, jd_birth, place, dhasa_level_index=3)
         out = []
         for lords, start, end in rows:

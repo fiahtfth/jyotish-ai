@@ -122,7 +122,6 @@ def test_precision_sets_uncertainty():
     assert stability.uncertainty_for(b) == 120
     approx = BirthInput(**{**b.__dict__, "birth_time_precision": "approximate"})
     assert stability.uncertainty_for(approx) == 1800
-    assert stability.lagna_windows(approx)["D9"]["status"] == "cusp_sensitive" or True
     wide = stability.lagna_windows(approx, vargas=(60,))["D60"]
     assert wide["status"] == "cusp_sensitive"      # 30-minute uncertainty swamps a 2-minute D60 window
 
@@ -138,7 +137,6 @@ def test_synthetic_double_crossing_caught():
     assert w["changes_s"] == pytest.approx([-200, -80, 40.3, 66.1], abs=0.5)
     assert w["start_s"] == pytest.approx(-80, abs=0.5)
     assert w["end_s"] == pytest.approx(40.3, abs=0.5)
-    assert w["status"] == "stable" and w["margin_after_s"] < 120 or w["status"] == "cusp_sensitive"
     assert w["status"] == "cusp_sensitive"          # 40 s to the next change < 120 s
 
 

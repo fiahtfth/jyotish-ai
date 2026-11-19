@@ -1,0 +1,67 @@
+{
+  "intent_id": "MARRIAGE_TIMING",
+  "number": 9,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    7,
+    2,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Venus",
+    "DK"
+  ],
+  "V": [
+    "D9"
+  ],
+  "J": [
+    "DK",
+    "UL",
+    "A7"
+  ],
+  "TAJ": {
+    "houses": [
+      7
+    ],
+    "muntha_supportive": [
+      7
+    ]
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      2,
+      7,
+      11
+    ],
+    "negate": [
+      1,
+      6,
+      10
+    ],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [
+    "ENGAGEMENT_TIMING",
+    "MARRIAGE_TIMING"
+  ],
+  "forecast_events": [
+    "engagement",
+    "marriage"
+  ]
+}

@@ -1,0 +1,52 @@
+{
+  "intent_id": "VEHICLE_PURCHASE",
+  "number": 41,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    4,
+    11,
+    2
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Venus"
+  ],
+  "V": [
+    "D16"
+  ],
+  "J": [
+    "A4"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter"
+    ],
+    "fast": [
+      "Venus"
+    ]
+  },
+  "KP": {
+    "houses": [
+      4,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "muhurta"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "property",
+  "legacy_ids": [
+    "VEHICLE_PURCHASE"
+  ],
+  "forecast_events": []
+}

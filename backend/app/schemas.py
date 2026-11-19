@@ -77,6 +77,7 @@ class BirthProfileIn(BaseModel):
     utc_offset_manual: Optional[float] = Field(default=None, ge=-14, le=14)
     dst_fold: Optional[Literal[0, 1]] = None    # which occurrence of a repeated local time
     calc_preset: str = "default"
+    permission_confirmed: bool = False
 
     @model_validator(mode="after")
     def _valid_calendar_date(self):
@@ -112,13 +113,22 @@ class ProfileListItem(BaseModel):
     calibration_state: str
     predictions_allowed: bool
     is_active: bool
+    permission_confirmed: bool = False
+
+
+class ProfilePermissionIn(BaseModel):
+    permission_confirmed: bool
+
+
+class PredictionFollowupsIn(BaseModel):
+    enabled: bool
 
 
 class DegreeTableIn(BaseModel):
     """Mode B: a pasted planet-degree table from another program."""
     text: str = Field(min_length=3, max_length=4000)
     source_program: str = Field(min_length=2, max_length=40)
-    ayanamsa_id: str = "LAHIRI"
+    ayanamsa_id: str
 
 
 class FeedbackIn(BaseModel):

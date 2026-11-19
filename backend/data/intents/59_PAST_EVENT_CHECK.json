@@ -1,0 +1,35 @@
+{
+  "intent_id": "PAST_EVENT_CHECK",
+  "number": 59,
+  "phase": 1,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "past_event"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "general",
+  "legacy_ids": [
+    "PAST_EVENT_CHECK"
+  ],
+  "forecast_events": []
+}

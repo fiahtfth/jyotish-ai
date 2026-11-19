@@ -1,0 +1,52 @@
+{
+  "intent_id": "PARENTS_RESPONSIBILITY",
+  "number": 44,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    4,
+    9
+  ],
+  "E_optional": [
+    10
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Moon",
+    "Sun",
+    "MK"
+  ],
+  "V": [
+    "D12"
+  ],
+  "J": [
+    "MK",
+    "A4",
+    "A9"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "children_family",
+  "legacy_ids": [
+    "FAMILY_RESPONSIBILITIES",
+    "PARENTS",
+    "PARENT_LINEAGE"
+  ],
+  "forecast_events": []
+}

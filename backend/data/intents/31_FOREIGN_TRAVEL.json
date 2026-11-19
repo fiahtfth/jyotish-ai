@@ -1,0 +1,62 @@
+{
+  "intent_id": "FOREIGN_TRAVEL",
+  "number": 31,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    12,
+    9,
+    3
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Rahu",
+    "Saturn",
+    "Moon"
+  ],
+  "V": [
+    "D4",
+    "D9"
+  ],
+  "J": [
+    "A12",
+    "A9"
+  ],
+  "TAJ": {
+    "houses": [
+      9,
+      12
+    ],
+    "muntha_supportive": [
+      9,
+      12
+    ]
+  },
+  "TRIG": {
+    "slow": [
+      "Rahu",
+      "Ketu",
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      3,
+      9,
+      12
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [
+    "FOREIGN_TRAVEL"
+  ],
+  "forecast_events": []
+}

@@ -1,0 +1,64 @@
+{
+  "intent_id": "JOB_CHANGE",
+  "number": 3,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    10,
+    3,
+    12,
+    6,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Rahu",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10"
+  ],
+  "TAJ": {
+    "houses": [
+      10,
+      12
+    ],
+    "muntha_supportive": [
+      3,
+      10,
+      12
+    ]
+  },
+  "TRIG": {
+    "slow": [
+      "Saturn",
+      "Jupiter",
+      "Rahu",
+      "Ketu"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [
+    "JOB_CHANGE"
+  ],
+  "forecast_events": [
+    "job_change"
+  ]
+}

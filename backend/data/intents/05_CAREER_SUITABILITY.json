@@ -1,0 +1,52 @@
+{
+  "intent_id": "CAREER_SUITABILITY",
+  "number": 5,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    10,
+    1
+  ],
+  "E_optional": [
+    5,
+    2,
+    11
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "AmK",
+    "LORD:H10",
+    "STRONGEST_LINKED:H10"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10",
+    "KARAKAMSHA"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [
+    "CAREER_PROFILE"
+  ],
+  "forecast_events": []
+}

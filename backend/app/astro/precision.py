@@ -293,6 +293,25 @@ def _sudarshana_at(facts, birth: BirthInput, domain: str, when: date,
             "activated_house": activated_house, "frames": list(frames)}
 
 
+def sudarshana_year_signs(birth: BirthInput, when: date) -> dict:
+    """Year-level (Maha) Sudarshana Chakra signs running on `when`.
+
+    Returns {"lagna": sign, "moon": sign, "sun": sign, "start": date, "end": date}: the sign
+    progressed to in each of the three reference frames for the Sudarshana year containing
+    `when` (PyJHora level 1 == one year per house). Convergence P3 asks, per reference, whether
+    that sign is the event house counted from the reference. Raises ValueError if unavailable.
+    """
+    with _frame(birth):
+        rows = sudharsana_chakra.get_running_dhasa_for_given_date(
+            _jd_noon(when), _jd_birth(birth), _place(birth), dhasa_level_index=1)
+    if not rows:
+        raise ValueError("sudarshana chakra unavailable")
+    triples, start, end = rows[-1]
+    lagna_s, moon_s, sun_s = (int(x) % 12 for x in triples[-1])
+    return {"lagna": lagna_s, "moon": moon_s, "sun": sun_s,
+            "start": date(start[0], start[1], start[2]), "end": date(end[0], end[1], end[2])}
+
+
 def confirmation(facts, birth: BirthInput, domain: str,
                  start: date, end: date, calibrated: bool) -> dict:
     """Yogini + Sudarshana agreement -> High conviction / Mixed indications /

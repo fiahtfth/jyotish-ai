@@ -17,7 +17,8 @@ export default function Privacy() {
         <ul className="list-disc pl-6 space-y-1">
           <li>Account details: email address, display name, and a one-way hash of your password.</li>
           <li>Birth details: date, time, place and coordinates of birth, used to calculate your chart.</li>
-          <li>Your conversations with the astrologer and your answers to the calibration questions.</li>
+          <li>Your conversations, answers to birth-time checks and key details the chat remembers from what you share. Those details are stored with the conversation for the selected birth profile.</li>
+          <li>Shared birth profiles require your confirmation that you have permission to use those details. The optional forecast follow-up setting controls whether the chat asks you to report outcomes.</li>
         </ul>
 
         <h2 className="text-xl font-semibold">{t("privWhy")}</h2>
@@ -32,6 +33,7 @@ export default function Privacy() {
         <h2 className="text-xl font-semibold">{t("privRights")}</h2>
         <ul className="list-disc pl-6 space-y-1">
           <li>Download everything we hold about you: chat menu → “Download my data”.</li>
+          <li>Ask “What do you remember about me?” to see key details saved from your current conversation. Restarting the conversation clears those notes with the messages.</li>
           <li>You may stop using AI chat at any time. If you no longer agree to external AI processing, you can download your data and delete your account from the chat menu.</li>
           <li>Delete your account: chat menu → “Delete account”.</li>
           <li>For anything else, contact [EMAIL].</li>

@@ -1,0 +1,59 @@
+{
+  "intent_id": "FOREIGN_CAREER",
+  "number": 33,
+  "phase": 2,
+  "template": "N+T",
+  "E": [
+    10,
+    12,
+    6,
+    9
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Rahu",
+    "AmK"
+  ],
+  "V": [
+    "D10",
+    "D4"
+  ],
+  "J": [
+    "AmK",
+    "A10",
+    "A12"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      2,
+      6,
+      10,
+      11,
+      3,
+      9,
+      12
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [
+    "OVERSEAS_JOB"
+  ],
+  "forecast_events": []
+}

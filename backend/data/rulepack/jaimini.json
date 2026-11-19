@@ -1,0 +1,82 @@
+{
+ "pack": "jaimini",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "P2_TEMP_LAGNA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P2; K.N. Rao, Predicting Through Jaimini's Chara Dasha; Jaimini Upadesa Sutras (rashi drishti)",
+   "conditions": "E-house counted from the Chara dasha sign is occupied or rashi-aspected by a J point (karaka/arudha/derived) or the D1 E-lord",
+   "exceptions": [
+    "Mode B: NE"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p2_activation_supportive",
+    "backend/tests/test_convergence_p1p2.py::test_p2_mode_b_ne"
+   ]
+  },
+  {
+   "rule_id": "P2_ALT_KARAKA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P2; K.N. Rao, Predicting Through Jaimini's Chara Dasha; Jaimini Upadesa Sutras (rashi drishti)",
+   "conditions": "dasha sign contains or rashi-aspects the primary Jaimini karaka in J",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p2_activation_supportive"
+   ]
+  },
+  {
+   "rule_id": "P2_JUPITER_TRANSIT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P2; K.N. Rao, Predicting Through Jaimini's Chara Dasha; Jaimini Upadesa Sutras (rashi drishti)",
+   "conditions": "transiting Jupiter occupies or rashi-aspects the dasha sign or a relevant arudha during the AD",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p2_activation_supportive"
+   ]
+  },
+  {
+   "rule_id": "P2_ADVERSE_ARUDHA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P2; K.N. Rao, Predicting Through Jaimini's Chara Dasha; Jaimini Upadesa Sutras (rashi drishti)",
+   "conditions": "dasha sign is 6th/8th/12th from a relevant arudha in J",
+   "exceptions": [
+    "The malefics-without-benefic-aspect wording is rule P2_ADVERSE_DASHA_SIGN (disabled_verify)"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p2_adverse_arudha_and_verify_ne"
+   ]
+  },
+  {
+   "rule_id": "P2_RESULT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P2; K.N. Rao, Predicting Through Jaimini's Chara Dasha; Jaimini Upadesa Sutras (rashi drishti)",
+   "conditions": "S = (1 or 2)+3 and no adverse; M = (1 or 2)+adverse; W = (1 or 2) only; A = adverse only",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p2_activation_supportive",
+    "backend/tests/test_convergence_p1p2.py::test_p2_adverse_arudha_and_verify_ne"
+   ]
+  }
+ ]
+}

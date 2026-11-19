@@ -1,0 +1,52 @@
+{
+  "intent_id": "RELATIONSHIP_CHALLENGES",
+  "number": 16,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    7
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [
+    6,
+    8,
+    12
+  ],
+  "K": [
+    "Venus",
+    "Mars",
+    "Saturn",
+    "Rahu",
+    "Ketu",
+    "DK"
+  ],
+  "V": [
+    "D9"
+  ],
+  "J": [
+    "UL",
+    "UL_2",
+    "A7"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [],
+  "forecast_events": []
+}

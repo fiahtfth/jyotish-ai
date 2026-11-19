@@ -92,7 +92,7 @@ test("signup includes AI processing in one required terms agreement", async ({ p
   await page.goto("/login");
   await page.getByRole("button", { name: "Create account", exact: true }).first().click();
   await expect(page.getByRole("checkbox")).toHaveCount(1);
-  await expect(page.getByText(/sends your chart summary and recent messages/i)).toBeVisible();
+  await expect(page.getByText(/recent messages and relevant details remembered/i)).toBeVisible();
   await expect(page.getByRole("link", { name: "terms and conditions" })).toHaveAttribute("href", "/terms");
   await expect(page.locator("form").getByRole("button", { name: "Create account", exact: true }).last()).toBeDisabled();
 });

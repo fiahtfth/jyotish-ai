@@ -7,7 +7,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,7 +20,7 @@ from .auth import (
     consume_auth_token, create_token, current_user, hash_password, issue_auth_token,
     verify_password,
 )
-from .chat import orchestrator
+from .chat import memory, orchestrator
 from .config import settings
 from .policy import TERMS_VERSION
 from .db import (
@@ -33,9 +33,9 @@ from .astro.engine import BirthInput, engine, birth_fingerprint
 from .schemas import (
     MAX_PROFILES, BirthProfileIn, BirthProfileOut, ChatIn, DegreeTableIn, TermsIn,
     FeedbackIn, ForgotIn, LoginIn, MessageOut, PlaceSearchOut, ProfileListItem,
-    RegisterIn, ReportIn, ResetIn, TokenIn, TokenOut, PredictionOutcomeIn,
+    RegisterIn, ReportIn, ResetIn, TokenIn, TokenOut, PredictionOutcomeIn, PredictionFollowupsIn, ProfilePermissionIn,
 )
-from .astro import modeb
+from .astro import inspection, kp, modeb, registry, transits
 
 log = logging.getLogger(__name__)
 
@@ -287,11 +287,13 @@ def export_me(user: User = Depends(current_user), db: Session = Depends(get_db))
                     "email_verified": bool(user.email_verified),
                     "llm_consent_at": _iso(user.llm_consent_at),
                     "terms_version": user.terms_version,
+                    "prediction_followups": bool(user.prediction_followups),
                     "terms_accepted_at": _iso(user.terms_accepted_at)},
         # legacy key: the active profile
         "birth_profile": ({**_profile_out(active), "rectified_from": active.rectified_from}
                           if active else None),
         "birth_profiles": [{**_profile_out(p), "rectified_from": p.rectified_from,
+                            "permission_confirmed_at": _iso(p.permission_confirmed_at),
                             "is_active": bool(active and p.id == active.id)}
                            for p in user.profiles],
         "calibration_events": events,
@@ -304,7 +306,10 @@ def export_me(user: User = Depends(current_user), db: Session = Depends(get_db))
             "profile_id": c.profile_id,
             "created_at": _iso(c.created_at),
             "messages": [{"id": m.id, "role": m.role, "content": m.content, "kind": m.kind,
-                          "created_at": _iso(m.created_at)} for m in c.messages],
+                          "created_at": _iso(m.created_at),
+                          **({"saved_details": notes} if m.role == "user" and (
+                              notes := memory.reading_meta(m).get(memory.KEY)) else {})}
+                         for m in c.messages],
         } for c in user.conversations],
         "message_feedback": [{"message_id": f.message_id, "rating": f.rating,
                               "comment": f.comment, "created_at": _iso(f.created_at)}
@@ -341,6 +346,7 @@ def geo_search(q: str = Query(min_length=2), user: User = Depends(current_user))
 def _profile_out(p: BirthProfile) -> dict:
     return {
         "id": p.id, "relation": p.relation or "self",
+        "permission_confirmed": bool(p.permission_confirmed_at),
         "display_name": p.display_name or "", "year": p.year, "month": p.month,
         "day": p.day, "hour": p.hour, "minute": p.minute, "second": p.second or 0,
         "place_name": p.place_name, "place_state": p.place_state,
@@ -378,6 +384,8 @@ def _require_profile(user: User) -> BirthProfile:
     p = _active_profile(user)
     if p is None:
         raise HTTPException(428, "birth profile required")
+    if (p.relation or "self") != "self" and not p.permission_confirmed_at:
+        raise HTTPException(409, "Confirm permission for this birth profile in the chart dashboard.")
     return p
 
 
@@ -392,6 +400,7 @@ def _profile_item(p: BirthProfile, active_id: int | None) -> dict:
     return {"id": p.id, "display_name": p.display_name or "", "relation": p.relation or "self",
             "calibration_state": p.calibration_state or "pending",
             "predictions_allowed": bool(p.predictions_allowed),
+            "permission_confirmed": bool(p.permission_confirmed_at),
             "is_active": p.id == active_id}
 
 
@@ -424,6 +433,14 @@ def get_profile(user: User = Depends(current_user)):
 def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn) -> BirthProfile:
     """Validate/resolve the birth data and write it to `p` (new or existing),
     resetting calibration when the birth data materially changed. Commits."""
+    prior_relation = p.relation or "self"
+    relation = body.relation or prior_relation
+    if relation != "self" and not (body.permission_confirmed or (relation == prior_relation and p.permission_confirmed_at)):
+        raise HTTPException(422, "Confirm that you have this person's permission to use their birth details.")
+    if relation == "self":
+        p.permission_confirmed_at = None
+    elif body.permission_confirmed and (not p.permission_confirmed_at or relation != prior_relation):
+        p.permission_confirmed_at = _now()
     birth_dt = datetime(body.year, body.month, body.day, body.hour, body.minute, body.second)
     try:
         resolved = geo.resolve_place(body.place_name, state=body.place_state,
@@ -449,13 +466,13 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
     material_change = (
         is_new or
         (p.year, p.month, p.day, p.hour, p.minute, p.second or 0,
-         round(p.latitude or 0, 4), round(p.longitude or 0, 4),
+         p.latitude, p.longitude,
          p.birth_time_precision, p.time_basis or "zone", p.utc_offset_manual, p.dst_fold,
-         p.calc_preset or "default", round(p.utc_offset_hours or 0, 4))
+         p.calc_preset or "default", p.utc_offset_hours)
         != (body.year, body.month, body.day, body.hour, body.minute, body.second,
-            round(resolved["latitude"], 4), round(resolved["longitude"], 4),
+            resolved["latitude"], resolved["longitude"],
             body.birth_time_precision, body.time_basis, body.utc_offset_manual, body.dst_fold,
-            body.calc_preset, round(resolved["utc_offset_hours"], 4))
+            body.calc_preset, resolved["utc_offset_hours"])
     )
     for k in ("display_name", "year", "month", "day", "hour", "minute", "second",
               "place_name", "place_state", "place_country", "birth_time_precision",
@@ -560,6 +577,20 @@ def activate_profile(profile_id: int, user: User = Depends(current_user),
     return _profile_item(p, p.id)
 
 
+@app.put("/api/profiles/{profile_id}/permission", response_model=ProfileListItem)
+def profile_permission(profile_id: int, body: ProfilePermissionIn, user: User = Depends(current_user),
+                       db: Session = Depends(get_db)):
+    p = _owned_profile(db, user, profile_id)
+    if p.relation == "self":
+        raise HTTPException(422, "Your own profile does not require this permission.")
+    if body.permission_confirmed and not p.permission_confirmed_at:
+        p.permission_confirmed_at = _now()
+    if not body.permission_confirmed:
+        p.permission_confirmed_at = None
+    db.commit()
+    return _profile_item(p, user.active_profile_id)
+
+
 @app.delete("/api/profiles/{profile_id}")
 def delete_profile(profile_id: int, user: User = Depends(current_user),
                    db: Session = Depends(get_db)):
@@ -624,6 +655,7 @@ def chat_history(user: User = Depends(current_user), db: Session = Depends(get_d
 
 
 @app.post("/api/chat/send", response_model=list[MessageOut])
+@app.post("/api/interpret", response_model=list[MessageOut])
 def chat_send(body: ChatIn, user: User = Depends(current_user),
               db: Session = Depends(get_db)):
     _require_ai_terms(user)
@@ -716,13 +748,21 @@ def list_predictions(user: User = Depends(current_user), db: Session = Depends(g
     p = _active_profile(user)
     recs = _prediction_rows(db, [p.id] if p else [])
     count = lambda o: sum(1 for r in recs if r["outcome"] == o)  # noqa: E731
-    return {"predictions": recs,
+    return {"predictions": recs, "followups_enabled": bool(user.prediction_followups),
             "scorecard": scorecard(recs),
             "scorecard_by_domain": {d: scorecard([r for r in recs if r["domain"] == d]) for d in sorted({r["domain"] for r in recs})},
             "aggregate": {"total": len(recs), "happened": count("happened"),
                           "partly": count("partly"), "did_not": count("did_not"),
                           "unsure": count("unsure"), "outside_window": count("outside_window"),
                           "pending": sum(1 for r in recs if r["outcome"] is None)}}
+
+
+@app.put("/api/predictions/followups")
+def set_prediction_followups(body: PredictionFollowupsIn, user: User = Depends(current_user),
+                             db: Session = Depends(get_db)):
+    user.prediction_followups = body.enabled
+    db.commit()
+    return {"followups_enabled": body.enabled}
 
 
 @app.post("/api/predictions/{prediction_id}/outcome")
@@ -803,7 +843,45 @@ def get_chart(varga: str, user: User = Depends(current_user)):
     if v not in facts["vargas"]:
         raise HTTPException(404, f"{v} not computed")
     return {"varga": v, "lagna": facts["lagna"], "chart": facts["vargas"][v],
-            "fingerprint": p.calc_fingerprint}
+            "fingerprint": p.calc_fingerprint, "settings": {**facts["meta"], "tzdb_version": p.tzdb_version or ""}}
+
+
+@app.get("/api/chart-dashboard")
+def chart_dashboard(as_of: date | None = None, user: User = Depends(current_user)):
+    p = _require_profile(user)
+    birth = orchestrator.birth_input(p)
+    when = as_of or orchestrator._today_at(birth)
+    if when < date(birth.year, birth.month, birth.day) or when.year >= birth.year + 120:
+        raise HTTPException(422, "Choose a date from birth up to age 119.")
+    return inspection.chart_details(orchestrator.chart_facts(p), birth, when, p.tzdb_version or "")
+
+
+@app.get("/api/coverage")
+def calculation_coverage():
+    return registry.coverage()
+
+
+@app.get("/api/chart-transits")
+def chart_transits(start: date, end: date, planet: str = "Saturn", user: User = Depends(current_user)):
+    p = _require_profile(user)
+    try:
+        rows = transits.scan(orchestrator.birth_input(p), start, end, planet)
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, str(exc))
+    facts = orchestrator.chart_facts(p)
+    rows["kakshya_slices"] = transits.kakshya_bindus(rows, facts)
+    if planet == "Saturn":
+        rows["sade_sati"] = transits.sade_sati(rows, facts["planets"]["Moon"]["sign"])
+    return rows
+
+
+@app.get("/api/kp")
+def kp_chart(user: User = Depends(current_user)):
+    profile = _require_profile(user)
+    try:
+        return kp.calculate(orchestrator.birth_input(profile))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
 
 
 @app.get("/api/calibration")

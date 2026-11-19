@@ -1,0 +1,47 @@
+{
+  "intent_id": "PROPERTY_SALE",
+  "number": 38,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    3,
+    11,
+    7,
+    12
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mars",
+    "Venus",
+    "Mercury"
+  ],
+  "V": [
+    "D4"
+  ],
+  "J": [
+    "A4",
+    "A11"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "property",
+  "legacy_ids": [
+    "PROPERTY_SALE"
+  ],
+  "forecast_events": []
+}

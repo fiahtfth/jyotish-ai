@@ -1,0 +1,63 @@
+{
+  "intent_id": "CAREER_PROMOTION",
+  "number": 2,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    10,
+    11,
+    2,
+    6
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Sun",
+    "Saturn",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10",
+    "AL"
+  ],
+  "TAJ": {
+    "houses": [
+      10
+    ],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      2,
+      6,
+      10,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [
+    "INTERNAL_ROLE_CHANGE",
+    "PROMOTION"
+  ],
+  "forecast_events": [
+    "promotion"
+  ]
+}

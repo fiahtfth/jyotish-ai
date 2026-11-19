@@ -1,0 +1,65 @@
+{
+  "intent_id": "COMPETITIVE_EXAMS",
+  "number": 27,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    6,
+    11,
+    5,
+    9,
+    4
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Jupiter",
+    "Mars"
+  ],
+  "V": [
+    "D24"
+  ],
+  "J": [
+    "A6",
+    "A5",
+    "PK"
+  ],
+  "TAJ": {
+    "houses": [
+      6,
+      11
+    ],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": [
+      "Mercury"
+    ]
+  },
+  "KP": {
+    "houses": [
+      6,
+      11,
+      1
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "education",
+  "legacy_ids": [
+    "COMPETITIVE_EXAMS"
+  ],
+  "forecast_events": [
+    "exam_pass"
+  ]
+}

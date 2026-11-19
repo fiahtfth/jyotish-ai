@@ -1,0 +1,48 @@
+{
+  "intent_id": "RECONCILIATION",
+  "number": 14,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    7,
+    11,
+    5,
+    2
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Venus",
+    "DK"
+  ],
+  "V": [
+    "D9"
+  ],
+  "J": [
+    "DK",
+    "A7"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [
+    "RECONCILIATION"
+  ],
+  "forecast_events": []
+}

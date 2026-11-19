@@ -1,0 +1,55 @@
+{
+  "intent_id": "STUDY_ABROAD",
+  "number": 28,
+  "phase": 2,
+  "template": "N+T",
+  "E": [
+    9,
+    12,
+    4
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Rahu",
+    "Jupiter",
+    "Saturn"
+  ],
+  "V": [
+    "D24",
+    "D4"
+  ],
+  "J": [
+    "A12",
+    "A9"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      3,
+      9,
+      12,
+      4,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "education",
+  "legacy_ids": [
+    "EDUCATION_ABROAD"
+  ],
+  "forecast_events": []
+}

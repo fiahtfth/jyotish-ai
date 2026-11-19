@@ -1,0 +1,52 @@
+{
+  "intent_id": "RESUME_EDUCATION",
+  "number": 30,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    4,
+    5,
+    9
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Jupiter"
+  ],
+  "V": [
+    "D24"
+  ],
+  "J": [
+    "A5"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      4,
+      9,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "education",
+  "legacy_ids": [
+    "GRADUATION"
+  ],
+  "forecast_events": [
+    "graduation"
+  ]
+}

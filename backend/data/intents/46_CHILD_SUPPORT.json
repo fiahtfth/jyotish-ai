@@ -1,0 +1,47 @@
+{
+  "intent_id": "CHILD_SUPPORT",
+  "number": 46,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    5
+  ],
+  "E_optional": [
+    4,
+    9
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Jupiter",
+    "Mercury"
+  ],
+  "V": [
+    "D7",
+    "D24"
+  ],
+  "J": [
+    "PK",
+    "A5"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": true,
+  "safety_domain": "children_family",
+  "legacy_ids": [],
+  "forecast_events": []
+}

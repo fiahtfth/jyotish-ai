@@ -1,0 +1,54 @@
+{
+  "intent_id": "SELF_CARE_PERIODS",
+  "number": 49,
+  "phase": 2,
+  "template": "T_adverse",
+  "E": [
+    6,
+    8,
+    12,
+    1
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Sun",
+    "Moon",
+    "Saturn"
+  ],
+  "V": [
+    "D6",
+    "D30"
+  ],
+  "J": [
+    "A6",
+    "GK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Saturn",
+      "Rahu",
+      "Ketu"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "wellbeing",
+  "legacy_ids": [
+    "REST_AND_ROUTINE"
+  ],
+  "forecast_events": []
+}

@@ -11,9 +11,10 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import classical, calibration, panchang, pillars, precision, report, sensitivity, prediction, verify
+from ..astro import classical, calibration, inspection, panchang, pillars, precision, registry, report, sensitivity, prediction, transits, verify
 from ..astro.constants import DOMAINS
 from .. import geo
+from ..config import settings
 from ..policy import TERMS_VERSION
 from ..astro.engine import BirthInput, birth_fingerprint, engine
 from ..astro.settings import CalcSettings
@@ -21,8 +22,8 @@ from ..db import (
     BirthProfile, CalibrationEvent, Conversation, Message, PredictionRecord, UserMilestone,
     _utcnow,
 )
-from ..llm import providers
-from . import career, language
+from ..llm import decider, providers
+from . import career, language, memory, safety
 
 log = logging.getLogger(__name__)
 
@@ -83,13 +84,13 @@ def _calibrated(profile: BirthProfile) -> bool:
     return profile.calibration_state == "calibrated"
 
 
-def _precision_analysis(facts, birth, domain, start, end, profile, question="", event=None):
+def _precision_analysis(facts, birth, domain, start, end, profile, question="", event=None, *, as_of=None):
     """Run the four pillars plus the precision filters; returns
     (analysis_for_llm, precision_result). The merged analysis keeps every
     key the existing consumers read (pillars/convergence/evidence) and
     adds a compact 'precision' block for the model."""
     # Elapsed portions of a year cannot be credited as prospective forecasts.
-    today = _today_at(birth)
+    today = as_of or _today_at(birth)
     if start <= today <= end:
         start = min(end, today + timedelta(days=1))
     natal = classical.promise(facts, domain)
@@ -121,7 +122,13 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
         if rows:
             audit["tables"].append(classical.table("Reported milestones used in the birth-time search",
                                                   ["Life area", "Reported period"], rows))
-    analysis["decision"] = prediction.decide(question, analysis, event)
+    analysis["decision"] = prediction.decide(question, analysis, event, as_of=today)
+    intent = registry.forecast_intent((analysis["decision"].get("event") or {}).get("event_type"))
+    if intent:
+        analysis["intent"] = {"id": intent["intent_id"], "version": intent["version"],
+                              "specificity": intent["specificity"]["status"]}
+        for finding in analysis["evidence"]:
+            finding["intent_id"] = intent["intent_id"]
     return analysis, prec
 
 
@@ -164,7 +171,7 @@ DOMAIN_KEYWORDS = {
     "career": ["job", "career", "promotion", "work", "business", "profession", "salary", "boss", "interview", "transfer", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work"],
     "education": ["study", "studies", "exam", "education", "degree", "college", "course", "learn", "admission", "padhai", "पढ़ाई"],
     "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love", "spouse", "engagement", "tie the knot", "dating", "shaadi", "शादी"],
-    "relocation": ["move", "relocate", "relocating", "abroad", "foreign", "city", "house shift", "settle"],
+    "relocation": ["move", "relocate", "relocating", "abroad", "foreign", "city", "house shift", "settle", "travel", "videsh", "विदेश"],
     "children": ["children", "childbirth", "parenthood", "creative legacy"],
     "parents": ["my parents", "my father", "my mother", "my lineage"],
     "debt": ["debt", "debts", "repay a loan"],
@@ -263,7 +270,7 @@ def _conversation_history(conv: Conversation) -> list[dict]:
                 if conv.messages[i - 1].role == "user"), 0)
     return [{"role": m.role, "content": m.content}
             for m in conv.messages[max(0, end - 16):end]
-            if m.role in ("user", "assistant") and m.kind != "analysis"]
+            if m.role in ("user", "assistant") and m.kind not in ("analysis", "private")]
 
 
 def _previous_reading(conv, profile):
@@ -273,7 +280,7 @@ def _previous_reading(conv, profile):
         if m.role != "assistant":
             continue
         meta = json.loads(m.meta_json or "{}")
-        if m.kind == "analysis" or meta.get("followup_id"):
+        if m.kind in ("analysis", "private") or meta.get("followup_id"):
             continue
         if meta.get("fingerprint", profile.calc_fingerprint) != profile.calc_fingerprint:
             break
@@ -602,12 +609,48 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
                    text: str, on_delta=None) -> list[Message]:
     """`on_delta(str)` receives LLM text chunks as they stream (optional)."""
     start_len = len(conv.messages)
-    _add_msg(db, conv, "user", text)
+    msg = _add_msg(db, conv, "user", text)
+    if private := safety.private_reply(text):
+        msg.kind = "private"
+        _add_msg(db, conv, "assistant", private, kind="private")
+        db.commit()
+        return conv.messages[start_len:]
     facts = chart_facts(profile)
     birth = birth_input(profile)
 
+    if memory.is_recall(text):
+        entries = memory.saved(conv.messages, profile.calc_fingerprint)
+        subject = _subject(profile)
+        label = f"the consultation for {subject}" if subject else "your consultation"
+        lines = []
+        for entry in entries[:12]:
+            if entry["kind"] == "feedback":
+                topic = (entry["event"] or entry["domain"]).replace("_", " ")
+                status = {"agreed": "matched what you experienced", "disagreed": "didn't match your experience",
+                          "mixed": "only partly matched your experience"}[entry["status"]]
+                lines.append(f"- You said the reading about {topic} {status}.")
+            else:
+                lines.append(f"- {entry['quote']}")
+        reply = (f"Here's what you've shared in {label}.\n\n" + "\n".join(lines)
+                 if lines else f"I haven't picked up any key personal details in {label} yet.")
+        _add_msg(db, conv, "assistant", reply)
+        db.commit()
+        return conv.messages[start_len:]
+
     # ---------- reply to a pending "did it happen?" follow-up ----------
     if conv.state == "open" and _record_followup_reply(db, conv, profile, text):
+        db.commit()
+        return conv.messages[start_len:]
+
+    entries = memory.capture(text, relation=profile.relation or "self", allow_external=_external_ok(profile))
+    feedback = _consultation_feedback(conv, profile, text) if conv.state == "open" else None
+    if feedback:
+        entries.append(feedback)
+    if entries:
+        msg.meta_json = json.dumps({memory.KEY: entries}, ensure_ascii=False)
+    if feedback and not re.search(r"\?|\b(?:tell me|explain|show me|can you|please|what about)\b", text, re.I):
+        _add_msg(db, conv, "assistant",
+                 "Thanks for telling me. I’ve noted your feedback on the earlier reading.")
         db.commit()
         return conv.messages[start_len:]
 
@@ -1148,6 +1191,50 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
     if needs_reading_notice(conv, profile):
         _add_msg(db, conv, "assistant", reading_note(profile), meta=_notice_meta(profile))
 
+    prior = _previous_reading(conv, profile)
+    if re.search(r"\bsa{1,2}dh?e\s+sati\b|साढ़े साती|साढ़े साती", t) or prior.get("pending_sade_sati"):
+        today = _today_at(birth)
+        try:
+            period = language.requested_window(t, today)
+        except ValueError:
+            period = None
+        if not period and re.search(r"\b(?:currently|now|today|am i in|abhi)\b|अभी", t):
+            period = (today, today)
+        if period:
+            start, end = period
+            result = transits.scan(birth, start, end + timedelta(days=1), "Saturn")
+            phases = transits.sade_sati(result, facts["planets"]["Moon"]["sign"])
+            if phases:
+                lines = [f"Saturn is in a traditional Sade Sati phase during {language.window_label(period)}."]
+                if end != start:
+                    lines.extend(f"- {row['phase'].capitalize()} phase in {row['sign']}, "
+                                 f"{row['start'][:10]} to {row['end'][:10]} UTC." for row in phases)
+                lines.append("This describes Saturn’s transit relative to the natal Moon.")
+            else:
+                lines = [f"Saturn is outside the three traditional Sade Sati signs during {language.window_label(period)}."]
+            _add_msg(db, conv, "assistant", "\n\n".join(lines), meta={"sade_sati": phases, "settings": result["settings"]})
+            return conv.messages[-2:]
+        if not prior.get("pending_sade_sati") or re.search(r"sati|साती", t):
+            _add_msg(db, conv, "assistant",
+                     "Which dates should I check for Sade Sati? You can give a year, month, or say “now”.",
+                     meta={"pending_sade_sati": True})
+            return conv.messages[-2:]
+
+    if re.search(r"\b(?:current dasha|(?:which|what) dasha (?:am i in|is running)|dasha (?:am i in|kya hai)|"
+                 r"meri (?:kaunsi )?dasha)\b|वर्तमान दशा|कौन सी दशा", t):
+        when = _today_at(birth)
+        clock = inspection.active_dashas(birth, when)
+        lines = []
+        for system in ("vimshottari", "yogini", "chara"):
+            rows = clock[system]
+            if rows:
+                latest = rows[-1]
+                lords = " → ".join(latest.get("lords") or latest.get("signs") or [])
+                lines.append(f"{system.capitalize()} is {lords}, from {latest['start']} to {latest['end']}.")
+        reply = "\n\n".join(lines) or "The active dasha periods could not be determined for this date."
+        _add_msg(db, conv, "assistant", reply, meta={"dashas": clock, "settings": birth.settings.to_dict()})
+        return conv.messages[-2:]
+
     # chart request — always allowed
     varga = detect_varga(t)
     if language.show_chart(text, varga):
@@ -1300,7 +1387,12 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             career_reply |= career.continues_match(text, career_state)
             career_reply |= career.CHART.search(text) is not None and not varga
     if career_reply:
-        reply, meta = career.turn(text, career_state, facts, birth, _calibrated(profile))
+        context = []
+        if not career_state:
+            notes = memory.saved(conv.messages, profile.calc_fingerprint)
+            context = [entry["quote"] for entry in notes if entry["kind"] == "personal"
+                       and entry["domain"] == "career" and entry["quote"] not in text][:4]
+        reply, meta = career.turn(text, career_state, facts, birth, _calibrated(profile), remembered=context)
         _add_msg(db, conv, "assistant", reply, meta={**meta, "fingerprint": profile.calc_fingerprint})
         if meta.get("career_match") and career.TIMING.search(text) and prediction.event_spec(text, "career"):
             return _answer_reading(db, conv, profile, facts, birth, text, varga, None)
@@ -1317,6 +1409,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     old_window = previous.get("analysis_window", {})
     dates = prior.get("requested_window") or ([old_window["start"], old_window["end"]] if old_window else None)
     prior_window = tuple(date.fromisoformat(d) for d in dates) if dates else None
+    selected_prior_window = bool(prior_window and (
+        previous.get("period_requested") or (not previous and prior.get("requested_window"))))
     focus = language.focus_text(text)
     domain = detect_domain(focus)
     today = _today_at(birth)
@@ -1347,23 +1441,41 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         r"explain (?:it|that|this)|how so|aur batao|(?:it|that|this) (?:happen|happening|likely)|"
         r"likely is (?:it|that)|within (?:my|the) same (?:team|company))\b", t))
     references_reading = references_reading or bool(re.fullmatch(r"(why|explain|yes please|go ahead|and then|and me|and why)[.?! ]*", t))
+    explicit_reuse = language.prior_period_request(t)
+    references_reading |= explicit_reuse is True
     factual = bool(re.search(r"\b(moon|sun|mars|mercury|venus|jupiter|saturn|rahu|ketu|lagna|"
                              r"ascendant|dasha|nakshatra|rashi|chart|kundli)\b", t))
     routing_seconds = 0
     social = re.fullmatch(r"(hi|hello|hey|namaste|thanks|thank you|ok|okay)[.! ]*", t)
     unclear_topic = not domain and not ((previous or prior.get("pending_domain")) and (period or references_reading))
     possible_event = domain and not event and re.search(r"\b(will|might|chance|likely|could i)\b", t)
-    if (unclear_topic or possible_event) and not (varga or factual or social):
+    active_domain = previous.get("domain") or prior.get("pending_domain") or prior.get("reading_domain")
+    active_event = previous.get("decision", {}).get("event") or prior.get("pending_event") or {}
+    correction = bool(settings.DECIDER_ENABLED and active_domain and language.topic_correction(t))
+    reuse_period = None
+    domain_only = False
+    if (unclear_topic or possible_event or correction) and not (varga or social or (factual and not correction)):
         routing_started = time.monotonic()
-        topic = providers.conversation_topic(history, allow_external=_external_ok(profile))
+        route = providers.route_topic(history, allow_external=_external_ok(profile),
+                                      prior_domain=active_domain, prior_event=active_event.get("event_type"),
+                                      has_period=selected_prior_window, use_fallback=bool(unclear_topic or possible_event))
         routing_seconds = time.monotonic() - routing_started
+        structured = isinstance(route, decider.Route)
+        topic = route.topic if structured else route
+        if structured:
+            reuse_period = route.reuse_period
+            references_reading |= reuse_period is True
         if topic == "continue":
             references_reading = True
         elif topic in DOMAIN_KEYWORDS:
-            domain = domain or topic
+            if structured and correction:
+                domain, event = topic, None
+                domain_only = True
+            else:
+                domain = domain or topic
         else:
             for candidate, _, event_type, definition in prediction.EVENTS:
-                if topic == event_type and domain in (None, candidate):
+                if topic == event_type and (domain in (None, candidate) or (structured and correction)):
                     domain = candidate
                     event = {"event_type": event_type, "definition": definition}
                     break
@@ -1389,11 +1501,14 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                  meta={"requested_window": [d.isoformat() for d in period]})
         return conv.messages[-2:]
     same_topic = domain and domain == previous.get("domain")
-    if not event and same_topic and continuing and not re.search(r"\b(?:instead|actually|not|generally)\b", t):
+    if not event and not domain_only and same_topic and continuing and not re.search(r"\b(?:instead|actually|not|generally)\b", t):
         event = previous.get("decision", {}).get("event")
     keep_period = same_topic or references_reading or (not previous and prior.get("requested_window"))
-    inherited_period = prior_window if keep_period and (
-        previous.get("period_requested") or (not previous and prior.get("requested_window"))) else None
+    if explicit_reuse is not None:
+        keep_period = explicit_reuse
+    elif reuse_period is False:
+        keep_period = False
+    inherited_period = prior_window if keep_period and selected_prior_window else None
     window = period or inherited_period
     analysis = None
     wants_forecast = bool(re.search(
@@ -1407,12 +1522,32 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                        **({"varga": varga} if selected else {})})
         return conv.messages[-2:]
     if domain and window is not None and (not selected or event or period):
-        analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=focus, event=event)
+        # An accepted domain-only correction must survive the engine's event
+        # inference even if the original message names the rejected event.
+        question = f"{domain} outlook" if domain_only else focus
+        analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=question, event=event)
         analysis["period_requested"] = True
     if selected:
         facts = {**facts, "selected_chart": selected}
     run = engine.running_vimshottari(birth, (date.today().year, date.today().month, date.today().day))
     periods = "/".join("/".join(period["lords"]) for period in run[:2])
+    recent_user_text = [m["content"] for m in providers._prompt_history(history) if m["role"] == "user"]
+    remembered = memory.relevant(memory.saved(conv.messages, profile.calc_fingerprint), domain, focus, recent_user_text)
+    # Official outcomes stay attached to their original forecasts and are
+    # available for context only when the current question is about that topic.
+    if domain and len(remembered) < 4:
+        outcomes = (db.query(PredictionRecord)
+                    .filter(PredictionRecord.profile_id == profile.id, PredictionRecord.domain == domain,
+                            PredictionRecord.forecast == "event_indicated", PredictionRecord.outcome.isnot(None))
+                    .order_by(PredictionRecord.outcome_at.desc()).limit(4).all())
+        for rec in outcomes:
+            if len(remembered) >= 4:
+                break
+            snapshot = json.loads(rec.snapshot_json or "{}")
+            if snapshot.get("fingerprint") == profile.calc_fingerprint:
+                remembered.append({"kind": "reported_forecast_outcome", "domain": domain,
+                                   "event": rec.event_type, "status": rec.outcome,
+                                   "event_date": rec.event_date.isoformat() if rec.event_date else None})
     reply, provider = providers.generate(
         history, facts=facts, analysis=analysis,
         context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
@@ -1420,7 +1555,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                       "Name the period when timing was requested. Answer using the selected divisional chart when present. "
                       + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
                          if window is None else "")),
-        allow_external=_external_ok(profile), on_delta=None if analysis else on_delta, routing_seconds=routing_seconds)
+        # Wait for verification before sending any part of a reading to the client.
+        allow_external=_external_ok(profile), on_delta=None,
+        routing_seconds=routing_seconds, consultation_memory=remembered)
     if analysis and provider != "offline":
         reply = prediction.constrain_reply(reply, analysis, facts, history)
     if provider != "offline":
@@ -1433,10 +1570,13 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             log.warning("verifier stripped unsupported claims: %s", check["issues"][:5])
             reply = verify.repair_response(reply, check["issues"])
     reply = _apply_disclaimer(reply, domain)
+    if on_delta:
+        on_delta(reply)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
+                   **({"reading_domain": domain} if domain else {}),
                    **({"analysis": analysis, "requested_window": [d.isoformat() for d in window]} if analysis else {}),
                    **({"career_match": prior["career_match"], "pending_domain": "career"}
                       if domain == "career" and prior.get("career_match") else {}),
@@ -1455,8 +1595,32 @@ def _norm_reply(text: str) -> str:
     return text.strip().lower().replace("\u2019", "'").strip(".! ")
 
 
+def _consultation_feedback(conv, profile, text):
+    """Associate explicit reactions with the last reading or a named event."""
+    for clause, status in memory.reactions(text):
+        domain = detect_domain(clause)
+        event = prediction.event_spec(clause, domain) if domain else None
+        for msg in reversed(conv.messages):
+            if msg.role != "assistant" or msg.kind == "analysis":
+                continue
+            meta = memory.reading_meta(msg)
+            if meta.get("fingerprint") not in (None, profile.calc_fingerprint):
+                break
+            analysis = meta.get("analysis") or {}
+            reading_domain = analysis.get("domain") or meta.get("reading_domain")
+            reading_event = (analysis.get("decision") or {}).get("event") or {}
+            if reading_domain and (not domain or domain == reading_domain) and (
+                    not event or event["event_type"] == reading_event.get("event_type")):
+                return memory.reading_feedback(status, msg, reading_domain, reading_event.get("event_type"))
+            if not event:
+                break
+    return None
+
+
 def _maybe_ask_followup(db: Session, conv: Conversation, profile: BirthProfile):
     """Ask about the oldest prediction whose window has passed, once."""
+    if not profile.user or not profile.user.prediction_followups:
+        return
     rec = (db.query(PredictionRecord)
            .filter(PredictionRecord.profile_id == profile.id,
                    PredictionRecord.outcome.is_(None),
@@ -1481,6 +1645,8 @@ def _maybe_ask_followup(db: Session, conv: Conversation, profile: BirthProfile):
 
 def _record_followup_reply(db: Session, conv: Conversation, profile: BirthProfile,
                            text: str) -> bool:
+    if not profile.user or not profile.user.prediction_followups:
+        return False
     outcome = _FOLLOWUP_OUTCOME.get(_norm_reply(text))
     if outcome is None:
         return False

@@ -1,0 +1,118 @@
+{
+ "pack": "parashari",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "P1_ACTIVATION",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "AD lord links to E (required) and MD lord or a PD lord also links to E",
+   "exceptions": [
+    "Moon frame only in Mode B"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p1_supportive_double_transit_interval",
+    "backend/tests/test_convergence_p1p2.py::test_p1_w_when_transit_missing"
+   ]
+  },
+  {
+   "rule_id": "P1_VARGA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "AD lord in V is in kendra/trikona from V-Lagna or links to E in V; unavailable varga is NE",
+   "exceptions": [
+    "Mode B: NE (needs birth time)",
+    "D11/D30/D60 missing: NE"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p1_supportive_double_transit_interval",
+    "backend/tests/test_convergence_p1p2.py::test_p1_mode_b_moon_frame_no_supportive"
+   ]
+  },
+  {
+   "rule_id": "P1_MD_AD_RELATION",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "AD lord from MD lord: houses 1/7,3/11,4/10,5/9 (incl. conjunction) clean; 2/12 or 6/8 friction -> MIXED",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p1_friction_gives_mixed"
+   ]
+  },
+  {
+   "rule_id": "P1_DOUBLE_TRANSIT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "transiting Jupiter AND Saturn each occupy or aspect the primary E-house sign or E-lord natal sign from Lagna (Moon secondary, weight 0.5); window = PD/AD intersected with the joint transit interval",
+   "exceptions": [
+    "Ingress/retrograde re-entry intervals from transits.sign_intervals"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_double_transit_interval_intersection",
+    "backend/tests/test_convergence_p1p2.py::test_transit_sign_intervals_node_and_venus"
+   ]
+  },
+  {
+   "rule_id": "P1_ADVERSE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "AD lord's weighted links to ADV (12th from each E) outweigh links to E (links.link_balance) -> ADVERSE",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p1_adverse_dominates"
+   ]
+  },
+  {
+   "rule_id": "P1_YOGINI_XCHECK",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit); Yogini dasha (same Moon-nakshatra factor)",
+   "conditions": "Yogini AD lord links to E: extra evidence only, factor MOON_NAKSHATRA, weight 0.5; never its own pillar",
+   "exceptions": [
+    "Never changes the S/M/W/A value"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_yogini_never_separate_pillar"
+   ]
+  },
+  {
+   "rule_id": "P1_RESULT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P1; BPHS Vimshottari dasha chapters; K.N. Rao (double transit)",
+   "conditions": "S = items 1,2,4 and no adverse dominance; M = item 1 + friction; W otherwise; A = adverse dominates",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p1p2.py::test_p1_supportive_double_transit_interval",
+    "backend/tests/test_convergence_p1p2.py::test_p1_friction_gives_mixed",
+    "backend/tests/test_convergence_p1p2.py::test_p1_adverse_dominates"
+   ]
+  }
+ ]
+}

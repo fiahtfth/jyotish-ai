@@ -33,13 +33,14 @@ def jupiter_md_start(facts) -> date:
 
 # ---------- settings object ----------
 
-def test_defaults_preserve_historical_behaviour():
+def test_defaults_use_julian_year_and_keep_legacy_preset():
     d = DEFAULT
-    assert (d.ayanamsa, d.node, d.positions, d.dasha_year) == ("LAHIRI", "mean", "true", "true_tropical")
+    assert (d.ayanamsa, d.node, d.positions, d.dasha_year) == ("LAHIRI", "mean", "true", "julian")
     assert (d.chara_school, d.karaka_scheme, d.colord_rule) == ("KNRao", "7_KNRao", "school")
     assert (d.arudha_exception, d.d24, d.combust_table) == ("standard", "forward", "surya_siddhanta")
     assert d.gandanta_arc == pytest.approx(10 / 3) and d.sandhi_arc == 1.5
-    assert set(PRESETS) == {"default", "drik", "jh", "iae"}
+    assert set(PRESETS) == {"default", "drik", "jh", "iae", "legacy_tropical"}
+    assert PRESETS["legacy_tropical"].dasha_year == "true_tropical"
 
 
 def test_validation_rejects_unknown_values():
@@ -63,7 +64,7 @@ def test_settings_dict_roundtrip(ay, node, d24):
 @pytest.mark.parametrize("field,alt", [
     ("ayanamsa", "LAHIRI_ICRC"), ("node", "true"), ("positions", "apparent"),
     ("center", "topocentric"), ("combust_table", "wide_variant"),
-    ("dasha_year", "julian"), ("chara_school", "PVR"), ("karaka_scheme", "8_Rath"),
+    ("dasha_year", "gregorian"), ("chara_school", "PVR"), ("karaka_scheme", "8_Rath"),
     ("colord_rule", "Rath"), ("arudha_exception", "none"), ("d24", "reverse"),
     ("gandanta_arc", 3.0), ("sandhi_arc", 2.0)])
 def test_fingerprint_changes_with_every_setting(field, alt):
@@ -108,7 +109,7 @@ def test_meta_discloses_frame():
     assert "″" in m["ayanamsa"]["dms"]
     assert m["ephemeris"] == "swiss"
     assert (m["node"], m["positions"], m["center"]) == ("mean", "true", "geocentric")
-    assert m["dasha_year"]["mode"] == "true_tropical" and 365.2 < m["dasha_year"]["days"] < 365.3
+    assert m["dasha_year"] == {"mode": "julian", "days": 365.25}
     assert m["warnings"] == []
 
 
@@ -189,6 +190,27 @@ VARGA_FN = {
     "D24": partial(charts.chaturvimsamsa_chart, chart_method=1), "D60": charts.shashtyamsa_chart,
 }
 DIVS = {"D2": 2, "D3": 3, "D7": 7, "D9": 9, "D10": 10, "D12": 12, "D24": 24, "D60": 60}
+
+
+def test_all_native_varga_parts_match_the_oracle_interior_and_are_half_open():
+    from app.astro import vargas
+    oracles = {**VARGA_FN, "D1": lambda rows: rows,
+               "D4": charts.chaturthamsa_chart, "D6": partial(charts.shashthamsa_chart, chart_method=1),
+               "D9": charts.navamsa_chart, "D16": charts.shodasamsa_chart, "D20": charts.vimsamsa_chart,
+               "D30": charts.trimsamsa_chart, "D40": charts.khavedamsa_chart, "D45": charts.akshavedamsa_chart}
+    for n in vargas.SCHEMES:
+        for sign in range(12):
+            if n == 30:
+                degrees = [0, 5, 10, 18, 25, 30] if sign % 2 == 0 else [0, 5, 12, 20, 25, 30]
+                bounds = [d * 3600 for d in degrees]
+            else:
+                bounds = [-(-part * ARC // n) for part in range(n + 1)]
+            for left, right in zip(bounds, bounds[1:]):
+                center = (left + right) / 7200
+                expected = oracles[f"D{n}"]([["L", (sign, center)]])[0][1][0]
+                assert vargas.position(n, sign, left / 3600)[0] == expected
+                assert vargas.position(n, sign, (right - 1) / 3600)[0] == expected
+            assert vargas.position(n, sign, 30) == vargas.position(n, (sign + 1) % 12, 0)
 
 
 def _points(n):

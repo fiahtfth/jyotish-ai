@@ -1,0 +1,54 @@
+{
+  "intent_id": "LOVE_VS_ARRANGED",
+  "number": 10,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    5,
+    7,
+    9,
+    2
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Venus",
+    "Mars",
+    "Rahu",
+    "DK"
+  ],
+  "V": [
+    "D9"
+  ],
+  "J": [
+    "DK",
+    "UL",
+    "A5",
+    "A7"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      5,
+      7,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [],
+  "forecast_events": []
+}

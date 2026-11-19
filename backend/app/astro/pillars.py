@@ -381,7 +381,10 @@ PILLARS = {"parashari": pillar_parashari, "jaimini": pillar_jaimini,
 
 def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
     """Full four-pillar evaluation for (domain, [start,end]). Spec JSON shape."""
+    from .evidence import dependency_index, pillar_finding
+
     pillars = {}
+    findings = []
     evidence_ids, rule_ids, limitations = [], [], []
     for name, fn in PILLARS.items():
         try:
@@ -389,6 +392,7 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
         except Exception as e:
             r = {"verdict": "unavailable", "evidence": [f"{name} pillar error: {e}"], "rules": []}
         pillars[name] = r["verdict"]
+        findings.append(pillar_finding(name, r["verdict"], facts, start, end, r.get("evidence", []), r.get("rules", [])))
         for e in r.get("evidence", []):
             item = f"{name}: {e}"
             if item not in evidence_ids:
@@ -411,6 +415,8 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
         "pillars": pillars,
         "support_count": support, "conflict_count": conflict, "unavailable_count": unavail,
         "convergence": label,
+        "methods_evaluated": 4 - unavail,
+        "evidence": findings, "unique_dependencies": dependency_index(findings),
         "convergence_disclaimer": CONVERGENCE_DISCLAIMER,
         "calculation_evidence_ids": evidence_ids,
         "traditional_rule_ids": rule_ids,

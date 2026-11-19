@@ -1,0 +1,55 @@
+{
+  "intent_id": "WEALTH_POTENTIAL",
+  "number": 18,
+  "phase": 1,
+  "template": "N",
+  "E": [
+    2,
+    11,
+    5,
+    9
+  ],
+  "E_optional": [
+    1
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Jupiter",
+    "Venus"
+  ],
+  "V": [
+    "D2",
+    "D11"
+  ],
+  "J": [
+    "A2",
+    "A11",
+    "AL",
+    "AL_11",
+    "AL_12"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [
+    "SAVINGS",
+    "WEALTH_POTENTIAL"
+  ],
+  "forecast_events": []
+}

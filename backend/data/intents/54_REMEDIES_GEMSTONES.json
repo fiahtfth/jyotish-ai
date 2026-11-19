@@ -1,0 +1,36 @@
+{
+  "intent_id": "REMEDIES_GEMSTONES",
+  "number": 54,
+  "phase": 3,
+  "template": "N",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "personality_spiritual",
+  "legacy_ids": [
+    "CULTURAL_REMEDIES",
+    "GEMSTONE_GUIDANCE"
+  ],
+  "forecast_events": []
+}

@@ -1,0 +1,53 @@
+{
+  "intent_id": "DEBT_RELIEF",
+  "number": 21,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    5,
+    11,
+    2
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [
+    6
+  ],
+  "K": [
+    "Jupiter",
+    "Saturn"
+  ],
+  "V": [
+    "D2",
+    "D6"
+  ],
+  "J": [
+    "A6",
+    "A11"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [
+    "DEBT_REPAYMENT"
+  ],
+  "forecast_events": []
+}

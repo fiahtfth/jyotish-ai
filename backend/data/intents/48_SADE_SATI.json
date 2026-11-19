@@ -1,0 +1,35 @@
+{
+  "intent_id": "SADE_SATI",
+  "number": 48,
+  "phase": 1,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "sade_sati"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "wellbeing",
+  "legacy_ids": [
+    "SADE_SATI"
+  ],
+  "forecast_events": []
+}

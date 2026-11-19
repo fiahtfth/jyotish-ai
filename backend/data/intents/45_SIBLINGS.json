@@ -1,0 +1,45 @@
+{
+  "intent_id": "SIBLINGS",
+  "number": 45,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    3,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mars",
+    "BK"
+  ],
+  "V": [
+    "D3"
+  ],
+  "J": [
+    "BK",
+    "A3",
+    "A11"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "children_family",
+  "legacy_ids": [
+    "SIBLINGS"
+  ],
+  "forecast_events": []
+}

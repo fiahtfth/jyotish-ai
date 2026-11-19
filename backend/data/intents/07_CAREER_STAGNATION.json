@@ -1,0 +1,46 @@
+{
+  "intent_id": "CAREER_STAGNATION",
+  "number": 7,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    10,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Sun",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "p1_overlay",
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [],
+  "forecast_events": []
+}

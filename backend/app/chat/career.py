@@ -427,12 +427,16 @@ def _chart_reading(facts, birth, calibrated):
     return text, {"tables": [table, cusp], "note": f"Traditional career indicators · {grade.lower()} support."}
 
 
-def turn(text, state, facts, birth, calibrated):
+def turn(text, state, facts, birth, calibrated, remembered=()):
     raw = text.casefold()
     if "cancel career" in raw or "stop comparing" in raw:
         return "We can move on. What would you like to explore?", {"career_match": None}
     restart = "career matching over" in raw
-    state = CareerState() if restart or state is None else state
+    if state is None or restart:
+        state = CareerState()
+        if not restart:
+            for detail in reversed(remembered):
+                _intake(state, detail, new_comparison=False)
     if not restart:
         _intake(state, text, _comparison(text))
     state.clarify_title = ""

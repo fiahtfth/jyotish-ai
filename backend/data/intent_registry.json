@@ -1,0 +1,4110 @@
+{
+  "version": "1.0",
+  "intents": [
+    {
+      "intent_id": "JOB_TIMING",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 1,
+      "sample_questions": [
+        "When could I receive a job offer?",
+        "नौकरी का प्रस्ताव कब मिल सकता है?",
+        "Job offer kab mil sakta hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "job_offer",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 1
+    },
+    {
+      "intent_id": "PROMOTION",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 1,
+      "sample_questions": [
+        "When could I be promoted?",
+        "मेरी पदोन्नति कब हो सकती है?",
+        "Meri promotion kab ho sakti hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "promotion",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 2
+    },
+    {
+      "intent_id": "JOB_CHANGE",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 1,
+      "sample_questions": [
+        "When might I switch employers?",
+        "मैं नौकरी कब बदल सकता हूँ?",
+        "Main naukri kab badal sakta hoon?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "job_change",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 3
+    },
+    {
+      "intent_id": "JOB_VS_BUSINESS",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 1,
+      "sample_questions": [
+        "Should I consider a job or business?",
+        "नौकरी या व्यवसाय में क्या बेहतर रहेगा?",
+        "Job ya business, kaunsa better rahega?"
+      ],
+      "analysis_type": "comparison",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 6
+    },
+    {
+      "intent_id": "INTERNAL_ROLE_CHANGE",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 3,
+      "sample_questions": [
+        "When might I take a different internal role?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 2
+    },
+    {
+      "intent_id": "CAREER_PROFILE",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 3,
+      "sample_questions": [
+        "What career profile suits me?"
+      ],
+      "analysis_type": "comparison",
+      "status": "implemented",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        6,
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [
+        "tenth_house",
+        "tenth_lord",
+        "amatyakaraka",
+        "A10"
+      ],
+      "calculation_modules": {
+        "comparison": [
+          "user_stated_skills",
+          "onet_occupation_catalog"
+        ]
+      },
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 5
+    },
+    {
+      "intent_id": "MARRIAGE_TIMING",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 1,
+      "sample_questions": [
+        "When might I get married?",
+        "मेरी शादी कब हो सकती है?",
+        "Meri shaadi kab ho sakti hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "marriage",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 9
+    },
+    {
+      "intent_id": "ENGAGEMENT_TIMING",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [
+        "When might I get engaged?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "engagement",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 9
+    },
+    {
+      "intent_id": "PARTNERSHIP_THEMES",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [
+        "What does my chart say about relationships?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 13
+    },
+    {
+      "intent_id": "RECONCILIATION",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [
+        "Will an ex and I reconcile?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 14
+    },
+    {
+      "intent_id": "RELATIONSHIP_COMPATIBILITY",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [
+        "Can we compare our charts with consent?"
+      ],
+      "analysis_type": "matching",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": true
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 12
+    },
+    {
+      "intent_id": "MANGAL_DOSHA",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [
+        "Does this chart show Mangal Dosha?"
+      ],
+      "analysis_type": "calculation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [
+        "seventh_house",
+        "seventh_lord",
+        "Venus",
+        "darakaraka",
+        "upapada_lagna"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 12,
+      "spec_intent_secondary": [
+        55
+      ]
+    },
+    {
+      "intent_id": "INCOME_IMPROVEMENT",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 1,
+      "sample_questions": [
+        "When might my income improve?",
+        "मेरी आमदनी कब बढ़ सकती है?",
+        "Meri income kab badh sakti hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 17
+    },
+    {
+      "intent_id": "WEALTH_POTENTIAL",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 1,
+      "sample_questions": [
+        "What are the traditional wealth themes?",
+        "कुंडली में धन से जुड़े क्या संकेत हैं?",
+        "Kundli mein wealth ke kya sanket hain?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 18
+    },
+    {
+      "intent_id": "SAVINGS",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to saving?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 18
+    },
+    {
+      "intent_id": "DEBT_REPAYMENT",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 3,
+      "sample_questions": [
+        "When might I clear existing debt?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 21
+    },
+    {
+      "intent_id": "BUSINESS_GROWTH",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 3,
+      "sample_questions": [
+        "When might my business grow?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 20
+    },
+    {
+      "intent_id": "BUSINESS_LAUNCH",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 3,
+      "sample_questions": [
+        "When might I launch a business?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        5,
+        9,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2",
+        "D9"
+      ],
+      "primary_factors": [
+        "second_house",
+        "eleventh_lord",
+        "Jupiter"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "business_launch",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 19
+    },
+    {
+      "intent_id": "STUDY_FIELD",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 1,
+      "sample_questions": [
+        "What fields of study fit my interests?",
+        "मेरे लिए पढ़ाई का कौन सा विषय ठीक रहेगा?",
+        "Mere liye kaunsa study field theek rahega?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 25
+    },
+    {
+      "intent_id": "COMPETITIVE_EXAMS",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 1,
+      "sample_questions": [
+        "When might I pass my competitive exam?",
+        "प्रतियोगी परीक्षा में सफलता कब मिल सकती है?",
+        "Competitive exam mein kab safalta mil sakti hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "exam_pass",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 27
+    },
+    {
+      "intent_id": "ADMISSION",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 3,
+      "sample_questions": [
+        "When might I receive an admission offer?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "admission",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 26
+    },
+    {
+      "intent_id": "GRADUATION",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 3,
+      "sample_questions": [
+        "When might I finish my degree?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "graduation",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 30
+    },
+    {
+      "intent_id": "PROFESSIONAL_CERTIFICATION",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to further qualifications?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 29
+    },
+    {
+      "intent_id": "EDUCATION_ABROAD",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 3,
+      "sample_questions": [
+        "When might I begin studying abroad?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fifth_lord",
+        "Mercury",
+        "Jupiter"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 28
+    },
+    {
+      "intent_id": "FOREIGN_SETTLEMENT",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 1,
+      "sample_questions": [
+        "When might I settle abroad permanently?",
+        "विदेश में स्थायी रूप से कब बस सकता हूँ?",
+        "Videsh mein permanently kab settle ho sakta hoon?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 32
+    },
+    {
+      "intent_id": "FOREIGN_TRAVEL",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 1,
+      "sample_questions": [
+        "When might I take a foreign trip?",
+        "विदेश यात्रा कब संभव है?",
+        "Foreign travel kab possible hai?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 31
+    },
+    {
+      "intent_id": "RELOCATION",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 3,
+      "sample_questions": [
+        "When might I move my primary residence?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {
+        "parashari": [
+          "vimshottari_md_ad_pd",
+          "house_lordship",
+          "varga_alignment",
+          "jupiter_saturn_transits"
+        ],
+        "jaimini": [
+          "chara_dasha",
+          "arudha",
+          "rashi_drishti"
+        ],
+        "tajika": [
+          "solar_return",
+          "muntha",
+          "sudarshana"
+        ],
+        "micro_timing": [
+          "ashtakavarga_kakshya",
+          "fast_transits"
+        ]
+      },
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": "relocation",
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 34
+    },
+    {
+      "intent_id": "OVERSEAS_JOB",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 3,
+      "sample_questions": [
+        "When might I start a job overseas?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 33
+    },
+    {
+      "intent_id": "TEMPORARY_RESIDENCE",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 3,
+      "sample_questions": [
+        "When might I live abroad temporarily?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 32
+    },
+    {
+      "intent_id": "RETURN_TO_HOME_COUNTRY",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 3,
+      "sample_questions": [
+        "When might I move back to my home country?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "ninth_lord",
+        "twelfth_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 35
+    },
+    {
+      "intent_id": "PROPERTY_PURCHASE",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 1,
+      "sample_questions": [
+        "When might I purchase a home?",
+        "मैं घर कब खरीद सकता हूँ?",
+        "Main ghar kab kharid sakta hoon?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 37
+    },
+    {
+      "intent_id": "PROPERTY_SALE",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [
+        "When might I sell a property?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 38
+    },
+    {
+      "intent_id": "VEHICLE_PURCHASE",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [
+        "When might I buy a vehicle?"
+      ],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": "Which dates would you like to look at?",
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": {
+        "status": "not_evaluated",
+        "chart_windows": 0,
+        "supportive_chart_rate": null,
+        "mean_supportive_window_share": null
+      },
+      "spec_intent": 41
+    },
+    {
+      "intent_id": "HOUSEWARMING_MUHURTA",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [
+        "What is a suitable day for a housewarming ceremony?"
+      ],
+      "analysis_type": "muhurta",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 58
+    },
+    {
+      "intent_id": "VEHICLE_MUHURTA",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [
+        "What is a suitable day to buy a vehicle?"
+      ],
+      "analysis_type": "muhurta",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 58
+    },
+    {
+      "intent_id": "HOME_THEMES",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to home and property in my chart?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        4
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [
+        "fourth_house",
+        "fourth_lord",
+        "Mars",
+        "Venus"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "CHILDREN_THEMES",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "What can my chart say about parenthood themes?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 42
+    },
+    {
+      "intent_id": "PARENTS",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to my parents?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 44
+    },
+    {
+      "intent_id": "SIBLINGS",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to siblings?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 45
+    },
+    {
+      "intent_id": "FAMILY_RESPONSIBILITIES",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to family responsibilities?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 44
+    },
+    {
+      "intent_id": "PARENT_LINEAGE",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "What does D12 traditionally represent?"
+      ],
+      "analysis_type": "calculation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 44
+    },
+    {
+      "intent_id": "FAMILY_PLANNING_BOUNDARY",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [
+        "Can my chart predict conception or miscarriage?"
+      ],
+      "analysis_type": "guardrail",
+      "status": "implemented",
+      "required_inputs": [],
+      "primary_houses": [
+        2,
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7",
+        "D12"
+      ],
+      "primary_factors": [
+        "fifth_house",
+        "Jupiter",
+        "Moon"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "WELLBEING_THEMES",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "What are the traditional self-care themes?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 47
+    },
+    {
+      "intent_id": "DISTRESS_SUPPORT",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "I feel like ending my life."
+      ],
+      "analysis_type": "guardrail",
+      "status": "implemented",
+      "required_inputs": [],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 50
+    },
+    {
+      "intent_id": "HEALTH_DIAGNOSIS_BOUNDARY",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "Can you diagnose me from my chart?"
+      ],
+      "analysis_type": "guardrail",
+      "status": "partial",
+      "required_inputs": [],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "REST_AND_ROUTINE",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "What traditional themes relate to rest and routine?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 49
+    },
+    {
+      "intent_id": "RECOVERY_BOUNDARY",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "Can my chart predict a medical recovery date?"
+      ],
+      "analysis_type": "guardrail",
+      "status": "partial",
+      "required_inputs": [],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "HEALTH_PERIOD_SYMBOLISM",
+      "version": "1.0",
+      "domain": "wellbeing",
+      "phase": 3,
+      "sample_questions": [
+        "What health themes are traditionally associated with this period?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        6,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6",
+        "D30"
+      ],
+      "primary_factors": [
+        "first_house",
+        "ascendant_lord"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 47
+    },
+    {
+      "intent_id": "MAJOR_TRANSITION",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 1,
+      "sample_questions": [
+        "What transitions might the chart suggest?",
+        "बड़े बदलावों के क्या संकेत हैं?",
+        "Bade changes ke kya sanket hain?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 57
+    },
+    {
+      "intent_id": "PERSONALITY",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 3,
+      "sample_questions": [
+        "What traditional personality themes does my chart suggest?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "SPIRITUALITY",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 3,
+      "sample_questions": [
+        "What themes relate to spirituality in my chart?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 53
+    },
+    {
+      "intent_id": "CULTURAL_REMEDIES",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 3,
+      "sample_questions": [
+        "What optional traditional practices are associated with this chart?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 54
+    },
+    {
+      "intent_id": "GEMSTONE_GUIDANCE",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 3,
+      "sample_questions": [
+        "What traditional meanings are associated with gemstones?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 54
+    },
+    {
+      "intent_id": "PURPOSE",
+      "version": "1.0",
+      "domain": "direction",
+      "phase": 3,
+      "sample_questions": [
+        "What life direction themes come up in my chart?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        9,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9",
+        "D20"
+      ],
+      "primary_factors": [
+        "ascendant_lord",
+        "atmakaraka"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    },
+    {
+      "intent_id": "CURRENT_DASHA",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 1,
+      "sample_questions": [
+        "Which dasha am I in now?",
+        "मेरी वर्तमान दशा क्या है?",
+        "Meri current dasha kya hai?"
+      ],
+      "analysis_type": "calculation",
+      "status": "implemented",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {
+        "chronology": [
+          "vimshottari_md_ad_pd",
+          "yogini",
+          "chara_dasha"
+        ]
+      },
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 61
+    },
+    {
+      "intent_id": "NEXT_12_MONTH_THEMES",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 1,
+      "sample_questions": [
+        "What are the themes over the next 12 months?",
+        "अगले बारह महीनों के मुख्य संकेत क्या हैं?",
+        "Agle 12 mahine ke main themes kya hain?"
+      ],
+      "analysis_type": "interpretation",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 56
+    },
+    {
+      "intent_id": "SADE_SATI",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 1,
+      "sample_questions": [
+        "What are my Sade Sati dates?",
+        "मेरी साढ़े साती कब है?",
+        "Meri sade sati kab hai?"
+      ],
+      "analysis_type": "calculation",
+      "status": "implemented",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {
+        "transits": [
+          "saturn_sign_ingresses"
+        ]
+      },
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 48
+    },
+    {
+      "intent_id": "PAST_EVENT_CHECK",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 1,
+      "sample_questions": [
+        "Can we check a past milestone I can date?",
+        "क्या बीते जीवन की किसी घटना से जाँच कर सकते हैं?",
+        "Kya hum meri past life event ki date check kar sakte hain?"
+      ],
+      "analysis_type": "rectification",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 59
+    },
+    {
+      "intent_id": "BIRTH_TIME_CHECK",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 1,
+      "sample_questions": [
+        "Can we check whether my birth time is sensitive?",
+        "क्या मेरे जन्म समय की जाँच कर सकते हैं?",
+        "Kya mera birth time check kar sakte hain?"
+      ],
+      "analysis_type": "rectification",
+      "status": "partial",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 60
+    },
+    {
+      "intent_id": "PANCHANGA",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 3,
+      "sample_questions": [
+        "What is today's Panchanga?"
+      ],
+      "analysis_type": "calculation",
+      "status": "implemented",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [
+        "Moon_nakshatra"
+      ],
+      "calculation_modules": {
+        "calendar": [
+          "panchanga"
+        ]
+      },
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null
+    }
+  ],
+  "spec_only_intents": [
+    {
+      "intent_id": "GOVT_JOB",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        10,
+        6,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 4
+    },
+    {
+      "intent_id": "CAREER_STAGNATION",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        10,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 7
+    },
+    {
+      "intent_id": "JOB_DISRUPTION",
+      "version": "1.0",
+      "domain": "career",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        9,
+        5,
+        12,
+        8
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 8
+    },
+    {
+      "intent_id": "LOVE_VS_ARRANGED",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        5,
+        7,
+        9,
+        2
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 10
+    },
+    {
+      "intent_id": "MARRIAGE_DELAY",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        7,
+        2,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 11
+    },
+    {
+      "intent_id": "MARRIAGE_STABILITY",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        7,
+        2,
+        4,
+        12,
+        8
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 13
+    },
+    {
+      "intent_id": "SPOUSE_NATURE",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        7
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 15
+    },
+    {
+      "intent_id": "RELATIONSHIP_CHALLENGES",
+      "version": "1.0",
+      "domain": "relationship",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        7
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 16
+    },
+    {
+      "intent_id": "BUSINESS_PARTNERSHIP",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        7,
+        11,
+        10,
+        8
+      ],
+      "primary_vargas": [
+        "D1",
+        "D10"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": true
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 20
+    },
+    {
+      "intent_id": "FINANCIAL_COMMITMENT",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        2,
+        11,
+        5
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 22
+    },
+    {
+      "intent_id": "FINANCIAL_DISRUPTION",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        12,
+        8,
+        10,
+        1
+      ],
+      "primary_vargas": [
+        "D1",
+        "D2"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 23
+    },
+    {
+      "intent_id": "LEGAL_DISPUTE",
+      "version": "1.0",
+      "domain": "finance",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        6,
+        11,
+        1
+      ],
+      "primary_vargas": [
+        "D1",
+        "D6"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 24
+    },
+    {
+      "intent_id": "HIGHER_STUDIES",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        9,
+        5,
+        8,
+        12
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 29
+    },
+    {
+      "intent_id": "RESUME_EDUCATION",
+      "version": "1.0",
+      "domain": "education",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        5,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D24"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 30
+    },
+    {
+      "intent_id": "VISA_TIMING",
+      "version": "1.0",
+      "domain": "relocation",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        9,
+        12,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 36
+    },
+    {
+      "intent_id": "INHERITANCE",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        8,
+        2,
+        4,
+        9
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 39
+    },
+    {
+      "intent_id": "HOUSE_CONSTRUCTION",
+      "version": "1.0",
+      "domain": "property",
+      "phase": 2,
+      "sample_questions": [],
+      "analysis_type": "event_timing",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings",
+        "target_period"
+      ],
+      "primary_houses": [
+        4,
+        12,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D4"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "supportive_period",
+        "mixed_period",
+        "weak_indication",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 40
+    },
+    {
+      "intent_id": "FAMILY_TENSION",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        2,
+        4,
+        7,
+        11
+      ],
+      "primary_vargas": [
+        "D1",
+        "D12"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 43
+    },
+    {
+      "intent_id": "CHILD_SUPPORT",
+      "version": "1.0",
+      "domain": "family",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        5
+      ],
+      "primary_vargas": [
+        "D1",
+        "D7"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": true
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 46
+    },
+    {
+      "intent_id": "CHART_STRENGTHS",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1
+      ],
+      "primary_vargas": [
+        "D1",
+        "D9"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 51
+    },
+    {
+      "intent_id": "RECURRING_PATTERNS",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [
+        1,
+        5,
+        7
+      ],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 52
+    },
+    {
+      "intent_id": "YOGA_DOSHA_EXPLAINED",
+      "version": "1.0",
+      "domain": "general",
+      "phase": 3,
+      "sample_questions": [],
+      "analysis_type": "interpretation",
+      "status": "unsupported",
+      "required_inputs": [
+        "birth_datetime",
+        "birth_timezone",
+        "birth_coordinates",
+        "calculation_settings"
+      ],
+      "primary_houses": [],
+      "primary_vargas": [
+        "D1"
+      ],
+      "primary_factors": [],
+      "calculation_modules": {},
+      "clarification": null,
+      "result_types": [
+        "information",
+        "insufficient_data"
+      ],
+      "guardrails": {
+        "no_guaranteed_event": true,
+        "no_unvalidated_probability": true,
+        "no_invented_dates": true,
+        "consent_required_for_other_person": false
+      },
+      "forecast_event": null,
+      "specificity": null,
+      "spec_intent": 55
+    }
+  ]
+}

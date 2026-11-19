@@ -1,0 +1,35 @@
+{
+  "intent_id": "EMOTIONAL_SUPPORT",
+  "number": 50,
+  "phase": 3,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "current_dasha"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "wellbeing",
+  "legacy_ids": [
+    "DISTRESS_SUPPORT"
+  ],
+  "forecast_events": []
+}

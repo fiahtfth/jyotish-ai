@@ -1,0 +1,29 @@
+{
+  "version": "2026-11-19.1",
+  "pillar_rules": {
+    "parashari": {
+      "rule_id": "PARASHARI.DOMAIN_PERIOD",
+      "source_ref": "Brihat Parashara Hora Shastra, Vimshottari, lordships and varga topics",
+      "depends_on_factors": ["MOON_NAKSHATRA", "DOMAIN_HOUSES", "DOMAIN_VARGA"],
+      "computed_facts": ["planets.Moon.nakshatra", "houses", "vargas", "vimshottari", "shadbala"]
+    },
+    "jaimini": {
+      "rule_id": "JAIMINI.CHARA_CONTACT",
+      "source_ref": "Jaimini Rashi Drishti, Chara Karakas and Arudha, with the selected Chara Dasha school",
+      "depends_on_factors": ["LAGNA_SIGN", "DOMAIN_HOUSES", "CHARA_KARAKA_RANK"],
+      "computed_facts": ["lagna.sign", "jaimini", "houses"]
+    },
+    "tajika": {
+      "rule_id": "TAJIKA.ANNUAL_DOMAIN",
+      "source_ref": "Tajika annual return, Muntha, Varsheshwara and Mudda Dasha",
+      "depends_on_factors": ["LAGNA_SIGN", "DOMAIN_HOUSES", "SOLAR_RETURN"],
+      "computed_facts": ["planets.Sun", "lagna.sign", "houses"]
+    },
+    "micro_timing": {
+      "rule_id": "TIMING.TRANSIT_AND_BINDU",
+      "source_ref": "Brihat Parashara Hora Shastra, Ashtakavarga; explicit Jupiter–Saturn, fast-transit and period triggers",
+      "depends_on_factors": ["DOMAIN_HOUSES", "MOON_NAKSHATRA", "TRANSIT_CONTACT", "ASHTAKAVARGA"],
+      "computed_facts": ["houses", "planets.Moon.nakshatra", "binnashtakavarga", "sarvastakavarga", "vimshottari"]
+    }
+  }
+}

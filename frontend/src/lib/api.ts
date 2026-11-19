@@ -52,6 +52,7 @@ export type Place = {
   label?: string; timezone_name?: string; utc_offset_hours?: number;
 };
 export type Profile = {
+  id?: number; relation?: string; permission_confirmed?: boolean;
   display_name: string; year: number; month: number; day: number;
   hour: number; minute: number; second: number;
   place_name: string; place_state: string; place_country: string;
@@ -127,6 +128,7 @@ export type PredictionRecord = {
 };
 export type PredictionsResponse = {
   predictions: PredictionRecord[];
+  followups_enabled?: boolean;
   scorecard?: { total_analyses: number; issued_forecasts: number; abstentions: number; prospective_forecasts: number;
     matured: number; scored: number; hits: number; misses: number; partial: number; unresolved: number; note: string };
   aggregate: { total: number; happened: number; partly: number; did_not: number; unsure: number; pending: number };
@@ -204,10 +206,22 @@ export const api = {
   geoSearch: (q: string) => req<Place[]>(`/api/geo/search?q=${encodeURIComponent(q)}`),
   getProfile: () => req<Profile>("/api/profile"),
   putProfile: (p: ProfileIn) => req<Profile>("/api/profile", { method: "PUT", body: JSON.stringify(p) }),
+  createProfile: (p: ProfileIn) => req<Profile>("/api/profiles", { method: "POST", body: JSON.stringify(p) }),
+  listProfiles: () => req<ProfileItem[]>("/api/profiles"),
+  activateProfile: (id: number) => req<ProfileItem>(`/api/profiles/${id}/activate`, { method: "POST" }),
+  profilePermission: (id: number, permission_confirmed: boolean) => req<ProfileItem>(`/api/profiles/${id}/permission`, {
+    method: "PUT", body: JSON.stringify({ permission_confirmed }) }),
   history: () => req<Msg[] | { messages: Msg[] }>("/api/chat/history"),
   send: (text: string) => req<Msg[]>("/api/chat/send", { method: "POST", body: JSON.stringify({ text }) }),
   resetChat: () => req("/api/chat/reset", { method: "POST" }),
   chart: (v: string) => req(`/api/chart/${v}`),
+  chartDashboard: (date = "") => req<ChartDashboard>(`/api/chart-dashboard${date ? `?as_of=${encodeURIComponent(date)}` : ""}`),
+  chartTransits: (start: string, end: string, planet: string) => req<ChartTransits>(
+    `/api/chart-transits?${new URLSearchParams({ start, end, planet })}`),
+  kpChart: () => req<KpChart>("/api/kp"),
+  degreeTable: (text: string, source_program: string, ayanamsa_id: string) =>
+    req<DegreeTable>("/api/tools/degree-table", { method: "POST", body: JSON.stringify({ text, source_program, ayanamsa_id }) }),
+  coverage: () => req<Coverage>("/api/coverage"),
   calibration: () => req("/api/calibration"),
   forgot: (email: string) =>
     req("/api/auth/forgot", { method: "POST", body: JSON.stringify({ email }) }),
@@ -219,4 +233,48 @@ export const api = {
   predictionOutcome: (id: number, outcome: string, event_date?: string) => req(`/api/predictions/${id}/outcome`, {
     method: "POST", body: JSON.stringify({ outcome, event_date }) }),
   predictions: (): Promise<PredictionsResponse> => req<PredictionsResponse>("/api/predictions"),
+  predictionFollowups: (enabled: boolean) =>
+    req<{ followups_enabled: boolean }>("/api/predictions/followups", { method: "PUT", body: JSON.stringify({ enabled }) }),
+};
+
+export type ProfileItem = { id: number; display_name: string; relation: string; is_active: boolean; permission_confirmed: boolean };
+
+type Window = { start_s: number; end_s: number; margin_before_s: number; margin_after_s: number; status: string; open_ended: boolean };
+type Dasha = { lords?: string[]; signs?: string[]; start: string; end: string };
+type Position = { sign: number; degree: number; sign_name: string; house: number; dignity: string[];
+  retrograde: boolean; combust: boolean; gandanta: boolean; sandhi: boolean; vargottama: boolean; nakshatra: { name: string; pada: number } };
+export type ChartDashboard = {
+  settings: { calc_settings: Record<string, string | number>; varga_rule_version: string; varga_schemes: Record<string, string>;
+    ayanamsa: { id: string; dms: string }; ephemeris: string; warnings: string[]; tzdb_version: string;
+    dasha_year: { mode: string; days: number }; utc_offset_hours: number; birth_datetime_local: string; place: string };
+  vargas: Record<string, import("@/components/Chart").ChartData>;
+  planets: Record<string, Position>;
+  aspects: { from: string; to: string; distance: number }[];
+  yogas: { id: string; name: string; level: string; source: string; conditions_fired: string[]; note?: string }[];
+  ashtakavarga: { signs: string[]; planets: string[]; sav: number[] | null; bav: number[][] | null };
+  sensitivity: Record<string, Window>;
+  moon_pada: Window & { pada: number };
+  dashas: { date: string; dasha_year: string; date_convention: string; vimshottari: Dasha[]; yogini: Dasha[]; chara: Dasha[] };
+};
+export type ChartTransits = {
+  time_zone: string; rule_version: string; reduced_precision: boolean;
+  events: { at: string; kind: string; from?: string; to: string }[];
+  kakshya_slices: { sign: string; lord: string; start: string; end: string; bindu_active: boolean }[];
+  sade_sati?: { phase: string; sign: string; start: string; end: string; start_clipped: boolean; end_clipped: boolean }[];
+};
+export type DegreeTable = { warnings: string[]; unavailable: string[];
+  planets: Record<string, { source_text: string; error_arcsec: number; nakshatra_padas: { name: string; pada: number }[] }>;
+  vargas: Record<string, Record<string, { possible_signs: number[]; status: string }>>;
+};
+export type KpChart = {
+  frame: { ayanamsa: string; dms: string; houses: string; rule_version: string; source: string };
+  cusps: { house: number; sign: string; degree: number; star_lord: string; sub_lord: string; segment: number }[];
+  significators: { house: number; stars_of_occupants: string[]; occupants: string[]; stars_of_owner: string[]; owner: string }[];
+  ruling_planets: Record<string, string | null>;
+  segments: { number: number; start_arcsec: number; end_arcsec: number; nakshatra: string; sub_lord: string }[];
+  limitations: string[];
+};
+export type Coverage = { version: string; counts: Record<string, number>;
+  intents: { intent_id: string; phase: number; domain: string; status: string; sample_questions: string[];
+    specificity: { status: string; chart_windows: number; supportive_chart_rate: number | null; mean_supportive_window_share: number | null } | null }[];
 };

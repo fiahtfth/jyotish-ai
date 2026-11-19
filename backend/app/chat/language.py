@@ -22,6 +22,24 @@ def focus_text(text):
     return re.split(r",\s*not\b|\s+rather than\b|\s+instead of\b", text, flags=re.I)[0].strip()
 
 
+def topic_correction(text):
+    return bool(re.search(
+        r"\b(?:actually|instead|i (?:meant|mean)|rather than|not|nahi|nahin|ki baat|"
+        r"separately|(?:new|different|separate|unrelated) (?:question|topic)|(?:alag|naya) sawaal)\b"
+        r"|नहीं|बल्कि|मेरा मतलब|अलग सवाल",
+        text, re.I))
+
+
+def prior_period_request(text):
+    """Recognize an explicit instruction to keep or drop the previous window."""
+    if re.search(r"\b(?:not|no longer) (?:the )?same (?:period|time)\b|\b(?:use|choose) (?:a )?different period\b",
+                 text, re.I):
+        return False
+    if re.search(r"\b(?:same (?:period|time)|usi (?:period|samay))\b|उसी अवधि|उसी समय", text, re.I):
+        return True
+    return None
+
+
 def _month_window(year, month):
     return date(year, month, 1), date(year, month, calendar.monthrange(year, month)[1])
 

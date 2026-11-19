@@ -1,0 +1,525 @@
+{
+ "pack": "core",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "LINK_L1",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet lords house h; counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "LINK_L2",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet occupies house h; counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "LINK_L3",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet aspects house h (graha drishti); counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "LINK_L4",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet conjunct with / aspects the lord of h; counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "LINK_L5",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet's nakshatra lord lords or occupies h; counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "LINK_L6",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (K.N. Rao linking convention)",
+   "conditions": "planet occupies a sign owned by the lord of h; counted from Lagna weight 1.0 and Moon weight 0.5",
+   "exceptions": [
+    "Rahu/Ketu own no signs: no L1/L6 for nodes"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_links_L1_to_L6_fixture"
+   ]
+  },
+  {
+   "rule_id": "ADV_HOUSES",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4",
+   "conditions": "ADV = 12th from each house in E, excluding houses already in E",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_adv_computation"
+   ]
+  },
+  {
+   "rule_id": "LINK_BALANCE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 item 5",
+   "conditions": "adverse when weighted links to ADV outweigh links to E",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_adv_computation"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F1",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "E-lord strength: +1 Shadbala ratio>=1.0 or Vimshopaka>=10; -1 ratio<0.8 and debilitated without Neecha Bhanga",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F2",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "E-lord D1 dignity: +1 exalted/moolatrikona/own/friend sign; -1 debilitated/enemy/combust (needs compound_dignity fact)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F3",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "E-house condition: +1 benefic occupation/aspect or SAV>=28; -1 only malefic influence or SAV<25",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F4",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "Varga confirmation: +1 D1 E-lord in kendra/trikona of V or vargottama; -1 in 6/8/12 of V",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F5",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "Karaka: +1 strong and well placed in D1 and V; -1 debilitated/combust/6-8-12",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_F6",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3; BPHS (Shadbala, dignity, yogas)",
+   "conditions": "Yogas: +1 relevant classical supportive yoga; -1 relevant denial combination (none enabled in pack)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_gate_levels",
+    "backend/tests/test_convergence_core.py::test_promise_unavailable_factor_not_fabricated"
+   ]
+  },
+  {
+   "rule_id": "PROMISE_LEVELS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3",
+   "conditions": "STRONG >= +3; MODERATE 0..+2; WEAK < 0; WEAK caps result at weak_indication",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_promise_weak_caps_result_type"
+   ]
+  },
+  {
+   "rule_id": "DEDUP_FACTORS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.2",
+   "conditions": "pillar counts only if a supportive evidence item has a factor unused by higher-priority counted pillars (P1>P2>P3>P4)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_dedup_same_planet_p2_dependent"
+   ]
+  },
+  {
+   "rule_id": "RESULT_TYPE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4",
+   "conditions": "supportive_period n>=min_n and promise not WEAK and no A; mixed n>=2 with A/M; weak n<=1 or promise WEAK; insufficient <=1 evaluated",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_ne_pillars_insufficient_data",
+    "backend/tests/test_convergence_core.py::test_promise_weak_caps_result_type"
+   ]
+  },
+  {
+   "rule_id": "WINDOW_NARROWING",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4",
+   "conditions": "P1->P2->P3->P4 interval intersection; only when non-empty",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_window_narrowing"
+   ]
+  },
+  {
+   "rule_id": "NATAL_M1",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.5",
+   "conditions": "D1 E-house occupants, E-lord placement/dignity, aspects, yogas",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_natal_template_badge"
+   ]
+  },
+  {
+   "rule_id": "NATAL_M2",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.5",
+   "conditions": "Varga V: E-lord and karaka in V; V-Lagna and E-house of V",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_natal_template_badge"
+   ]
+  },
+  {
+   "rule_id": "NATAL_M3",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.5",
+   "conditions": "Jaimini: J karaka sign/house/rashi-aspects; arudha and its 2nd/7th/12th",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_natal_template_badge"
+   ]
+  },
+  {
+   "rule_id": "NATAL_M4",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.5",
+   "conditions": "Strength: Shadbala, Vimshopaka, Bhava Bala, SAV",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_core.py::test_natal_template_badge"
+   ]
+  },
+  {
+   "rule_id": "P2_ADVERSE_DASHA_SIGN",
+   "version": "0.1",
+   "source": "K.N. Rao Chara Dasha (wording VERIFY)",
+   "conditions": "dasha sign 6/8/12 from arudha or malefics without benefic rashi-aspect",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "P3_MUNTHA_FAVOURABLE_SETS",
+   "version": "0.1",
+   "source": "Tajika Neelakanthi (VERIFY)",
+   "conditions": "Muntha supportive in E or 1,2,3,5,9,10,11 with strong lord; adverse 4,6,7,8,12 with weak lord",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "CAREER_NAVAMSA_DISPOSITOR",
+   "version": "0.1",
+   "source": "Phaladeepika/Saravali (VERIFY)",
+   "conditions": "10th lord's navamsa dispositor profession signature",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "LAKSHMI_YOGA",
+   "version": "0.1",
+   "source": "BPHS (VERIFY)",
+   "conditions": "Lakshmi yoga conditions",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "UL_SUSTENANCE",
+   "version": "0.1",
+   "source": "Jaimini Sutras (VERIFY)",
+   "conditions": "benefics in/aspecting 2nd from UL support continuity",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "SETTLEMENT_7TH",
+   "version": "0.1",
+   "source": "(VERIFY)",
+   "conditions": "7th house role in foreign settlement",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "PROGENY_RULES",
+   "version": "0.1",
+   "source": "BPHS (VERIFY)",
+   "conditions": "classical progeny rules",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "FATHER_HOUSE_9_VS_10",
+   "version": "0.1",
+   "source": "BPHS / lineage (VERIFY)",
+   "conditions": "father significator house convention",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "ISHTA_DEVATA",
+   "version": "0.1",
+   "source": "Jaimini Sutras / Rath (VERIFY)",
+   "conditions": "12th from karakamsha ishta-devata",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "GEMSTONE_CONTRAINDICATION",
+   "version": "0.1",
+   "source": "(VERIFY)",
+   "conditions": "gemstones never for functional malefics or 6/8/12 lords",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "MUHURTA_CHINTAMANI_TABLES",
+   "version": "0.1",
+   "source": "Muhurta Chintamani (VERIFY)",
+   "conditions": "panchanga shuddhi tables per event type",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "NADI_BHAKOOT_CANCELLATION",
+   "version": "0.1",
+   "source": "Ashtakoota texts (VERIFY)",
+   "conditions": "Nadi/Bhakoot cancellations",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "SHOOLA_DASHA",
+   "version": "0.1",
+   "source": "Jaimini (VERIFY)",
+   "conditions": "Shoola dasha for self-care periods",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "KP_FAVOURABLE_HOUSE_SETS",
+   "version": "0.1",
+   "source": "KP Reader (VERIFY each row)",
+   "conditions": "favourable house sets per matter; KP never adds to n/4",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "GOVT_JOB_SUN_CHECK",
+   "version": "0.1",
+   "source": "(VERIFY)",
+   "conditions": "Sun strong or linked to 10/10th lord in D1 and D10",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  },
+  {
+   "rule_id": "MANGAL_DOSHA_CANCELLATIONS",
+   "version": "0.1",
+   "source": "(VERIFY)",
+   "conditions": "Mangal Dosha cancellations and mutual cancellation",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  }
+ ]
+}

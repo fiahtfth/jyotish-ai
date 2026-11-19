@@ -16,7 +16,7 @@ ambiguity flags instead of pretending the numbers are exact:
 import re
 
 from . import constants as K
-from .engine import VARGA_FUNCS
+from . import vargas
 from .settings import AYANAMSAS
 
 # ------------------------------------------------------------------ lexicon
@@ -33,6 +33,8 @@ PLANET_ALIASES = {
     "ketu": 8, "ke": 8,
     "uranus": 9, "neptune": 10, "pluto": 11,
     "lagna": "L", "asc": "L", "ascendant": "L", "as": "L", "l": "L",
+    "सूर्य": 0, "चंद्र": 1, "चन्द्र": 1, "मंगल": 2, "बुध": 3, "गुरु": 4,
+    "बृहस्पति": 4, "शुक्र": 5, "शनि": 6, "राहु": 7, "केतु": 8, "लग्न": "L",
 }
 
 SIGN_ALIASES = {
@@ -48,18 +50,21 @@ SIGN_ALIASES = {
     "capricorn": 9, "cap": 9, "cp": 9, "makara": 9, "makar": 9,
     "aquarius": 10, "aqu": 10, "aq": 10, "kumbha": 10, "kumbh": 10,
     "pisces": 11, "pis": 11, "pi": 11, "meena": 11, "meen": 11,
+    **{name: index for index, name in enumerate(
+        "मेष वृषभ मिथुन कर्क सिंह कन्या तुला वृश्चिक धनु मकर कुंभ मीन".split())},
+    "कुम्भ": 10,
 }
 
 DEG_RE = re.compile(r"(\d{1,2})")
 DEG_SYM_RE = re.compile(
     r"(?P<deg>\d{1,2})\s*[°:]\s*(?P<min>\d{1,2})?"
     r"(?:\s*['′:]\s*(?P<sec>\d{1,2}(?:\.\d+)?)\s*[\"″]?)?")
+DEG_SIGN_RE = re.compile(r"(?P<deg>\d{1,2})\s+(?P<sign>[A-Za-z]+|[\u0900-\u097F]+)\s+"
+                         r"(?P<min>\d{1,2})\s*(?:['′]\s*(?P<sec>\d{1,2}(?:\.\d+)?)\s*[\"″]?)?")
+DEG_DASH_RE = re.compile(r"(?P<deg>\d{1,2})-(?P<min>\d{2})-(?P<sec>\d{2}(?:\.\d+)?)\b")
 DECIMAL_RE = re.compile(r"(?P<deg>\d{1,2}\.\d+)")
 RETRO_RE = re.compile(r"(?:\(\s*[R℞]\s*\)|\b[R℞]\b)", re.IGNORECASE)
-WORD_RE = re.compile(r"[A-Za-z]+")
-
-PRECISION_ARCSEC = {"arcsec": 0.5, "arcmin": 30.0, "deg_2dp": 18.0,
-                    "deg_1dp": 180.0, "deg": 1800.0}
+WORD_RE = re.compile(r"[A-Za-z]+|[\u0900-\u097F]+")
 
 
 def _word_tokens(line: str) -> list[str]:
@@ -68,17 +73,21 @@ def _word_tokens(line: str) -> list[str]:
 
 def _parse_degrees(line: str):
     """(deg_in_sign, precision, error_deg) from the first plausible number(s)."""
-    m = DEG_SYM_RE.search(line)
+    m = DEG_SIGN_RE.search(line)
+    if m and m["sign"].lower() not in SIGN_ALIASES:
+        m = None
+    m = m or DEG_DASH_RE.search(line) or DEG_SYM_RE.search(line)
     if m:
         deg = int(m.group("deg"))
         minutes = int(m.group("min") or 0)
         sec = float(m.group("sec") or 0)
         if deg > 29 or minutes > 59 or sec >= 60:
-            pass  # implausible — fall through to other formats
+            return None, None, None
         else:
             total = deg + minutes / 60 + sec / 3600
             if m.group("sec") is not None:
-                return total, "arcsec", 0.5 / 3600
+                digits = len(m["sec"].partition(".")[2])
+                return total, "arcsec", 0.5 * 10 ** -digits / 3600
             if m.group("min") is not None:
                 return total, "arcmin", 30.0 / 3600
             return total, "deg", 0.5
@@ -91,24 +100,6 @@ def _parse_degrees(line: str):
     if m:
         return float(m.group(1)), "deg", 0.5
     return None, None, None
-
-
-def _varga_sign_of(fn, abs_long: float, pid) -> int:
-    sign, deg = divmod(abs_long, 30.0)
-    return int(fn([[pid, (int(sign), deg)]])[0][1][0])
-
-
-def _edge_ambiguity(abs_long: float, err_deg: float, pid) -> dict:
-    """Divisional signs at the ends of the pasted interval; flag if they differ."""
-    flips = {}
-    lo, hi = abs_long - err_deg, abs_long + err_deg
-    for name in ("D9", "D60"):
-        fn = VARGA_FUNCS[name]
-        s_lo = _varga_sign_of(fn, lo, pid)
-        s_hi = _varga_sign_of(fn, hi, pid)
-        if s_lo != s_hi:
-            flips[name] = [s_lo, _varga_sign_of(fn, abs_long, pid), s_hi]
-    return flips
 
 
 SOURCE_PROGRAMS = ("jagannatha_hora", "drik_panchang", "astrosage", "other")
@@ -126,10 +117,13 @@ def parse_degree_table(text: str, source_program: str, ayanamsa_id: str = "LAHIR
     if ayanamsa_id not in AYANAMSAS:
         raise ValueError(f"ayanamsa_id must be one of: {', '.join(AYANAMSAS)}")
     sp = (source_program or "").strip().lower()
+    sp = {"jh": "jagannatha_hora", "drik": "drik_panchang"}.get(sp, sp)
     if not sp:
         raise ValueError("source_program is required — the table's provenance matters")
+    if sp not in SOURCE_PROGRAMS:
+        raise ValueError(f"source_program must be one of {', '.join(SOURCE_PROGRAMS)}")
 
-    planets, warnings, skipped = {}, [], []
+    planets, warnings, skipped, exact_inputs = {}, [], [], {}
     for raw in text.splitlines():
         line = raw.strip()
         if not line or line.startswith(("#", ";", "//")):
@@ -162,19 +156,32 @@ def parse_degree_table(text: str, source_program: str, ayanamsa_id: str = "LAHIR
             "abs_longitude": round(sign * 30 + deg, 6),
             "retrograde": bool(RETRO_RE.search(line)),
             "precision": prec, "error_arcsec": round(err * 3600, 3),
-            "source_text": line[:80],
+            "source_text": raw,
         }
+        exact_inputs[name] = (sign, deg, err)
     if not planets:
         raise ValueError("no planet rows parsed")
 
-    ambiguous, d60_suspect = {}, []
+    ambiguous, nakshatra_ambiguity, d60_suspect, derived = {}, {}, [], {}
     for name, rec in planets.items():
-        err_deg = rec["error_arcsec"] / 3600.0
-        flips = _edge_ambiguity(rec["abs_longitude"], err_deg, rec["id"])
+        sign, degree, err_deg = exact_inputs[name]
+        longitude = sign * 30 + degree
+        low, high = longitude - err_deg, longitude + err_deg
+        flips = {}
+        for number in vargas.SCHEMES:
+            possibilities = vargas.signs_over_interval(number, low, high)
+            result = {"possible_signs": possibilities, "status": "ambiguous" if len(possibilities) > 1 else "stable"}
+            if len(possibilities) > 1:
+                flips[f"D{number}"] = possibilities
+            derived.setdefault(f"D{number}", {})[name] = result
         if flips:
             ambiguous[name] = flips
-        if err_deg >= 0.25:   # half a D60 part
+        if err_deg >= 0.25 or "D60" in flips:
             d60_suspect.append(name)
+        padas = list(dict.fromkeys(vargas.nakshatra_pada(value) for value in (low, longitude, high)))
+        rec["nakshatra_padas"] = [{"name": K.NAKSHATRAS[pada // 4], "pada": pada % 4 + 1} for pada in padas]
+        if len(padas) > 1:
+            nakshatra_ambiguity[name] = rec["nakshatra_padas"]
 
     # Chara-karaka rank ambiguity under the default 7-karaka scheme:
     # adjacent degree intervals that overlap cannot be ordered.
@@ -192,7 +199,7 @@ def parse_degree_table(text: str, source_program: str, ayanamsa_id: str = "LAHIR
     if d60_suspect:
         warnings.append("D60 is unreliable for "
                         + ", ".join(d60_suspect)
-                        + " — pasted precision is coarser than half a D60 part (15′)")
+                        + " because the pasted interval crosses a boundary or is too coarse")
     if ambiguous:
         warnings.append("varga signs ambiguous at pasted precision for: "
                         + ", ".join(sorted(ambiguous)))
@@ -203,11 +210,13 @@ def parse_degree_table(text: str, source_program: str, ayanamsa_id: str = "LAHIR
     return {
         "source_program": sp, "ayanamsa_id": ayanamsa_id,
         "planets": planets,
-        "ambiguity": {"varga_flips": ambiguous, "karaka_ties": karaka_ties},
+        "vargas": derived, "varga_rule_version": vargas.VERSION, "varga_schemes": vargas.scheme_labels(),
+        "ambiguity": {"varga_flips": ambiguous, "karaka_ties": karaka_ties, "nakshatra_padas": nakshatra_ambiguity},
         "warnings": warnings,
         "unavailable": [
             "Lagna/houses", "Vimshottari and all dashas", "Chara dasha",
-            "Ashtakavarga", "transits and timing windows",
+            "Ashtakavarga", "transits and timing windows", "birth-time sensitivity",
+            "Varshaphala", "mean/true node check", "KP cusps",
             "anything requiring the birth instant"],
         "note": "Pasted longitudes carry the pasted precision; ambiguities are "
                 "flagged, never resolved by guessing.",

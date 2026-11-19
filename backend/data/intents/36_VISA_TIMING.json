@@ -1,0 +1,56 @@
+{
+  "intent_id": "VISA_TIMING",
+  "number": 36,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    9,
+    12,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Rahu",
+    "Jupiter",
+    "Sun"
+  ],
+  "V": [
+    "D4",
+    "D9"
+  ],
+  "J": [
+    "A12",
+    "A9"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Rahu",
+      "Ketu"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      3,
+      9,
+      12,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [],
+  "forecast_events": []
+}

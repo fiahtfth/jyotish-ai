@@ -1,0 +1,50 @@
+{
+  "intent_id": "STUDY_FIELD",
+  "number": 25,
+  "phase": 1,
+  "template": "N",
+  "E": [
+    4,
+    5,
+    9
+  ],
+  "E_optional": [
+    10
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Jupiter"
+  ],
+  "V": [
+    "D24"
+  ],
+  "J": [
+    "PK",
+    "A5",
+    "KARAKAMSHA"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "education",
+  "legacy_ids": [
+    "STUDY_FIELD"
+  ],
+  "forecast_events": []
+}

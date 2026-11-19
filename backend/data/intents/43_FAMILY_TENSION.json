@@ -1,0 +1,51 @@
+{
+  "intent_id": "FAMILY_TENSION",
+  "number": 43,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    2,
+    4,
+    7,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Moon",
+    "Mars",
+    "Saturn",
+    "Rahu"
+  ],
+  "V": [
+    "D12",
+    "D4"
+  ],
+  "J": [
+    "A2",
+    "A4",
+    "GK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "p1_overlay",
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "children_family",
+  "legacy_ids": [],
+  "forecast_events": []
+}

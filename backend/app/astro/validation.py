@@ -4,7 +4,42 @@ No weights are fitted here. This establishes a reproducible benchmark against
 which future rule/precision changes must be tested before deployment.
 """
 from datetime import date
+from math import log
+from statistics import mean, median
 from .prediction import scorecard, prospective_rows
+
+
+def _timing_error(rows):
+    errors = []
+    for row in rows:
+        if row.get("event_date") and row["outcome"] in ("happened", "outside_window"):
+            start, end, actual = (date.fromisoformat(str(row[key])[:10])
+                                  for key in ("window_start", "window_end", "event_date"))
+            errors.append(max((start - actual).days, (actual - end).days, 0))
+    return {"dated_events": len(errors), "median_days_outside_window": median(errors) if errors else None,
+            "mean_days_outside_window": mean(errors) if errors else None}
+
+
+def _probability_metrics(rows, development_rate):
+    pairs = []
+    for row in rows:
+        p = row.get("frozen_probability")
+        frozen = str(row.get("probability_frozen_at") or "")[:10]
+        if type(p) in (float, int) and 0 <= p <= 1 and frozen and frozen < str(row["window_start"])[:10]:
+            pairs.append((p, int(row["outcome"] == "happened")))
+    if not pairs:
+        return {"status": "unavailable", "observations": 0, "reason": "No pre-window probability was provided."}
+    bins = {}
+    for p, actual in pairs:
+        bins.setdefault(min(9, int(p * 10)), []).append((p, actual))
+    return {"status": "evaluated", "observations": len(pairs),
+            "brier": mean((p - actual) ** 2 for p, actual in pairs),
+            "log_loss": -mean(log(max(1e-15, p if actual else 1 - p)) for p, actual in pairs),
+            "base_rate_brier": mean((development_rate - actual) ** 2 for _, actual in pairs)
+            if development_rate is not None else None,
+            "reliability": [{"bin": level, "count": len(group),
+                             "mean_forecast": mean(p for p, _ in group), "observed_rate": mean(a for _, a in group)}
+                            for level, group in sorted(bins.items())]}
 
 
 def evaluate_dataset(rows, *, cutoff, holdout_profiles, today=None):
@@ -35,6 +70,8 @@ def evaluate_dataset(rows, *, cutoff, holdout_profiles, today=None):
         hits = sum((r["outcome"] == "happened") == predicted_event for r in resolved) if dev else None
         baselines[f"{domain}:{event_type}"] = {"development_observations": len(dev), "development_event_frequency": rate,
                              "test_observations": len(resolved), "baseline_hits": hits,
+                             "timing_error": _timing_error(resolved),
+                             "probability_metrics": _probability_metrics(resolved, rate),
                              "scorecard": scorecard([r for r in test if r["domain"] == domain and (r.get("event_type") or "unspecified") == event_type], today=now)}
     return {"cutoff": cutoff, "development_rows": len(train), "holdout_rows": len(test),
             "holdout": metrics, "by_domain": baselines,

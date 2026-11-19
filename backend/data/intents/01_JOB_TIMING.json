@@ -1,0 +1,70 @@
+{
+  "intent_id": "JOB_TIMING",
+  "number": 1,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    10,
+    6,
+    11
+  ],
+  "E_optional": [
+    2
+  ],
+  "E_adverse_explicit": [],
+  "K": [
+    "Saturn",
+    "Sun",
+    "Mercury",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10"
+  ],
+  "TAJ": {
+    "houses": [
+      10,
+      6
+    ],
+    "muntha_supportive": [
+      10,
+      11
+    ]
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": [
+      "Mars",
+      "Sun"
+    ]
+  },
+  "KP": {
+    "houses": [
+      2,
+      6,
+      10,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [
+    "JOB_TIMING"
+  ],
+  "forecast_events": [
+    "job_offer"
+  ]
+}

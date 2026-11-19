@@ -3,7 +3,7 @@ import re
 import math
 from datetime import date
 
-VERSION = "2026-11-18.2"
+VERSION = "2026-11-19.1"
 # These definitions are prospective scoring targets, not generated event promises.
 EVENTS = [
     ("career", r"promot|move up (?:at work|the ladder)|higher role|पदोन्नति", "promotion", "A formal promotion to a higher role takes effect"),
@@ -15,7 +15,8 @@ EVENTS = [
     ("education", r"pass.{0,20}exam", "exam_pass", "An official passing result for the stated exam is received"),
     ("education", r"admission|admitted", "admission", "A formal admission offer is received"),
     ("education", r"graduat|complete.{0,15}degree", "graduation", "The stated qualification is officially completed"),
-    ("relocation", r"move|relocat|abroad|foreign|settle", "relocation", "A move of primary residence to the stated destination occurs"),
+    ("relocation", r"\b(?:move|moving|relocat\w*|settle|settling|change of residence)\b",
+     "relocation", "A move of primary residence to the stated destination occurs"),
 ]
 
 
@@ -26,11 +27,11 @@ def event_spec(question, domain):
     return None
 
 
-def decide(question, analysis, event=None):
+def decide(question, analysis, event=None, *, as_of=None):
     spec = event or event_spec(question, analysis["domain"])
     reasons = []
     prec, sens = analysis.get("precision", {}), analysis.get("sensitivity", {})
-    if date.fromisoformat(analysis["analysis_window"]["end"]) < date.today():
+    if date.fromisoformat(analysis["analysis_window"]["end"]) < (as_of or date.today()):
         reasons.append("This is a retrospective interval, not a future event forecast.")
     if not spec:
         reasons.append("The question needs one observable event before it can be scored.")

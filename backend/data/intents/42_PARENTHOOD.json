@@ -1,0 +1,52 @@
+{
+  "intent_id": "PARENTHOOD",
+  "number": 42,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    5,
+    9,
+    11,
+    2
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Jupiter",
+    "PK"
+  ],
+  "V": [
+    "D7"
+  ],
+  "J": [
+    "PK",
+    "A5"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      2,
+      5,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "children_family",
+  "legacy_ids": [
+    "CHILDREN_THEMES"
+  ],
+  "forecast_events": []
+}

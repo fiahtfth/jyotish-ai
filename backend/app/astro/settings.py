@@ -1,9 +1,8 @@
 """Calculation settings: the single, explicit description of the engine frame.
 
 Every choice that can move a planet, a sign boundary or a dasha date lives
-here, is validated, and is folded into the calc fingerprint. Defaults
-reproduce the engine's historical behaviour exactly (SE Lahiri, mean nodes,
-true positions, PyJHora's true tropical dasha year, KN Rao Chara dasha).
+here, is validated, and is folded into the calc fingerprint. The default uses
+SE Lahiri, mean nodes, true positions, 365.25-day dashas, and KN Rao Chara dasha.
 
 Other packages (Jaimini, time zones, LLM layer) read these fields by name:
 chara_school, karaka_scheme, colord_rule, arudha_exception, combust_table,
@@ -40,7 +39,7 @@ COMBUST_TABLES = ("surya_siddhanta", "wide_variant")
 DASHA_YEAR_DAYS = {
     "julian": 365.25,
     "gregorian": 365.2425,
-    "sidereal": 365.256364,   # PyJHora const.sidereal_year (JH value)
+    "sidereal": 365.256363,
     "savana_360": 360.0,
     "true_tropical": 365.2407,  # nominal; actual value is computed per chart
 }
@@ -61,7 +60,7 @@ class CalcSettings:
     node: str = "mean"
     positions: str = "true"
     center: str = "geocentric"
-    dasha_year: str = "true_tropical"
+    dasha_year: str = "julian"
     chara_school: str = "KNRao"
     karaka_scheme: str = "7_KNRao"
     colord_rule: str = "school"
@@ -113,6 +112,7 @@ DEFAULT = CalcSettings()
 
 PRESETS: dict[str, CalcSettings] = {
     "default": DEFAULT,
+    "legacy_tropical": CalcSettings(dasha_year="true_tropical"),
     # Drik Panchang style: Lahiri, mean nodes, Julian-year dashas (unverified).
     "drik": CalcSettings(ayanamsa="LAHIRI", node="mean", positions="true",
                          dasha_year="julian"),

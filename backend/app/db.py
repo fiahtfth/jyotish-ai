@@ -46,6 +46,7 @@ class User(Base):
     terms_version = Column(String, nullable=True)
     terms_accepted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, nullable=False, default=False, server_default=false())
+    prediction_followups = Column(Boolean, nullable=False, default=False, server_default=false())
     created_at = Column(DateTime, default=_utcnow)
     # the birth profile (person) the chat/chart/calibration endpoints act on;
     # plain integer, validated against the user's own profiles on every use
@@ -76,6 +77,7 @@ class BirthProfile(Base):
     display_name = Column(String, default="")
     # who this chart is for, relative to the account owner
     relation = Column(String, nullable=False, default="self", server_default="self")
+    permission_confirmed_at = Column(DateTime, nullable=True)
     year = Column(Integer); month = Column(Integer); day = Column(Integer)
     hour = Column(Integer); minute = Column(Integer); second = Column(Integer, default=0)
     place_name = Column(String); place_state = Column(String, default="")

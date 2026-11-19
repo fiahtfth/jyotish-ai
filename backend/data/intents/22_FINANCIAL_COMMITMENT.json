@@ -1,0 +1,53 @@
+{
+  "intent_id": "FINANCIAL_COMMITMENT",
+  "number": 22,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    2,
+    11,
+    5
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [
+    8
+  ],
+  "K": [
+    "Jupiter",
+    "Mercury"
+  ],
+  "V": [
+    "D2"
+  ],
+  "J": [
+    "A2",
+    "A11"
+  ],
+  "TAJ": {
+    "houses": [
+      2,
+      11
+    ],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "finance",
+  "legacy_ids": [],
+  "forecast_events": []
+}

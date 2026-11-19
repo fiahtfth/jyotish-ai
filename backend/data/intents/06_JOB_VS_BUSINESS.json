@@ -1,0 +1,50 @@
+{
+  "intent_id": "JOB_VS_BUSINESS",
+  "number": 6,
+  "phase": 1,
+  "template": "N+T",
+  "E": [
+    6,
+    7,
+    10,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Saturn",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "A7",
+    "A10"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special",
+    "p1_overlay"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [
+    "JOB_VS_BUSINESS"
+  ],
+  "forecast_events": []
+}

@@ -107,6 +107,20 @@ def test_validation_prevents_person_and_future_outcome_leakage():
     assert r['by_domain']['career:promotion']['development_event_frequency'] == 1
 
 
+def test_validation_only_scores_probabilities_frozen_before_the_window():
+    forecasts = [
+        row("outside_window", profile_id=1, event_date="2027-02-05",
+            frozen_probability=0.25, probability_frozen_at="2026-12-01T12:00:00"),
+        row("happened", profile_id=2, event_date="2027-01-20",
+            frozen_probability=0.99, probability_frozen_at="2027-01-02T12:00:00"),
+    ]
+    result = evaluate_dataset(forecasts, cutoff="2026-12-01", holdout_profiles=[1, 2], today=date(2027, 3, 1))
+    domain = result["by_domain"]["career:promotion"]
+    assert domain["probability_metrics"]["observations"] == 1
+    assert domain["probability_metrics"]["brier"] == 0.0625
+    assert domain["timing_error"]["median_days_outside_window"] == 2
+
+
 def test_duplicate_forecasts_do_not_multiply_hits():
     r = Q.scorecard([row('happened'), row('happened')],today=date(2027,3,1))
     assert r['hits'] == 1 and r['duplicate_forecasts_excluded'] == 1

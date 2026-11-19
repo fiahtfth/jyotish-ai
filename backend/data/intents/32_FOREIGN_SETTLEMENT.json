@@ -1,0 +1,58 @@
+{
+  "intent_id": "FOREIGN_SETTLEMENT",
+  "number": 32,
+  "phase": 1,
+  "template": "N+T",
+  "E": [
+    12,
+    9
+  ],
+  "E_optional": [
+    7
+  ],
+  "E_adverse_explicit": [
+    4
+  ],
+  "K": [
+    "Rahu",
+    "Saturn"
+  ],
+  "V": [
+    "D4"
+  ],
+  "J": [
+    "A4",
+    "A12",
+    "AL_12"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      3,
+      9,
+      12
+    ],
+    "negate": [
+      4
+    ],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "foreign",
+  "legacy_ids": [
+    "FOREIGN_SETTLEMENT",
+    "TEMPORARY_RESIDENCE"
+  ],
+  "forecast_events": []
+}

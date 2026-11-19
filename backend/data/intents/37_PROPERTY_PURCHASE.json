@@ -1,0 +1,65 @@
+{
+  "intent_id": "PROPERTY_PURCHASE",
+  "number": 37,
+  "phase": 1,
+  "template": "T",
+  "E": [
+    4,
+    11,
+    2,
+    12
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mars",
+    "Venus",
+    "Moon",
+    "Saturn"
+  ],
+  "V": [
+    "D4"
+  ],
+  "J": [
+    "A4",
+    "MK"
+  ],
+  "TAJ": {
+    "houses": [
+      4,
+      11
+    ],
+    "muntha_supportive": [
+      4,
+      11
+    ]
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": [
+      "Mars"
+    ]
+  },
+  "KP": {
+    "houses": [
+      4,
+      11,
+      12
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "property",
+  "legacy_ids": [
+    "PROPERTY_PURCHASE"
+  ],
+  "forecast_events": []
+}

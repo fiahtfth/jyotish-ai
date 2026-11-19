@@ -1,0 +1,51 @@
+{
+  "intent_id": "HIGHER_STUDIES",
+  "number": 29,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    9,
+    5,
+    8,
+    12
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Jupiter",
+    "Mercury",
+    "Ketu",
+    "Saturn"
+  ],
+  "V": [
+    "D24"
+  ],
+  "J": [
+    "A5",
+    "A9",
+    "KARAKAMSHA"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "education",
+  "legacy_ids": [
+    "PROFESSIONAL_CERTIFICATION"
+  ],
+  "forecast_events": []
+}

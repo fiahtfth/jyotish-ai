@@ -1,0 +1,59 @@
+{
+  "intent_id": "GOVT_JOB",
+  "number": 4,
+  "phase": 2,
+  "template": "T",
+  "E": [
+    10,
+    6,
+    11
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Sun",
+    "Saturn",
+    "Jupiter",
+    "AmK"
+  ],
+  "V": [
+    "D10"
+  ],
+  "J": [
+    "AmK",
+    "A10"
+  ],
+  "TAJ": {
+    "houses": [
+      10
+    ],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [
+      "Jupiter",
+      "Saturn"
+    ],
+    "fast": [
+      "Sun"
+    ]
+  },
+  "KP": {
+    "houses": [
+      2,
+      6,
+      10,
+      11
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": false,
+  "safety_domain": "career",
+  "legacy_ids": [],
+  "forecast_events": []
+}

@@ -1,0 +1,37 @@
+{
+  "intent_id": "STRESS_PHASE",
+  "number": 47,
+  "phase": 3,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "current_dasha",
+    "sade_sati"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "wellbeing",
+  "legacy_ids": [
+    "HEALTH_PERIOD_SYMBOLISM",
+    "WELLBEING_THEMES"
+  ],
+  "forecast_events": []
+}

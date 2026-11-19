@@ -1,0 +1,42 @@
+{
+  "intent_id": "RECURRING_PATTERNS",
+  "number": 52,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    1,
+    5,
+    7
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "AK"
+  ],
+  "V": [],
+  "J": [
+    "AK"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "p1_overlay",
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "personality_spiritual",
+  "legacy_ids": [],
+  "forecast_events": []
+}

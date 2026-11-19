@@ -1,0 +1,36 @@
+{
+  "intent_id": "COMPATIBILITY",
+  "number": 12,
+  "phase": 3,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "compatibility"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": true,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [
+    "MANGAL_DOSHA",
+    "RELATIONSHIP_COMPATIBILITY"
+  ],
+  "forecast_events": []
+}

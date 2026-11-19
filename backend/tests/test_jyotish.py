@@ -14,6 +14,7 @@ if os.path.exists("/tmp/jyotish_test.db"):
 
 from app.main import app  # noqa: E402
 from app.db import init_db  # noqa: E402
+from app.policy import TERMS_VERSION  # noqa: E402
 from app.astro.engine import engine, BirthInput  # noqa: E402
 from app.astro import verify as V  # noqa: E402
 from app.astro import calibration as C  # noqa: E402
@@ -661,7 +662,7 @@ def test_ai_enabled_by_accepting_signup_terms():
     assert account["llm_consent"] is True
     assert account["ai_terms_required"] is False
     exported = client.get("/api/auth/me/export", headers=h).json()["account"]
-    assert exported["terms_version"] == "2026-11-17"
+    assert exported["terms_version"] == TERMS_VERSION
     assert exported["terms_accepted_at"]
     assert client.put("/api/auth/consent", json={"llm_consent": False}, headers=h).status_code in (404, 405)
 
@@ -698,7 +699,7 @@ def test_legacy_accounts_accept_terms_once_before_ai(monkeypatch):
     exported = client.get("/api/auth/me/export", headers=h).json()["account"]
     timestamp = exported["terms_accepted_at"]
     assert timestamp and exported["llm_consent"] is True
-    assert exported["terms_version"] == "2026-11-17"
+    assert exported["terms_version"] == TERMS_VERSION
     send("tell me about my moon", h)
     assert seen == [True]
     client.post("/api/auth/terms", json={"terms_accepted": True}, headers=h)
@@ -893,7 +894,7 @@ def test_init_db_fresh_sqlite_reaches_head(tmp_path):
     assert {"users", "auth_tokens", "prediction_records", "alembic_version"} <= set(insp.get_table_names())
     assert "email_verified" in {c["name"] for c in insp.get_columns("users")}
     with eng.connect() as c:
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
 
 
 def test_init_db_upgrades_pre_alembic_database(tmp_path):
@@ -930,7 +931,7 @@ def test_init_db_upgrades_pre_alembic_database(tmp_path):
     with eng.connect() as c:
         row = c.exec_driver_sql("select token_nonce, email_verified from users").one()
         assert row[0] and not row[1]          # nonce backfilled, unverified
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
 
 
 # ---------- 8. Streaming chat ----------
@@ -1106,6 +1107,7 @@ def test_future_analysis_persists_prediction_record():
 
 def test_followup_asked_after_window_and_reply_records_outcome():
     h = register_and_profile()
+    assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     # window still in the future: no follow-up
@@ -1134,6 +1136,7 @@ def test_followup_asked_after_window_and_reply_records_outcome():
                                           ("Not sure", "unsure")])
 def test_followup_option_mapping(text, outcome):
     h = register_and_profile()
+    assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     _age_predictions(h)
@@ -1144,6 +1147,7 @@ def test_followup_option_mapping(text, outcome):
 
 def test_no_followup_while_calibrating_and_export_includes_predictions():
     h = register_and_profile()
+    assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     _age_predictions(h)
@@ -1444,7 +1448,7 @@ def test_feedback_exported_and_deleted_with_account():
 
 # ---------- 12. Multiple birth profiles (family members) ----------
 
-MUM = dict(ARJUN, display_name="Mum", relation="mother", year=1962, month=3, day=2,
+MUM = dict(ARJUN, display_name="Mum", relation="mother", permission_confirmed=True, year=1962, month=3, day=2,
            hour=14, minute=5)
 
 
@@ -1488,7 +1492,8 @@ def test_migration_0006_preserves_data_and_allows_many_profiles(tmp_path):
         assert c.exec_driver_sql("select profile_id from calibration_events").scalar() == 7
         # a second profile for the same user is now legal
         c.exec_driver_sql("INSERT INTO birth_profiles (id, user_id, relation) VALUES (10, 1, 'mother')")
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0011"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
+        assert c.exec_driver_sql("select calc_preset from birth_profiles where id = 7").scalar() == "legacy_tropical"
     D.init_db(eng)       # idempotent
 
 
@@ -2165,3 +2170,279 @@ def test_career_match_accepts_uncatalogued_roles_and_stated_skills():
     assert reply["meta"]["career_result"]["leader"] == "Option a · Optical bench technician"
     roles = reply["meta"]["career_result"]["roles"]
     assert roles[0]["matched"] == ["laser alignment"] and roles[0]["code"] is None
+
+
+def test_chat_reuses_only_relevant_user_facts_after_they_leave_recent_history(monkeypatch):
+    from app.chat import memory
+    from app.llm import providers
+    h = register_and_profile()
+    _open_calibrated(h)
+    statements = "I joined my first job in 2015. I work as a data analyst. My sister moved to Delhi in 2021."
+    saved = send(statements, h)[0]["meta"][memory.KEY]
+    assert [entry["kind"] for entry in saved] == ["milestone", "personal", "family"]
+    send("Actually, I work as a school principal now.", h)
+    assert memory.KEY not in send("Will I move to Mumbai next year?", h)[0]["meta"]
+    for _ in range(8):
+        send("Thanks.", h)
+    remembered = []
+
+    def generate(messages, **kwargs):
+        assert not any(m["content"] == statements for m in messages)
+        remembered.extend(kwargs["consultation_memory"])
+        return "Let's discuss your career.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
+    send("What does my chart say about leadership in my career?", h)
+    quotes = {entry["quote"] for entry in remembered}
+    assert quotes == {"I joined my first job in 2015.", "Actually, I work as a school principal now."}
+    recall = send("What do you remember about me?", h)[-1]["content"]
+    assert "school principal" in recall and "sister moved" in recall
+    assert "data analyst" not in recall
+
+
+def test_chat_memory_stays_with_the_birth_profile_and_resets_with_chat():
+    from app.chat.memory import KEY
+    h = register_and_profile()
+    own = client.get("/api/profile", headers=h).json()["id"]
+    send("I got married in 2021.", h)
+    other_profile = {**MUM, "relation": "mother", "display_name": "Mother"}
+    assert client.post("/api/profiles", headers=h, json=other_profile).status_code == 200
+    assert KEY not in send("I work as a data analyst.", h)[0]["meta"]
+    assert KEY not in send("My father retired in 2018.", h)[0]["meta"]
+    assert send("My mother retired in 2020.", h)[0]["meta"][KEY][0]["kind"] == "family"
+    recall = send("What do you remember about me?", h)[-1]["content"]
+    assert "mother retired" in recall and "married" not in recall
+    assert client.post(f"/api/profiles/{own}/activate", headers=h).status_code == 200
+    assert "married in 2021" in send("What do you remember about me?", h)[-1]["content"]
+    exported = client.get("/api/auth/me/export", headers=h).json()
+    assert any(m.get("saved_details") for c in exported["conversations"] for m in c["messages"])
+    assert client.post("/api/chat/reset", headers=h).status_code == 200
+    assert "married" not in send("What do you remember about me?", h)[-1]["content"]
+
+
+def test_chat_keeps_reaction_to_reading_without_scoring_it_as_forecast_outcome():
+    from app.chat.memory import KEY
+    h = register_and_profile()
+    _open_calibrated(h)
+    reading = send("Will I get a promotion in my career next year?", h)[-1]
+    feedback = send("Your prediction about my promotion was wrong.", h)
+    entry = feedback[0]["meta"][KEY][0]
+    assert entry["reading_id"] == reading["id"] and entry["status"] == "disagreed"
+    assert "noted your feedback" in feedback[-1]["content"]
+    assert "didn't match your experience" in send("What do you remember about me?", h)[-1]["content"]
+    assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] is None
+
+
+def test_memory_extraction_rejects_invented_facts_and_partial_quotes(monkeypatch):
+    from app.chat import memory
+    from app.llm import providers
+    line = "मैं पुणे में नृत्य सिखाती हूँ।"
+    negative = "I am not a doctor."
+    result = [
+        {"kind": "personal", "domain": "career", "slot": "role", "quote": line},
+        {"kind": "personal", "domain": "career", "slot": "role", "quote": "I am a doctor."},
+        {"kind": "personal", "domain": "career", "slot": "role", "quote": "a doctor."},
+    ]
+    monkeypatch.setattr(providers, "consultation_memories", lambda *a, **k: result)
+    captured = memory.capture(f"{line} {negative}", relation="self", allow_external=True)
+    assert [entry["quote"] for entry in captured] == [line]
+
+
+def test_career_comparison_uses_previously_shared_experience():
+    h = register_and_profile()
+    _open_calibrated(h)
+    send("I have experience in SQL dashboards.", h)
+    result = send("Compare BI analyst and corporate trainer", h)[-1]["meta"]["career_result"]
+    assert result["leader"] == "BI analyst"
+    assert "dashboards" in result["roles"][0]["matched"]
+
+
+def test_provider_receives_saved_details_as_user_data(monkeypatch):
+    from app.llm import providers
+    seen = []
+
+    def complete(system, messages, timeout):
+        seen.append((system, messages))
+        return "Let's consider your current work."
+
+    monkeypatch.setattr(providers, "_available_providers", lambda allow_external: ["groq"])
+    monkeypatch.setitem(providers.PROVIDERS, "groq", complete)
+    question = "What should I look for in a new job?"
+    saved = "I work as a school principal."
+    providers.generate([{"role": "user", "content": question}],
+                       consultation_memory=[{"kind": "personal", "quote": saved}])
+    system, messages = seen[0]
+    assert saved not in system
+    assert messages[-1]["role"] == "user"
+    assert saved in messages[-1]["content"] and messages[-1]["content"].endswith(question)
+
+
+def _decision_answer(label, options, probability=0.9):
+    other = (1 - probability) / (len(options) - 1)
+    return {"type": "choice", "choice": label,
+            "probabilities": {key: probability if key == label else other for key in options}}
+
+
+def test_decider_uses_openrouter_decisions_and_preserves_the_confirmed_period(monkeypatch):
+    import httpx
+    from app.llm import decider, providers
+    monkeypatch.setattr(providers.settings, "DECIDER_ENABLED", True)
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    calls = []
+    choices = iter([("job_change", "keep"), ("career", "fresh"), ("job_offer", "fresh")])
+
+    def post(url, *, headers, json, timeout):
+        calls.append(json)
+        assert url == decider.URL
+        assert json["model"] == "perplexity/pplx-decider-flash-v1.3:free"
+        assert "messages" not in json
+        assert timeout <= 1.8
+        label, period = next(choices)
+        return httpx.Response(200, request=httpx.Request("POST", url), json={"answers": {
+            "topic": _decision_answer(label, json["questions"]["topic"]["criteria"]),
+            "period": _decision_answer(period, json["questions"]["period"]["criteria"]),
+        }})
+
+    monkeypatch.setattr(decider.httpx, "post", post)
+    h = register_and_profile()
+    _open_calibrated(h)
+    first = send("Will I get a promotion in July 2027?", h)[-1]["meta"]["analysis"]
+    assert first["decision"]["event"]["event_type"] == "promotion" and not calls
+    text = "Nahi, promotion nahi. Company change ki baat kar raha hoon, same period."
+    done = _parse_sse(client.post("/api/chat/stream", json={"text": text}, headers=h))[-1]
+    corrected = done["messages"][-1]["meta"]["analysis"]
+    assert corrected["decision"]["event"]["event_type"] == "job_change"
+    assert corrected["analysis_window"] == {"start": "2027-07-01", "end": "2027-07-31"}
+    state = json.loads(calls[0]["state"])
+    assert state["active_outcome"] == "promotion" and state["latest_user_message"] == text
+    broad = send("Nahi, promotion nahi. Usi period mein general career outlook batao.", h)[-1]["meta"]["analysis"]
+    assert broad["decision"]["event"] is None
+    assert broad["analysis_window"] == corrected["analysis_window"]
+    fresh = send("Separately, will I get a job offer?", h)[-1]
+    assert fresh["meta"]["pending_event"]["event_type"] == "job_offer"
+    assert "analysis" not in fresh["meta"] and "What period" in fresh["content"]
+    assert len(calls) == 3
+
+
+@pytest.mark.parametrize("failure", ["uncertain", "invalid_label", "truncated", "rate_limit", "timeout"])
+def test_decider_falls_back_within_the_routing_budget(monkeypatch, failure):
+    import httpx
+    from app.llm import decider, providers
+    monkeypatch.setattr(providers.settings, "DECIDER_ENABLED", True)
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    messages = [{"role": "user", "content": "Mere kaam mein tarakki ka koi yog hai?"}]
+    fallbacks = []
+
+    def post(url, *, headers, json, timeout):
+        assert "period" not in json["questions"]
+        request = httpx.Request("POST", url)
+        if failure == "timeout":
+            raise httpx.ReadTimeout("synthetic timeout", request=request)
+        answer = _decision_answer("promotion", decider.TOPICS, 0.4 if failure == "uncertain" else 0.9)
+        if failure == "invalid_label":
+            answer["choice"] = "invented_outcome"
+        return httpx.Response(429 if failure == "rate_limit" else 200, request=request, json={
+            "truncated": failure == "truncated", "answers": {"topic": answer},
+        })
+
+    def fallback(history, *, allow_external, timeout):
+        fallbacks.append(timeout)
+        return "promotion"
+
+    monkeypatch.setattr(decider.httpx, "post", post)
+    monkeypatch.setattr(providers, "conversation_topic", fallback)
+    assert providers.route_topic(messages, allow_external=True) == "promotion"
+    assert len(fallbacks) == 1 and 0 < fallbacks[0] <= 3
+
+
+def test_decider_skips_external_request_without_both_consent_gates(monkeypatch):
+    from app.llm import decider, providers
+    monkeypatch.setattr(providers.settings, "DECIDER_ENABLED", True)
+    monkeypatch.setattr(providers.settings, "OPENROUTER_API_KEY", "test")
+    messages = [{"role": "user", "content": "What about then?"}]
+
+    def unexpected(*args, **kwargs):
+        pytest.fail("Decider should only run when the app and user allow external AI")
+
+    monkeypatch.setattr(decider, "classify", unexpected)
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", False)
+    assert providers.route_topic(messages, allow_external=True, use_fallback=False) is None
+    monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
+    assert providers.route_topic(messages, allow_external=False, use_fallback=False) is None
+
+
+def test_calculation_views_use_the_active_chart_and_show_versions():
+    h = register_and_profile()
+    dashboard = client.get("/api/chart-dashboard?as_of=2027-07-12", headers=h)
+    assert dashboard.status_code == 200, dashboard.text
+    data = dashboard.json()
+    assert data["settings"]["dasha_year"] == {"mode": "julian", "days": 365.25}
+    assert data["settings"]["varga_rule_version"]
+    assert data["sensitivity"]["D4"]["margin_before_s"]
+    assert data["vargas"]["D9"]["Moon"] and data["dashas"]["vimshottari"][-1]["lords"]
+    assert sum(data["ashtakavarga"]["sav"]) == 337
+    assert client.get("/api/chart-dashboard?as_of=1880-01-01", headers=h).status_code == 422
+    coverage = client.get("/api/coverage").json()
+    assert len(coverage["intents"]) == 60 and sum(coverage["counts"].values()) == 60
+    assert sum(intent["phase"] == 1 for intent in coverage["intents"]) == 18
+    ids = {intent["intent_id"] for intent in coverage["intents"]}
+    assert len(ids) == 60
+    saturday = client.get("/api/chart-transits?start=2019-01-01&end=2031-01-01&planet=Saturn", headers=h)
+    assert saturday.status_code == 200, saturday.text
+    events = saturday.json()
+    assert all(e["at"].endswith("Z") for e in events["events"])
+    assert {"sign_ingress", "nakshatra_ingress", "station"} <= {e["kind"] for e in events["events"]}
+    assert len(events["sade_sati"]) > len({phase["phase"] for phase in events["sade_sati"]})
+    assert events["kakshya_slices"] and any(row["bindu_active"] for row in events["kakshya_slices"])
+    vedic_before = client.get("/api/chart/D1", headers=h).json()
+    kp_result = client.get("/api/kp", headers=h)
+    assert kp_result.status_code == 200, kp_result.text
+    separate = kp_result.json()
+    assert separate["frame"]["houses"] == "Placidus" and len(separate["cusps"]) == 12
+    segments = separate["segments"]
+    assert len(segments) == 249 and segments[0]["start_arcsec"] == 0 and segments[-1]["end_arcsec"] == 1296000
+    assert all(left["end_arcsec"] == right["start_arcsec"] for left, right in zip(segments, segments[1:]))
+    assert separate["ruling_planets"]["weekday_lord"]
+    assert client.get("/api/chart/D1", headers=h).json() == vedic_before
+
+
+def test_distress_never_routes_through_chart_memory_or_external_provider(monkeypatch):
+    from app.chat import memory
+    from app.llm import providers
+    h = register_and_profile()
+    _open_calibrated(h)
+    def unexpected(*args, **kwargs):
+        pytest.fail("Sensitive turn was sent through memory or a model")
+    monkeypatch.setattr(memory, "capture", unexpected)
+    monkeypatch.setattr(providers, "generate", unexpected)
+    reply = send("I want to end my life. What does my chart say?", h)[-1]
+    assert "14416" in reply["content"] and reply["kind"] == "private"
+    pregnancy = send("Can I conceive next month according to my chart?", h)[-1]
+    assert pregnancy["kind"] == "private" and "clinician" in pregnancy["content"]
+    assert not client.get("/api/predictions", headers=h).json()["predictions"]
+
+
+def test_shared_profile_requires_recorded_permission_and_supports_revocation():
+    h = register_and_profile()
+    assert client.post("/api/profiles", json={**MUM, "permission_confirmed": False}, headers=h).status_code == 422
+    second = client.post("/api/profiles", json=MUM, headers=h).json()
+    assert second["permission_confirmed"]
+    endpoint = f"/api/profiles/{second['id']}/permission"
+    assert client.put(endpoint, json={"permission_confirmed": False}, headers=h).status_code == 200
+    assert client.get("/api/chart-dashboard", headers=h).status_code == 409
+    assert client.get("/api/chat/history", headers=h).status_code == 409
+    assert client.put(endpoint, json={"permission_confirmed": True}, headers=h).status_code == 200
+    assert client.get("/api/chart-dashboard", headers=h).status_code == 200
+
+
+def test_automatic_outcome_requests_default_to_off():
+    h = register_and_profile()
+    _open_calibrated(h)
+    send("Will I get a promotion in July 2027?", h)
+    _age_predictions(h)
+    assert not any(m["meta"].get("followup_id") for m in send("Hello", h))
+    assert client.get("/api/predictions", headers=h).json()["followups_enabled"] is False
+    assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
+    assert any(m["meta"].get("followup_id") for m in send("Hello", h))

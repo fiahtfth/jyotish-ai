@@ -1,0 +1,43 @@
+{
+  "intent_id": "SPOUSE_NATURE",
+  "number": 15,
+  "phase": 3,
+  "template": "N",
+  "E": [
+    7
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Venus",
+    "DK"
+  ],
+  "V": [
+    "D9"
+  ],
+  "J": [
+    "DK",
+    "UL"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "marriage_relationship",
+  "legacy_ids": [],
+  "forecast_events": []
+}

@@ -1,6 +1,6 @@
 # Calculation validation
 
-Engine: **PyJHora 5.0.0** over **pyswisseph** (Swiss Ephemeris). All values below are locked into a per-chart `calc_fingerprint` (sha256 of settings + library versions) stored with each profile.
+The app uses Swiss Ephemeris directly for natal placements and uses its own whole-sign varga and fixed-year Vimshottari calculations. PyJHora 5.0.0 remains in use for the other modules documented below. Settings and engine versions contribute to a calculation fingerprint stored with each chart.
 
 ## Recorded settings
 
@@ -12,14 +12,14 @@ Every setting lives in `backend/app/astro/settings.py` (`CalcSettings`, frozen, 
 | `node` | **mean** | `true` is allowed only if a smoke test of PyJHora's true-node mode (Rahu equals `swe.TRUE_NODE`) passes; otherwise `ValueError`. `facts["node_check"]` compares mean vs true Rahu (D1 and D9 sign) so a chart sensitive to the choice is flagged. |
 | `positions` | **true** (geometric, `FLG_TRUEPOS`) | `apparent` clears the flag (adds aberration/deflection). |
 | `center` | **geocentric** | `topocentric` sets `swe.FLG_TOPOCTR` and the observer location; Moon moves up to ~1° (parallax), Sun <8". PyJHora exposes it via `PLANET_POSITIONS_GEOCENTRIC=False` — patched into the module's private globals (see note on `drik` patching below). |
-| `dasha_year` | **true_tropical** (PyJHora default, ~365.2407 d, computed per birth) | julian 365.25, gregorian 365.2425, sidereal 365.256364 (PyJHora/JH constant), savana_360 360, true_sidereal (solar return to the same sidereal longitude). Constant-length modes are applied by wrapping PyJHora's `_get_dhasa_start_jd/_end_jd`; PyJHora's native true-year paths use solar-arc searches. Changes dasha dates by months over a lifetime (savana_360 moves a Jupiter MD ~212 days earlier at age 40). |
+| `dasha_year` | **julian**, 365.25 days | Existing profiles using the previous default retain `legacy_tropical`. Fixed alternatives include Gregorian 365.2425, sidereal 365.256363 and savana 360. The two variable solar-year modes use PyJHora. |
 | `chara_school`, `karaka_scheme`, `colord_rule`, `arudha_exception` | KNRao, 7_KNRao, school, standard | Read by the Jaimini layer. The engine's running Chara dasha maps KNRao and PVR; Rath raises `ValueError` (not implemented). |
 | `d24` | **forward** | `reverse` = PyJHora D24 method 2 (even signs counted from Cancer in reverse). |
 | `combust_table` | **surya_siddhanta** | `wide_variant` = the wider set of combustion orbs. Applied when the engine marks planets combust; recorded in `meta.arcs`. |
 | `gandanta_arc`, `sandhi_arc` | 10/3 deg (one nakshatra pada), 1.5 deg | Recorded for downstream consumers. |
 | Ephemeris | **Swiss (.se1 files)** | `backend/data/ephe/` ships `sepl_18`, `semo_18`, `seas_18` (1800-2400 AD). Without them pyswisseph silently falls back to Moshier; the engine logs a warning and records `meta.ephemeris`. PyJHora's own `data/ephe` is on the path too (fixed stars for True Chitra). |
 | Chara karakas | **7-karaka** (AK...DK, Rahu excluded) | PyJHora's `get_chara_karakas` returns the 8-karaka scheme; implemented directly by within-sign advancement. |
-| Varga methods | PyJHora varga functions (Parashari counting) | D2 (Leo/Cancer), D3 (Uma-Shambu), D4, D6, D7, D9, D10, D12, D16, D20, D24, D30 (Parashari, 5 unequal parts), D40, D45, D60. D30 was previously absent because the lookup used the wrong function name (`trimshamsa_chart`; the library has `trimsamsa_chart`). |
+| Varga methods | Own Parashari tables, version `parashari-v3-half-open` | D1, D2, D3, D4, D6, D7, D9, D10, D12, D16, D20, D24, D30, D40, D45 and D60. D30 has five unequal parts and a separately declared within-part degree convention. |
 | Geocoding | bundled `geonames_places_5k.csv` + timezonefinder/zoneinfo | fully offline; historical UTC offset from IANA tzdb. |
 
 Presets `default`, `drik`, `jh`, `iae` are approximations of Drik Panchang / Jagannatha Hora / IAE-Rashtriya-Panchang conventions and **must be verified against your own JH / Drik / IAE install** before being described as matching either.
@@ -28,7 +28,7 @@ Presets `default`, `drik`, `jh`, `iae` are approximations of Drik Panchang / Jag
 
 PyJHora keeps calculation state in process globals; the engine serialises compute / running_vimshottari / running_chara / transit_positions under one re-entrant lock (`engine.calc_lock`) and re-applies settings only when they change. Other modules calling `drik` directly (panchang, precision) should hold `calc_lock` if they must be isolated from a settings switch.
 
-Known upstream defect: PyJHora `navamsa_chart` places an exact multiple of 10/3 deg into the previous part (float floor); covered by a strict-xfail test in `test_engine_frame.py`. Effect on real ephemeris longitudes is negligible.
+The app's half-open varga calculations treat an exact boundary as the beginning of the next part. Tests compare the interior of every supported part to the PyJHora oracle and check boundaries against the app's numeric convention.
 
 ## Regression checks (automated, `backend/tests/`)
 

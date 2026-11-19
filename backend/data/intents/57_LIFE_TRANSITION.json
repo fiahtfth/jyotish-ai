@@ -1,0 +1,35 @@
+{
+  "intent_id": "LIFE_TRANSITION",
+  "number": 57,
+  "phase": 3,
+  "template": "special",
+  "E": [],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [],
+  "V": [],
+  "J": [],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [],
+    "negate": [],
+    "status": "ne"
+  },
+  "hooks": [
+    "transition"
+  ],
+  "min_n_for_label": 2,
+  "requires_consent": false,
+  "safety_domain": "general",
+  "legacy_ids": [
+    "MAJOR_TRANSITION"
+  ],
+  "forecast_events": []
+}

@@ -1,0 +1,52 @@
+{
+  "intent_id": "BUSINESS_PARTNERSHIP",
+  "number": 20,
+  "phase": 2,
+  "template": "N+T",
+  "E": [
+    7,
+    11,
+    10,
+    8
+  ],
+  "E_optional": [],
+  "E_adverse_explicit": [],
+  "K": [
+    "Mercury",
+    "Venus"
+  ],
+  "V": [
+    "D10",
+    "D9"
+  ],
+  "J": [
+    "A7"
+  ],
+  "TAJ": {
+    "houses": [],
+    "muntha_supportive": []
+  },
+  "TRIG": {
+    "slow": [],
+    "fast": []
+  },
+  "KP": {
+    "houses": [
+      7,
+      11,
+      2
+    ],
+    "negate": [],
+    "status": "verify"
+  },
+  "hooks": [
+    "special"
+  ],
+  "min_n_for_label": 3,
+  "requires_consent": true,
+  "safety_domain": "finance",
+  "legacy_ids": [
+    "BUSINESS_GROWTH"
+  ],
+  "forecast_events": []
+}

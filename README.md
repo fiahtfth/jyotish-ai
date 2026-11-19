@@ -49,6 +49,7 @@ Open http://localhost:3000 — create an account, enter birth details (place aut
 | `JYOTISH_GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model id |
 | `OPENROUTER_API_KEY` | — | optional OpenRouter key; free models only |
 | `JYOTISH_OPENROUTER_MODEL` | `openrouter/free` | must be `openrouter/free` or end with `:free` |
+| `JYOTISH_DECIDER_ENABLED` | `false` | opt in to Perplexity Decider Flash for ambiguous chat routing via the OpenRouter Decisions API. Uses the existing OpenRouter key and external AI consent. The current topic classifier remains the fallback. |
 | `JYOTISH_LLM_EXTERNAL_CONSENT` | `false` | must be `true` before any external LLM call |
 | `JYOTISH_LLM_TURN_DEADLINE` | `30` | max seconds a chat turn spends on LLM calls (all providers/retries) before the offline reply |
 | `JYOTISH_LLM_MAX_CONCURRENCY` | `4` | max chat turns calling an LLM at once; extra turns get the offline reply |
