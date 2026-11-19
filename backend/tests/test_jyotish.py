@@ -2100,6 +2100,16 @@ def test_repair_response_preserves_line_breaks():
         "Indicative timings\n| Work | 2027-08-09\n| Home | steady\n| Family | calm",
         issues)
     assert caveat == "Indicative timings\n| Home | steady\n| Family | calm"
+    # A bad prose line after the table doesn't take the last row with it.
+    tailrow = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nYou will receive news on 2027-08-09",
+        issues)
+    assert tailrow == "| Work | grows\n| Home | steady\n| Family | calm"
+    # When every row is rejected, a bare lead-in is no reply — full fallback.
+    empty = V.repair_response(
+        "Key dates\n| Work | 2027-08-09\n| Home | 2027-08-09\n| Family | 2027-08-09",
+        issues)
+    assert "doesn't support" in empty
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(

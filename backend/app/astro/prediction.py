@@ -256,8 +256,9 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                             # across lines goes too — but a caveat before a
                             # bad *row* stays.
                             nxt = rows[i + 1] if i + 1 < len(rows) else None
-                            if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
-                                    and not is_row(nxt) and bad(ln + " " + nxt)):
+                            if (not is_row(ln) and ln.rstrip()[-1:] not in ".!?"
+                                    and nxt is not None and not is_row(nxt)
+                                    and bad(ln + " " + nxt)):
                                 return True
                             prv = rows[i - 1] if i else ""
                             if (prv and not is_row(prv)
@@ -265,9 +266,12 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                                     and not bad(prv) and bad(prv + " " + ln)):
                                 return True
                             return False
-                        sentence = "\n".join(
-                            ln for i, ln in enumerate(rows)
-                            if ln.strip() and not bad(ln) and not fragment(i, ln))
+                        kept_lines = [ln for i, ln in enumerate(rows)
+                                      if ln.strip() and not bad(ln)
+                                      and not fragment(i, ln)]
+                        # A lead-in with no surviving rows is no reply — drop it.
+                        sentence = ("\n".join(kept_lines)
+                                    if any(is_row(ln) for ln in kept_lines) else "")
                     else:
                         continue
                 if sentence.strip():
