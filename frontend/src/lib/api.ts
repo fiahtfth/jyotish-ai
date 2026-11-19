@@ -28,6 +28,12 @@ export type MsgMeta = {
   convergence?: string;
   support_count?: number;
   classical?: ClassicalAudit;
+  career_sources?: { attribution?: string; database?: string; license?: string };
+  career_result?: {
+    leader: string | null;
+    india_reference?: string;
+    roles: { title: string; code?: string; matched: string[]; preferred: string[]; blockers: string[]; unknown: string[] }[];
+  };
   report?: { domains?: { domain: string; analysis?: { classical?: ClassicalAudit } }[] };
   expanded?: boolean;
   analysis?: { convergence?: string; classical?: ClassicalAudit; decision?: { event?: unknown } };

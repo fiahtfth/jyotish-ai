@@ -2084,3 +2084,84 @@ def test_duration_parser_handles_month_ends_and_short_periods():
     assert requested_window("next one month", today) == (today, date(2027, 2, 27))
     assert requested_window("next 2 weeks", today) == (today, date(2027, 2, 13))
     assert requested_window("last six months", today) == (date(2026, 7, 31), date(2027, 1, 30))
+
+
+def test_career_match_collects_current_options_and_preserves_timing():
+    h = register_and_profile()
+    first = send("Which job profile suits me?", h)[-1]
+    assert first["meta"]["career_match"]["asked"] == "options"
+    choices = send("BI analyst or corporate trainer", h)[-1]
+    assert [r["title"] for r in choices["meta"]["career_result"]["roles"]] == [
+        "Business intelligence analyst", "Learning and development specialist"]
+    response = client.post("/api/chat/stream", json={"text": "I built SQL dashboards and I enjoy reporting."}, headers=h)
+    reading = _parse_sse(response)[-1]["messages"][-1]
+    assert reading["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    assert client.get("/api/predictions", headers=h).json()["predictions"] == []
+    chart = send("What does my chart say about this career?", h)[-1]
+    assert chart["meta"]["classical"]["tables"]
+    assert chart["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    timing = send("Will I receive a job offer?", h)[-1]
+    assert timing["meta"]["pending_event"]["event_type"] == "job_offer"
+    assert "analysis" not in timing["meta"]
+    assert "period" in timing["content"]
+    forecast = send("next month", h)[-1]["meta"]
+    assert forecast["analysis"]["decision"]["event"]["event_type"] == "job_offer"
+    assert forecast["analysis"]["period_requested"]
+
+
+def test_career_match_uses_offer_duties_and_rejects_constraint_conflicts():
+    h = register_and_profile()
+    text = (
+        "Compare these offers\n"
+        "Option A: Data analyst\nResponsibilities: SQL dashboards\nWork mode: remote\n"
+        "Option B: Data analyst\nResponsibilities: Client meetings\nWork mode: on-site\n"
+        "Option C: Data analyst\nResponsibilities: SQL dashboards\nWork mode: remote\n"
+        "Requirements: master's degree\nSkills: SQL, dashboards\n"
+        "Education: I don't have a master's degree\nConstraints: remote only"
+    )
+    result = send(text, h)[-1]["meta"]["career_result"]
+    assert result["leader"] == "Option a · Data analyst"
+    options = {r["title"]: r for r in result["roles"]}
+    assert options["Option b · Data analyst"]["matched"] == []
+    assert options["Option b · Data analyst"]["blockers"]
+    assert "requires master’s degree" in options["Option c · Data analyst"]["blockers"]
+
+
+def test_career_discovery_uses_stated_interests_and_leaves_ties_open():
+    h = register_and_profile()
+    first = send("Suggest careers. I am a student in India and I enjoy designing courses and lesson materials.", h)[-1]
+    assert first["meta"]["career_result"]["leader"] == "Instructional designer"
+    reply = send("Compare data analyst and BI analyst. Skills: SQL, dashboards", h)[-1]
+    # A new comparison can use the person's existing context, while a single
+    # skill shared by both roles doesn't decide the comparison.
+    assert reply["meta"]["career_result"]["leader"] is None
+    assert "are close" in reply["content"]
+    winner = send("I prefer reporting.", h)[-1]
+    assert winner["meta"]["career_result"]["leader"] == "BI analyst"
+
+
+def test_career_intake_stays_with_its_profile():
+    h = register_and_profile()
+    own_id = client.get("/api/profile", headers=h).json()["id"]
+    # Lookups of chart concepts must not enter the career intake.
+    assert "career_match" not in send("Compare Saturn and Jupiter", h)[-1]["meta"]
+    first = send("Suggest careers. I built SQL dashboards and I like reporting.", h)[-1]
+    assert first["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    assert client.post("/api/profiles", json=MUM, headers=h).status_code == 200
+    other = send("Which job profile suits me?", h)[-1]["meta"]["career_match"]
+    assert other["evidence"] == [] and other["options"] == []
+    assert client.post(f"/api/profiles/{own_id}/activate", headers=h).status_code == 200
+    again = client.get("/api/chat/history", headers=h).json()[-1]
+    assert again["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+
+
+def test_career_match_accepts_uncatalogued_roles_and_stated_skills():
+    h = register_and_profile()
+    reply = send(
+        "Compare these roles\n"
+        "Option A: Optical bench technician\nDuties:\n- Laser alignment\n"
+        "Option B: Test engineer\nDuties: software testing\n"
+        "Skills: laser alignment", h)[-1]
+    assert reply["meta"]["career_result"]["leader"] == "Option a · Optical bench technician"
+    roles = reply["meta"]["career_result"]["roles"]
+    assert roles[0]["matched"] == ["laser alignment"] and roles[0]["code"] is None

@@ -230,6 +230,32 @@ export default function Chat() {
                 ${mine ? "bg-accent text-white rounded-br-sm" : "bg-card border border-bord rounded-bl-sm"}`}>
                 {audit && <ClassicalEvidence audit={audit} expanded={!!(m.meta.expanded || m.meta.analysis?.decision?.event)} />}
                 {!(m.meta.expanded && audit) && m.content}
+                {m.meta.career_result?.roles && m.meta.career_result.roles.length > 0 && (
+                  <details className="mt-2 text-sm whitespace-normal">
+                    <summary className="cursor-pointer text-accent">Career comparison evidence</summary>
+                    <ul className="mt-2 space-y-2">
+                      {m.meta.career_result.roles.map((role, index) => (
+                        <li key={index}>
+                          <div className="font-medium">{role.title}</div>
+                          {role.matched.length > 0 && <div>Experience mentioned · {role.matched.join(", ")}</div>}
+                          {role.preferred.length > 0 && <div>Work preferences · {role.preferred.join(", ")}</div>}
+                          {role.blockers.length > 0 && <div>Conflicts · {role.blockers.join(", ")}</div>}
+                          {role.unknown.length > 0 && <div>Open questions · {role.unknown.join(", ")}</div>}
+                          {role.code && <a className="underline" href={`https://www.onetonline.org/link/details/${role.code}`}>Occupation profile</a>}
+                        </li>
+                      ))}
+                    </ul>
+                    {m.meta.career_result.india_reference && (
+                      <a className="mt-2 block underline" href={m.meta.career_result.india_reference}>Related Indian qualification</a>
+                    )}
+                    {m.meta.career_sources?.attribution && (
+                      <p className="mt-2 text-muted">{m.meta.career_sources.attribution}{" "}
+                        <a className="underline" href={m.meta.career_sources.database}>Database</a>{" · "}
+                        <a className="underline" href={m.meta.career_sources.license}>License</a>
+                      </p>
+                    )}
+                  </details>
+                )}
                 {m.meta.report?.domains?.map(d => d.analysis?.classical && (
                   <ClassicalEvidence key={d.domain} label={d.domain.charAt(0).toUpperCase() + d.domain.slice(1) + " calculations"}
                     audit={d.analysis.classical} expanded={false} />

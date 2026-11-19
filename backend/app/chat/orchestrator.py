@@ -22,7 +22,7 @@ from ..db import (
     _utcnow,
 )
 from ..llm import providers
-from . import language
+from . import career, language
 
 log = logging.getLogger(__name__)
 
@@ -1279,6 +1279,33 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                  kind="timing", meta={"timing": sug})
         return conv.messages[-2:]
 
+    domain = detect_domain(t)
+    career_reply = career.starts_match(text)
+    career_data = prior.get("career_match")
+    if career_reply and "career_match" not in prior:
+        # Explicitly returning to career matching can resume a shortlist
+        # after an unrelated topic, within this profile's conversation.
+        for message in reversed(conv.messages):
+            if message.role != "assistant":
+                continue
+            meta = json.loads(message.meta_json or "{}")
+            if meta.get("fingerprint", profile.calc_fingerprint) != profile.calc_fingerprint:
+                break
+            if "career_match" in meta:
+                career_data = meta["career_match"]
+                break
+    career_state = career.CareerState.restore(career_data) if career_data else None
+    if career_state and not career.TIMING.search(text):
+        if domain in (None, "career") or (career_state.asked and "?" not in text and career.ATTEST.search(text)):
+            career_reply |= career.continues_match(text, career_state)
+            career_reply |= career.CHART.search(text) is not None and not varga
+    if career_reply:
+        reply, meta = career.turn(text, career_state, facts, birth, _calibrated(profile))
+        _add_msg(db, conv, "assistant", reply, meta={**meta, "fingerprint": profile.calc_fingerprint})
+        if meta.get("career_match") and career.TIMING.search(text) and prediction.event_spec(text, "career"):
+            return _answer_reading(db, conv, profile, facts, birth, text, varga, None)
+        return conv.messages[-2:]
+
     return _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta)
 
 
@@ -1375,7 +1402,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     if domain and window is None and wants_forecast:
         _add_msg(db, conv, "assistant",
                  "What period would you like me to look at? You can give a month, a date range, or a duration such as the next three months.",
-                 meta={"pending_domain": domain, "pending_event": event, **({"varga": varga} if selected else {})})
+                 meta={"pending_domain": domain, "pending_event": event,
+                       **({"career_match": prior["career_match"]} if domain == "career" and prior.get("career_match") else {}),
+                       **({"varga": varga} if selected else {})})
         return conv.messages[-2:]
     if domain and window is not None and (not selected or event or period):
         analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=focus, event=event)
@@ -1409,6 +1438,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     _add_msg(db, conv, "assistant", reply,
              meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
                    **({"analysis": analysis, "requested_window": [d.isoformat() for d in window]} if analysis else {}),
+                   **({"career_match": prior["career_match"], "pending_domain": "career"}
+                      if domain == "career" and prior.get("career_match") else {}),
                    **({"varga": varga} if selected else {})})
     return conv.messages[-2:]
 

@@ -183,3 +183,26 @@ test("forecast evidence tables fit a mobile chat bubble", async ({ page }) => {
   await expect(page.getByText("Career reading")).toBeVisible();
   await expect(page.getByRole("table")).toHaveCount(0);
 });
+
+
+test("career matching keeps the recommendation in the chat and sources in expandable evidence", async ({ page }) => {
+  await page.route("**/api/chat/history", route => route.fulfill({
+    json: [{
+      ...message(1, "assistant", "BI analyst is the strongest fit from your shortlist."),
+      meta: {
+        career_result: {
+          leader: "BI analyst",
+          roles: [{ title: "BI analyst", code: "15-2051.01", matched: ["SQL"], preferred: [],
+            blockers: [], unknown: [] }],
+        },
+        career_sources: { attribution: "Adapted from the O*NET® database", database: "https://www.onetcenter.org/database.html" },
+      },
+    }],
+  }));
+  await page.goto("/chat");
+  await expect(page.getByText("BI analyst is the strongest fit from your shortlist.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Occupation profile" })).toBeHidden();
+  await page.getByText("Career comparison evidence").click();
+  await expect(page.getByText("Experience mentioned · SQL")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Occupation profile" })).toHaveAttribute("href", /15-2051\.01$/);
+});

@@ -1,0 +1,459 @@
+{
+  "version": "onet-31.0-pilot-1",
+  "attribution": "Adapted by Jyotish AI from the O*NET® 31.0 Database by the U.S. Department of Labor, Employment and Training Administration under CC BY 4.0. Role labels, aliases and activity tags are Jyotish AI adaptations.",
+  "database": "https://www.onetcenter.org/database.html",
+  "license": "https://creativecommons.org/licenses/by/4.0/",
+  "roles": [
+    {
+      "code": "15-2051.01",
+      "title": "Business intelligence analyst",
+      "official_title": "Business Intelligence Analysts",
+      "aliases": [
+        "BI analyst",
+        "BI developer"
+      ],
+      "duties": [
+        "sql",
+        "dashboards",
+        "reporting",
+        "data analysis"
+      ],
+      "india": "https://nqr.gov.in/qualifications/3064"
+    },
+    {
+      "code": "15-2051.01",
+      "title": "Data analyst",
+      "official_title": "Business Intelligence Analysts",
+      "aliases": [
+        "junior data analyst",
+        "reporting analyst"
+      ],
+      "duties": [
+        "data analysis",
+        "sql",
+        "dashboards",
+        "spreadsheets"
+      ],
+      "india": "https://nqr.gov.in/qualifications/4239"
+    },
+    {
+      "code": "15-2051.00",
+      "title": "Data scientist",
+      "official_title": "Data Scientists",
+      "aliases": [
+        "machine learning engineer",
+        "ML engineer"
+      ],
+      "duties": [
+        "statistics",
+        "python",
+        "machine learning",
+        "data analysis"
+      ],
+      "india": ""
+    },
+    {
+      "code": "15-1252.00",
+      "title": "Software developer",
+      "official_title": "Software Developers",
+      "aliases": [
+        "software engineer",
+        "backend developer",
+        "application developer",
+        "junior software developer"
+      ],
+      "duties": [
+        "programming",
+        "apis",
+        "databases",
+        "software testing"
+      ],
+      "india": "https://nqr.gov.in/qualifications/11390"
+    },
+    {
+      "code": "15-1254.00",
+      "title": "Web developer",
+      "official_title": "Web Developers",
+      "aliases": [
+        "frontend developer",
+        "front end developer",
+        "full stack developer"
+      ],
+      "duties": [
+        "web development",
+        "programming",
+        "apis",
+        "software testing"
+      ],
+      "india": "https://nqr.gov.in/qualifications/3064"
+    },
+    {
+      "code": "15-1253.00",
+      "title": "Software QA tester",
+      "official_title": "Software Quality Assurance Analysts and Testers",
+      "aliases": [
+        "QA analyst",
+        "quality assurance tester",
+        "test engineer",
+        "software tester"
+      ],
+      "duties": [
+        "software testing",
+        "automation",
+        "programming",
+        "documentation"
+      ],
+      "india": "https://nqr.gov.in/qualifications/11390"
+    },
+    {
+      "code": "15-1212.00",
+      "title": "Information security analyst",
+      "official_title": "Information Security Analysts",
+      "aliases": [
+        "cybersecurity analyst",
+        "information security",
+        "cyber security analyst"
+      ],
+      "duties": [
+        "security",
+        "networking",
+        "incident response",
+        "reporting"
+      ],
+      "india": "https://nqr.gov.in/qualifications/3064"
+    },
+    {
+      "code": "15-1232.00",
+      "title": "IT support specialist",
+      "official_title": "Computer User Support Specialists",
+      "aliases": [
+        "help desk technician",
+        "technical support specialist",
+        "IT support"
+      ],
+      "duties": [
+        "troubleshooting",
+        "customer support",
+        "networking",
+        "documentation"
+      ],
+      "india": ""
+    },
+    {
+      "code": "15-1255.00",
+      "title": "Digital interface designer",
+      "official_title": "Web and Digital Interface Designers",
+      "aliases": [
+        "UX designer",
+        "UI designer",
+        "product designer",
+        "web designer"
+      ],
+      "duties": [
+        "interface design",
+        "prototyping",
+        "user research",
+        "visual design"
+      ],
+      "india": "https://nqr.gov.in/qualifications/3063"
+    },
+    {
+      "code": "27-1024.00",
+      "title": "Graphic designer",
+      "official_title": "Graphic Designers",
+      "aliases": [
+        "visual designer",
+        "brand designer"
+      ],
+      "duties": [
+        "visual design",
+        "branding",
+        "design tools",
+        "creative production"
+      ],
+      "india": ""
+    },
+    {
+      "code": "27-3042.00",
+      "title": "Technical writer",
+      "official_title": "Technical Writers",
+      "aliases": [
+        "documentation specialist"
+      ],
+      "duties": [
+        "documentation",
+        "technical writing",
+        "research",
+        "editing"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1082.00",
+      "title": "Project management specialist",
+      "official_title": "Project Management Specialists",
+      "aliases": [
+        "project manager",
+        "project coordinator",
+        "program manager"
+      ],
+      "duties": [
+        "project planning",
+        "coordination",
+        "stakeholders",
+        "budgets"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1111.00",
+      "title": "Management analyst",
+      "official_title": "Management Analysts",
+      "aliases": [
+        "business analyst",
+        "management consultant",
+        "business process analyst"
+      ],
+      "duties": [
+        "process improvement",
+        "stakeholders",
+        "reporting",
+        "research"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1081.00",
+      "title": "Supply chain analyst",
+      "official_title": "Logisticians",
+      "aliases": [
+        "logistics analyst",
+        "logistician",
+        "supply chain planner"
+      ],
+      "duties": [
+        "logistics",
+        "inventory",
+        "spreadsheets",
+        "coordination"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1151.00",
+      "title": "Learning and development specialist",
+      "official_title": "Training and Development Specialists",
+      "aliases": [
+        "L&D specialist",
+        "corporate trainer",
+        "training specialist"
+      ],
+      "duties": [
+        "training delivery",
+        "instructional design",
+        "facilitation",
+        "evaluation"
+      ],
+      "india": ""
+    },
+    {
+      "code": "25-9031.00",
+      "title": "Instructional designer",
+      "official_title": "Instructional Coordinators",
+      "aliases": [
+        "curriculum developer",
+        "curriculum designer",
+        "instructional coordinator"
+      ],
+      "duties": [
+        "instructional design",
+        "course materials",
+        "evaluation",
+        "education"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1071.00",
+      "title": "Human resources specialist",
+      "official_title": "Human Resources Specialists",
+      "aliases": [
+        "HR specialist",
+        "HR executive",
+        "recruiter",
+        "talent acquisition specialist"
+      ],
+      "duties": [
+        "recruiting",
+        "interviewing",
+        "employee support",
+        "documentation"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-2011.00",
+      "title": "Accountant",
+      "official_title": "Accountants and Auditors",
+      "aliases": [
+        "accounting specialist",
+        "auditor"
+      ],
+      "duties": [
+        "accounting",
+        "auditing",
+        "spreadsheets",
+        "reporting"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-2051.00",
+      "title": "Financial analyst",
+      "official_title": "Financial and Investment Analysts",
+      "aliases": [
+        "investment analyst",
+        "finance analyst"
+      ],
+      "duties": [
+        "financial modeling",
+        "data analysis",
+        "budgets",
+        "reporting"
+      ],
+      "india": ""
+    },
+    {
+      "code": "13-1161.00",
+      "title": "Market research analyst",
+      "official_title": "Market Research Analysts and Marketing Specialists",
+      "aliases": [
+        "marketing analyst",
+        "marketing specialist",
+        "digital marketing specialist"
+      ],
+      "duties": [
+        "market research",
+        "data analysis",
+        "marketing",
+        "reporting"
+      ],
+      "india": ""
+    },
+    {
+      "code": "43-4051.00",
+      "title": "Customer service representative",
+      "official_title": "Customer Service Representatives",
+      "aliases": [
+        "customer support associate",
+        "customer service associate"
+      ],
+      "duties": [
+        "customer support",
+        "troubleshooting",
+        "communication",
+        "documentation"
+      ],
+      "india": ""
+    },
+    {
+      "code": "41-4012.00",
+      "title": "Sales representative",
+      "official_title": "Sales Representatives, Wholesale and Manufacturing, Except Technical and Scientific Products",
+      "aliases": [
+        "sales executive",
+        "business development executive",
+        "account executive"
+      ],
+      "duties": [
+        "sales",
+        "negotiation",
+        "customer support",
+        "communication"
+      ],
+      "india": ""
+    },
+    {
+      "code": "25-2021.00",
+      "title": "Primary school teacher",
+      "official_title": "Elementary School Teachers, Except Special Education",
+      "aliases": [
+        "elementary school teacher",
+        "primary teacher",
+        "school teacher"
+      ],
+      "duties": [
+        "education",
+        "lesson planning",
+        "classroom teaching",
+        "evaluation"
+      ],
+      "india": ""
+    },
+    {
+      "code": "47-2111.00",
+      "title": "Electrician",
+      "official_title": "Electricians",
+      "aliases": [
+        "electrical technician",
+        "maintenance electrician"
+      ],
+      "duties": [
+        "electrical installation",
+        "troubleshooting",
+        "equipment maintenance",
+        "safety procedures"
+      ],
+      "india": ""
+    },
+    {
+      "code": "35-1011.00",
+      "title": "Chef",
+      "official_title": "Chefs and Head Cooks",
+      "aliases": [
+        "head cook",
+        "head chef",
+        "culinary professional"
+      ],
+      "duties": [
+        "cooking",
+        "food safety",
+        "inventory",
+        "team supervision"
+      ],
+      "india": ""
+    },
+    {
+      "code": "27-4021.00",
+      "title": "Photographer",
+      "official_title": "Photographers",
+      "aliases": [
+        "commercial photographer",
+        "photo editor"
+      ],
+      "duties": [
+        "photography",
+        "editing",
+        "creative production",
+        "client coordination"
+      ],
+      "india": ""
+    },
+    {
+      "code": "29-1141.00",
+      "title": "Registered nurse",
+      "official_title": "Registered Nurses",
+      "aliases": [
+        "staff nurse",
+        "registered nursing"
+      ],
+      "duties": [
+        "patient care",
+        "documentation",
+        "care coordination",
+        "safety procedures"
+      ],
+      "india": ""
+    }
+  ]
+}
