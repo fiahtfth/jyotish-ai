@@ -185,3 +185,55 @@ def test_empty_openai_content_can_fall_through_to_next_provider():
     assert P._completion_text({"choices": [{"message": {"content": None}}]}) == ""
     assert P._completion_text({"choices": []}) == ""
     assert P._completion_text({"choices": [{"message": {"content": " OK "}}]}) == "OK"
+
+
+def test_internal_references_are_hidden_in_streamed_and_final_replies(monkeypatch):
+    from app.llm import providers as P
+    monkeypatch.setattr(P.settings, "LLM_PROVIDER", "groq")
+    monkeypatch.setattr(P.settings, "GROQ_API_KEY", "test")
+    monkeypatch.setattr(P.settings, "LLM_EXTERNAL_CONSENT", True)
+    chunks = ["This reads", "【F", "008】 as support", " [E00", "1]", ". [R003]"]
+    def stream(system, messages, emit, timeout):
+        for chunk in chunks:
+            emit(chunk)
+        return "".join(chunks)
+    monkeypatch.setitem(P.STREAM_PROVIDERS, "groq", stream)
+    seen = []
+    reply, provider = P.generate([{"role": "user", "content": "Explain"}], on_delta=seen.append)
+    assert provider == "groq"
+    assert "".join(seen) == reply == "This reads as support . "
+    assert P.visible_reply("Keep [a normal note] and remove 【E012】.") == "Keep [a normal note] and remove ."
+
+
+def test_history_hides_internal_markers_only_in_assistant_messages():
+    from types import SimpleNamespace
+    from datetime import datetime
+    from app.main import _msg_out
+    message = SimpleNamespace(id=1, role="assistant", content="Your chart【F008】.", kind="text",
+                              meta_json="{}", created_at=datetime(2026, 1, 1))
+    assert _msg_out(message)["content"] == "Your chart."
+    message.role = "user"
+    assert _msg_out(message)["content"] == "Your chart【F008】."
+
+
+def test_health_note_appears_once_and_replaces_generated_boilerplate():
+    from app.chat.orchestrator import _apply_disclaimer
+    from app.astro.constants import HEALTH_DISCLAIMER
+    reply = ("We can discuss the traditional interpretation. "
+             "These points are preventive traditional indicators drawn from your natal chart; "
+             "they are not a substitute for medical advice. "
+             "Continue any treatment prescribed by your physician and use the chart guidance "
+             "to support lifestyle choices that may help keep your blood pressure stable.\n\n"
+             "These windows are preventive traditional indications from the chart — "
+             "not medical diagnoses, and not a substitute for a doctor's care.")
+    result = _apply_disclaimer(reply, "health")
+    assert result == "We can discuss the traditional interpretation.\n\n" + HEALTH_DISCLAIMER
+    assert _apply_disclaimer(result, "health") == result
+    assert _apply_disclaimer(reply, "career") == reply
+
+
+def test_health_note_cleanup_preserves_natural_paragraphs():
+    from app.chat.orchestrator import _apply_disclaimer
+    from app.astro.constants import HEALTH_DISCLAIMER
+    reply = "First interpretation.\n\nA separate thought."
+    assert _apply_disclaimer(reply, "health") == reply + "\n\n" + HEALTH_DISCLAIMER

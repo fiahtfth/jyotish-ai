@@ -579,8 +579,15 @@ def delete_profile(profile_id: int, user: User = Depends(current_user),
 # ------------------------------------------------------------- chat
 
 def _msg_out(m: Message, rating: int = 0) -> dict:
-    return {"id": m.id, "role": m.role, "content": m.content, "kind": m.kind,
-            "meta": json.loads(m.meta_json or "{}"), "created_at": m.created_at.isoformat(),
+    from .llm.providers import visible_reply
+    meta = json.loads(m.meta_json or "{}")
+    content = m.content
+    if m.role == "assistant":
+        content = visible_reply(content)
+        if meta.get("analysis", {}).get("domain") == "health":
+            content = orchestrator._apply_disclaimer(content, "health")
+    return {"id": m.id, "role": m.role, "content": content, "kind": m.kind,
+            "meta": meta, "created_at": m.created_at.isoformat(),
             "rating": rating}
 
 

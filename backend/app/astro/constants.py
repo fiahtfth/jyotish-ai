@@ -100,9 +100,8 @@ def combust_orb(pid, retro=False, table="surya_siddhanta"):
 # Natural enemies (BPHS ch.3), used for enemy-sign tests.
 NATURAL_ENEMIES = {0: {5, 6}, 1: set(), 2: {3}, 3: {1}, 4: {3, 5}, 5: {0, 1}, 6: {0, 1, 2}}
 
-HEALTH_DISCLAIMER = ("These windows are preventive traditional indications from the "
-                     "chart — not medical diagnoses, and not a substitute for "
-                     "a doctor's care.")
+HEALTH_DISCLAIMER = ("This is a traditional astrological interpretation. "
+                     "Please follow your clinician’s advice for health concerns.")
 
 # Domain -> (relevant natal houses, primary varga, jaimini significator key)
 DOMAINS = {

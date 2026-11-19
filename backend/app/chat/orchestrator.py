@@ -214,8 +214,19 @@ _DOMAIN_RES = {
 
 def _apply_disclaimer(reply: str, domain: str | None) -> str:
     note = DOMAINS.get(domain or "", {}).get("disclaimer")
-    if note and note not in reply:
-        return reply.rstrip() + "\n\n" + note
+    if note:
+        reply = reply.replace(note, "").strip()
+        boilerplate = re.compile(
+            r"preventive traditional|not (?:a substitute|medical diagnos)|"
+            r"continue (?:any )?treatment prescribed", re.I)
+        paragraphs = []
+        for paragraph in re.split(r"\n\s*\n", reply):
+            sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+            cleaned = " ".join(s for s in sentences if not boilerplate.search(s)).strip()
+            if cleaned:
+                paragraphs.append(cleaned)
+        reply = "\n\n".join(paragraphs)
+        return (reply + "\n\n" if reply else "") + note
     return reply
 
 

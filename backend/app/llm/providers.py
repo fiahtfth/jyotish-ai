@@ -39,11 +39,30 @@ about predictions being paused are obsolete. Never infer that the birth time is 
 a missed event. For health questions, keep chart interpretations separate from medical advice, and never say or
 imply that anyone should delay, skip or replace medical care because of the chart.
 
-Every CHART FACT line carries an ID like [F001]; computed evidence and rules carry [E###] and [R###].
-Cite the ID inline (for example "Moon in Sagittarius [F003]") for each placement, period or rule you
-rely on. State no degree, date, sign, nakshatra, duration or percentage that is not in the supplied
-facts, and do not use probability language ("chance of", "probability of").
+The bracketed fact, evidence and rule IDs in the supplied data are internal identifiers.
+Write conversationally in short, connected paragraphs. Omit reference IDs and citation markers.
+Use tables or technical headings only when the client explicitly requests them.
+Explain the relevant interpretation simply and avoid repeating the question or a stock summary.
+For health questions, planetary placements cannot establish a physiological cause, diagnosis,
+blood-pressure change, adrenaline surge, circulatory blockage, or the duration of an illness.
+Acknowledge the client's experience without inventing a medical explanation from the chart.
+Do not infer physical constitution, metabolism, fluid retention, organ function, immunity,
+or disease susceptibility from a sign or planet. Keep health interpretations to symbolic
+themes such as rest, pace and workload. If asked to explain a symptom or a BP episode,
+say plainly that the chart cannot establish its medical cause before discussing symbolism.
+Do not claim that chart guidance or astrological practices stabilise blood pressure or treat disease.
+The application adds one short health note. Avoid adding another medical disclaimer or sign-off.
+State no degree, date, sign, nakshatra, duration or percentage absent from the supplied facts.
 """
+
+
+_INTERNAL_REFERENCE = re.compile(r"[\[【]\s*[FER]\d+(?:\s*[,;]\s*[FER]\d+)*\s*[\]】]")
+_PARTIAL_REFERENCE = re.compile(r"[\[【]\s*(?:[FER]\d*(?:\s*[,;]\s*[FER]?\d*)*)?$")
+
+
+def visible_reply(text: str) -> str:
+    """Remove internal grounding markers from client-visible prose."""
+    return _INTERNAL_REFERENCE.sub("", text)
 
 
 def _completion_text(data: dict) -> str:
@@ -394,9 +413,16 @@ def generate(messages: list[dict], facts: dict | None = None,
     provider = settings.LLM_PROVIDER
     providers_to_try = _available_providers(allow_external)
     emitted = 0
+    pending = ""
 
     def _emit(chunk: str):
-        nonlocal emitted
+        nonlocal emitted, pending
+        chunk = visible_reply(pending + chunk)
+        pending = ""
+        partial = _PARTIAL_REFERENCE.search(chunk)
+        if partial:
+            pending = chunk[partial.start():]
+            chunk = chunk[:partial.start()]
         chunk = re.sub(r"[*_`]{1,2}", "", chunk)
         if chunk:
             emitted += 1
@@ -447,7 +473,7 @@ def generate(messages: list[dict], facts: dict | None = None,
                         text = STREAM_PROVIDERS[p](system, messages, _emit, timeout=remaining)
                     if text:
                         # the persona demands plain text; strip stray markdown
-                        return re.sub(r"[*_`]{1,2}", "", text), p
+                        return visible_reply(re.sub(r"[*_`]{1,2}", "", text)), p
                     log.warning("LLM provider %s returned empty text", p)
                     retryable = False
                 except httpx.HTTPStatusError as exc:

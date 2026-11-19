@@ -355,7 +355,7 @@ def test_health_domain_and_disclaimer():
         send(a, h)
     r = send("will my health improve this year", h)
     body = " ".join(m["content"] for m in r)
-    assert "not medical diagnoses" in body
+    assert body.count(HEALTH_DISCLAIMER) == 1
 
 
 def test_pillar_gap_features():
@@ -530,7 +530,8 @@ def test_domain_detection_word_boundaries():
     assert detect_domain("any job change soon") == "career"
     assert detect_domain("should I do a house shift") == "relocation"
     assert detect_domain("which course should I take") == "education"
-    assert "not medical diagnoses" in _apply_disclaimer("hello", "health")
+    from app.astro.constants import HEALTH_DISCLAIMER
+    assert HEALTH_DISCLAIMER in _apply_disclaimer("hello", "health")
     assert detect_domain("when will I pass my exams") == "education"
     assert detect_domain("jobs") == "career"
     assert detect_domain("investing") == "finance"
