@@ -1025,8 +1025,8 @@ def test_vimshottari_dates_and_sequence_use_saved_timeline(monkeypatch):
     h = register_and_profile()
     timeline = send("Show me the full Mahadasha sequence", h)[-1]["content"]
     assert len(timeline.split("\n- ")) == 10
-    rahu_dates = next(line.removeprefix("- **Rahu** ") for line in timeline.splitlines()
-                      if line.startswith("- **Rahu** "))
+    rahu_dates = next(line.removeprefix("- Rahu ") for line in timeline.splitlines()
+                      if line.startswith("- Rahu "))
     assert rahu_dates in send("Rahu ki Mahadasha kab shuru hui?", h)[-1]["content"]
     assert rahu_dates in send("राहु की महादशा कब शुरू हुई?", h)[-1]["content"]
 
@@ -2081,6 +2081,10 @@ def test_repair_response_preserves_line_breaks():
     wrapped = V.repair_response(
         "You will\nreceive news on 2027-08-09.\nFine line stays.", issues)
     assert wrapped == "Fine line stays."
+    # Unpunctuated rows read as one sentence: only the bad row is dropped.
+    table = V.repair_response(
+        "| Work | grows\n| Health | 2027-08-09\n| Family | steady", issues)
+    assert table == "| Work | grows\n| Family | steady"
 
 
 def test_llm_markdown_is_flattened_to_plain_text():

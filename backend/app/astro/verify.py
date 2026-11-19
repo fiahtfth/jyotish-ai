@@ -209,10 +209,24 @@ def repair_response(text: str, issues: list[str]) -> str:
         # Sentences may wrap across newlines; keep each sentence's original
         # trailing whitespace so kept text preserves the line structure.
         pieces = re.split(r"((?<=[.!?])\s+)", para)
-        kept = "".join(
-            pieces[i] + (pieces[i + 1] if i + 1 < len(pieces) else "")
-            for i in range(0, len(pieces), 2)
-            if pieces[i].strip() and not bad(pieces[i]))
+        kept_parts = []
+        for i in range(0, len(pieces), 2):
+            sentence = pieces[i]
+            sep = pieces[i + 1] if i + 1 < len(pieces) else ""
+            if not sentence.strip():
+                continue
+            if bad(sentence):
+                # A run of unpunctuated rows reads as one sentence: drop only
+                # the offending rows, not the whole table.
+                if sentence.count("\n") >= 2:
+                    sentence = "\n".join(
+                        ln for ln in sentence.split("\n")
+                        if ln.strip() and not bad(ln))
+                else:
+                    continue
+            if sentence.strip():
+                kept_parts.append(sentence + sep)
+        kept = "".join(kept_parts)
         if kept.strip():
             paragraphs.append(kept.strip())
     if paragraphs:

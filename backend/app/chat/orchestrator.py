@@ -636,10 +636,10 @@ def _vimshottari_lookup(db, conv, profile, facts, birth, text):
     periods = inspection.vimshottari_mahadashas(facts)
     matching = [p for p in periods if p["lord"] == lord] if lord else periods
     if sequence and periods:
-        rows = "\n".join(f"- **{p['lord']}** from {p['start']} to {p['end']}" for p in periods)
+        rows = "\n".join(f"- {p['lord']} from {p['start']} to {p['end']}" for p in periods)
         lines = [f"Here are the Vimshottari mahādashas for the saved chart.\n\n{rows}"]
     elif lord and matching:
-        lines = [f"The saved chart places the **{lord} mahādasha** from {p['start']} to {p['end']}."
+        lines = [f"The saved chart places the {lord} mahādasha from {p['start']} to {p['end']}."
                  for p in matching]
     elif lord or sequence:
         lines = ["I couldn’t find that period in the saved Vimshottari timeline."]
@@ -655,7 +655,7 @@ def _vimshottari_lookup(db, conv, profile, facts, birth, text):
             label = language.window_label(reported)
             if rows:
                 clocks = ", ".join(f"{p['maha']}–{p['antar']}" for p in rows)
-                lines.append(f"During {label}, the saved timeline shows **{clocks}** at the mahādasha and antardasha levels.")
+                lines.append(f"During {label}, the saved timeline shows {clocks} at the mahādasha and antardasha levels.")
             else:
                 lines.append(f"{label} falls outside the saved Vimshottari timeline.")
         else:
@@ -1506,7 +1506,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                            "pending_event": prediction.event_spec(focus, domain) or (
                                previous.get("decision", {}).get("event")
                                if domain in (None, previous.get("domain")) else None)
-                           or prior.get("pending_event")})
+                           or (prior.get("pending_event")
+                               if domain in (None, prior.get("pending_domain")) else None)})
             return conv.messages[-2:]
         if correction:
             period = None
@@ -1519,7 +1520,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                            "pending_event": prediction.event_spec(focus, domain) or (
                                previous.get("decision", {}).get("event")
                                if domain in (None, previous.get("domain")) else None)
-                           or prior.get("pending_event")})
+                           or (prior.get("pending_event")
+                               if domain in (None, prior.get("pending_domain")) else None)})
             return conv.messages[-2:]
 
     event = prediction.event_spec(focus, domain)
