@@ -2095,6 +2095,11 @@ def test_repair_response_preserves_line_breaks():
         "| Work | grows\n| Home | steady\n| Family | calm\nyou will\nreceive news on 2027-08-09.",
         issues)
     assert tail == "| Work | grows\n| Home | steady\n| Family | calm"
+    # A caveat heading before the table is kept when only one row is bad.
+    caveat = V.repair_response(
+        "Indicative timings\n| Work | 2027-08-09\n| Home | steady\n| Family | calm",
+        issues)
+    assert caveat == "Indicative timings\n| Home | steady\n| Family | calm"
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(

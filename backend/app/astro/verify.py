@@ -228,15 +228,23 @@ def repair_response(text: str, issues: list[str]) -> str:
 
                 rowish = sum(1 for ln in rows if is_row(ln))
                 if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
-                    kept = [ln for i, ln in enumerate(rows)
-                            if ln.strip() and not bad(ln)
-                            # A non-row fragment that completes a bad claim on
-                            # the next line must go too (e.g. "you will"
-                            # before "receive <bad date>").
-                            and (is_row(ln) or ln.rstrip()[-1:] in ".!?"
-                                 or i + 1 >= len(rows)
-                                 or not bad(ln + " " + rows[i + 1]))]
-                    sentence = "\n".join(kept)
+                    def fragment(i: int, ln: str) -> bool:
+                        # A non-row line that joins a bad claim wrapped across
+                        # lines goes too — but a caveat before a bad *row*
+                        # stays.
+                        nxt = rows[i + 1] if i + 1 < len(rows) else None
+                        if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
+                                and not is_row(nxt) and bad(ln + " " + nxt)):
+                            return True
+                        prv = rows[i - 1] if i else ""
+                        if (prv and not is_row(prv)
+                                and prv.rstrip()[-1:] not in ".!?"
+                                and not bad(prv) and bad(prv + " " + ln)):
+                            return True
+                        return False
+                    sentence = "\n".join(
+                        ln for i, ln in enumerate(rows)
+                        if ln.strip() and not bad(ln) and not fragment(i, ln))
                 else:
                     continue
             if sentence.strip():
