@@ -255,27 +255,43 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                             # A line that wraps into another line forming a bad
                             # claim goes too — but a caveat before a bad *row*
                             # stays, and so does a row before a bad prose line.
+                            # A row only wraps into an *indented* continuation.
                             nxt = rows[i + 1] if i + 1 < len(rows) else None
                             if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
                                     and not is_row(nxt) and bad(ln + " " + nxt)
-                                    and (not is_row(ln) or not bad(nxt))):
+                                    and (not is_row(ln)
+                                         or (nxt[:1] in (" ", "\t")
+                                             and not bad(nxt)))):
                                 return True
                             prv = rows[i - 1] if i else ""
-                            if (not is_row(ln) and prv
-                                    and prv.rstrip()[-1:] not in ".!?"
-                                    and not bad(prv) and bad(prv + " " + ln)):
-                                return True
-                            return False
-                        kept_lines = [ln for i, ln in enumerate(rows)
+                            return bool(
+                                not is_row(ln) and prv and not bad(prv)
+                                and fragment(i - 1, prv)
+                                and bad(prv + " " + ln))
+                        kept_pairs = [(i, ln) for i, ln in enumerate(rows)
                                       if ln.strip() and not bad(ln)
                                       and not fragment(i, ln)]
+                        kept_lines = [ln for _, ln in kept_pairs]
                         if not any(is_row(ln) for ln in kept_lines):
                             # No rows survive: complete or substantive prose
                             # still answers, but a bare lead-in is no reply.
-                            kept_lines = [ln for ln in kept_lines
+                            kept_pairs = [(i, ln) for i, ln in kept_pairs
                                           if ln.rstrip()[-1:] in ".!?"
-                                          or len(ln.split()) >= 4]
-                        sentence = "\n".join(kept_lines)
+                                          or (len(ln.split()) >= 4
+                                              and not ln.rstrip().endswith(":"))]
+                        # Deleting rows can leave two prose halves adjacent whose
+                        # join rebuilds the rejected claim — drop both halves.
+                        final = []
+                        for i, ln in kept_pairs:
+                            if (final and i > final[-1][0] + 1
+                                    and not is_row(final[-1][1])
+                                    and final[-1][1].rstrip()[-1:] not in ".!?"
+                                    and not is_row(ln)
+                                    and bad(final[-1][1] + " " + ln)):
+                                final.pop()
+                                continue
+                            final.append((i, ln))
+                        sentence = "\n".join(ln for _, ln in final)
                     else:
                         continue
                 if sentence.strip():

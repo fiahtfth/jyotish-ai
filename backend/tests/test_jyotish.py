@@ -2121,6 +2121,23 @@ def test_repair_response_preserves_line_breaks():
         "Overall the period still looks broadly supportive",
         issues)
     assert takeaway == "Overall the period still looks broadly supportive"
+    # A colon lead-in under a fully rejected list is still no reply.
+    colon = V.repair_response(
+        "Here are the key dates:\n- a | 2027-08-09\n- b | 2027-08-09\n- c | 2027-08-09",
+        issues)
+    assert "doesn't support" in colon
+    # A valid bullet and prose line sharing the claim's words are kept —
+    # neither alone makes the rejected claim.
+    shared = V.repair_response(
+        "- Saturn rises\nAries supports you\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert shared == "- Saturn rises\nAries supports you\n- Home steady"
+    # Prose halves separated by dropped rows must not rejoin into the claim.
+    rejoined = V.repair_response(
+        "The chart places Saturn in\n- x | 2027-08-09\n- y | 2027-08-09\n"
+        "- z | 2027-08-09\nthe sign of Aries",
+        issues + ["Saturn in Aries claim"])
+    assert "doesn't support" in rejoined
     # Wrapped prose in a 3-line sentence still drops whole — its leading
     # fragment must not survive row recovery.
     wrapped3 = V.repair_response(
