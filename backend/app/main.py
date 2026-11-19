@@ -953,7 +953,11 @@ if os.path.isdir(_FRONTEND_DIR):
         if os.path.commonpath([root, cand]) != root:       # path traversal guard
             return Response(status_code=404)
         if os.path.isfile(cand):
-            return FileResponse(cand)
+            cache = ("public, max-age=31536000, immutable" if full_path.startswith("_next/static/")
+                     else "no-store")
+            return FileResponse(cand, headers={"Cache-Control": cache})
+        if full_path.startswith("_next/") or os.path.splitext(full_path)[1]:
+            return Response(status_code=404, headers={"Cache-Control": "no-store"})
         if os.path.isfile(cand + ".html"):
-            return FileResponse(cand + ".html")
-        return FileResponse(os.path.join(root, "index.html"))
+            return FileResponse(cand + ".html", headers={"Cache-Control": "no-store"})
+        return FileResponse(os.path.join(root, "index.html"), headers={"Cache-Control": "no-store"})

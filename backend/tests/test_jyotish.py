@@ -2002,3 +2002,20 @@ def test_mismatched_indications_invite_past_events_directly():
     reply = send("started my first job in July 2012", h)
     assert "career, July 2012" in reply[-1]["content"]
     assert "Continue with the reading" in reply[-1]["meta"]["options"]
+
+
+def test_frontend_assets_do_not_fall_back_to_html():
+    page = client.get("/chat")
+    assert page.status_code == 200
+    assert page.headers["cache-control"] == "no-store"
+    missing = client.get("/_next/static/chunks/missing-deploy.js")
+    assert missing.status_code == 404
+    assert "text/html" not in missing.headers.get("content-type", "")
+    assert missing.headers["cache-control"] == "no-store"
+    from pathlib import Path
+    assets = Path(__file__).resolve().parents[2] / "frontend/out/_next/static/chunks"
+    chunk = next(assets.glob("*.js"))
+    response = client.get("/_next/static/chunks/" + chunk.name)
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"]
+    assert "immutable" in response.headers["cache-control"]
