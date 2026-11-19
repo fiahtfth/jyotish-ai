@@ -83,7 +83,7 @@ def _plain_reply(text: str) -> str:
         # filters need it to recognize a claim split across lines.
         line = raw.rstrip()
         if "|" in line:
-            cells = [c.strip() for c in line.strip("|").split("|")]
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
             if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
                 continue                      # markdown table separator
             line = " · ".join(c for c in cells if c)

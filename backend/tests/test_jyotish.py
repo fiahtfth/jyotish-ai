@@ -2155,6 +2155,9 @@ def test_llm_markdown_is_flattened_to_plain_text():
     # Indentation marks a wrapped continuation — repair_response needs it.
     wrapped = _plain_reply("- Saturn sits\n  in Aries\n- Home steady")
     assert wrapped == "- Saturn sits\n  in Aries\n- Home steady"
+    # An indented table divider is still a divider, not a bogus row.
+    table = _plain_reply("| Work | grows |\n  |---|---|\n| Home | steady |")
+    assert table == "Work · grows\nHome · steady"
 
 
 
