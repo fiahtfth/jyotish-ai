@@ -2811,3 +2811,14 @@ def test_concise_reply_trims_long_readings():
     # no clean boundary inside the limit -> returned as is
     blob = "x" * 2000
     assert prediction.concise_reply(blob, limit=800) == blob
+
+
+def test_long_health_reply_keeps_appended_disclaimer(monkeypatch):
+    from app.llm import providers
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    long_reply = "A long health reading. " + "x" * 2000
+    monkeypatch.setattr(providers, "generate", lambda *a, **k: (long_reply, "test"))
+    replies = send("how is my health looking", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
