@@ -200,6 +200,9 @@ REPORT_PAT = re.compile(
     r"report\s+(on|of|about)\s+(my|the|this)\s+(chart|kundli|horoscope)|"
     r"full reading|complete reading|whole chart|chart summary|"
     r"summary of (my |the )?(chart|kundli))\b", re.I)
+# an explicit ask for a long answer lifts the conciseness trim
+_DETAIL_ASK = re.compile(
+    r"\b(?:in\s+detail|detailed|elaborat\w*|in\s+depth|deep\s+dive|thorough\w*|step\s+by\s+step)\b", re.I)
 # "how is today for me" — the daily view is the personalised panchang
 DAILY_PAT = re.compile(
     r"\bhow('?s| is| will be| was)\b[^?]{0,25}\b(today|tomorrow|the day|my day)\b|"
@@ -1873,6 +1876,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             log.warning("verifier stripped unsupported claims: %s", check["issues"][:5])
             reply = verify.repair_response(reply, check["issues"])
     reply = _apply_disclaimer(reply, domain)
+    if not REPORT_PAT.search(t) and not _DETAIL_ASK.search(t):
+        reply = prediction.concise_reply(reply)
     if on_delta:
         on_delta(reply)
     if analysis:
