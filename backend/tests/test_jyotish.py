@@ -2778,3 +2778,18 @@ def test_surgery_question_gets_no_prashna_verdict():
     _open_calibrated(h)
     replies = send("will my surgery go well", h)
     assert not any("Prashna" in m["content"] for m in replies)
+
+
+def test_conception_possibility_is_declined_but_child_schooling_is_not():
+    from app.chat.safety import private_reply
+    assert private_reply("is it possible for me to conceive and have children")
+    assert private_reply("will i have children")
+    assert private_reply("when will my baccha get college admission") is None
+
+
+def test_surgery_timing_suggestion_carries_health_disclaimer():
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("which day is good for my surgery", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
