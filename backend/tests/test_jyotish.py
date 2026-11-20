@@ -2676,3 +2676,91 @@ def test_automatic_outcome_requests_default_to_off():
     assert client.get("/api/predictions", headers=h).json()["followups_enabled"] is False
     assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
     assert any(m["meta"].get("followup_id") for m in send("Hello", h))
+
+
+# ---------- professional-review improvements ----------
+
+def test_verifier_lordship_claims():
+    _, f = make_facts()
+    h3 = f["houses"][3]["lord"]
+    wrong = "Mars" if h3 != "Mars" else "Venus"
+    r = V.verify_response(f"Your {h3} rules the 3rd house.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Your {wrong} rules the 3rd house.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_varga_claims():
+    _, f = make_facts()
+    d9_sun = f["vargas"]["D9"]["Sun"]
+    right = f["vargas"]["D9"]["Sun"]["sign_name"] if "sign_name" in d9_sun else None
+    if right is None:
+        from app.astro.constants import SIGN_NAMES
+        right = SIGN_NAMES[d9_sun["sign"]]
+    wrong = "Sagittarius" if right != "Sagittarius" else "Leo"
+    r = V.verify_response(f"Sun is in {right} navamsa.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Sun is in {wrong} navamsa.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_transit_claims():
+    _, f = make_facts()
+    f = {**f, "window_transits": {"Jupiter": ["Taurus", "Gemini"]}}
+    r = V.verify_response("Jupiter is transiting Taurus now.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response("Jupiter is transiting Aries now.", f, {})
+    assert not r["ok"]
+
+
+def test_facts_lines_include_pratyantar_transits_and_remedy():
+    from app.llm.providers import _facts_lines
+    _, f = make_facts()
+    f = {**f,
+         "window_label": "2027",
+         "window_pratyantar": [{"lords": ["Jupiter", "Saturn", "Sun"],
+                                "start": "2027-01-01", "end": "2027-02-15"}],
+         "window_transits": {"Jupiter": ["Taurus"]},
+         "domain_remedy": ("Jupiter", "Thursday observance — yellow donation")}
+    text = "\n".join(_facts_lines(f))
+    assert "Pratyantardasha" in text and "2027-01-01 to 2027-02-15" in text
+    assert "Jupiter in Taurus" in text
+    assert "Thursday observance" in text
+    assert "Natal yogas" in text or "aspects" in text  # yogas only if fired
+
+
+def test_dasha_overview_marks_verdicts():
+    from app.chat.orchestrator import _dasha_overview
+    from datetime import date
+    facts = {"vimshottari": {"periods": [
+        {"lords": ["Jupiter", "Saturn"], "start": "2027-01-01", "end": "2028-01-01"},
+        {"lords": ["Jupiter", "Mars"], "start": "2028-01-01", "end": "2029-01-01"}]},
+        "functional": {"benefics": ["Jupiter", "Mars"], "malefics": ["Saturn"],
+                       "yogakaraka": None}}
+    lines = _dasha_overview(facts, (date(2027, 1, 1), date(2030, 1, 1)))
+    assert len(lines) == 2
+    assert "Jupiter–Saturn" in lines[0] and "frictional" in lines[0]
+    assert "Jupiter–Mars" in lines[1] and "supportive" in lines[1]
+
+
+def test_new_event_types_parse():
+    from app.astro.prediction import event_spec
+    assert event_spec("when will I have a baby", "children")["event_type"] == "childbirth"
+    assert event_spec("when will I buy a house", "property")["event_type"] == "property_purchase"
+    assert event_spec("will I settle abroad", "relocation")["event_type"] == "foreign_travel"
+    assert event_spec("will I win the court case", "litigation")["event_type"] == "litigation_outcome"
+    assert event_spec("when will I be debt free", "debt")["event_type"] == "debt_cleared"
+
+
+def test_transit_lookup_shortcut(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("when does Jupiter enter my 7th house", h)
+    assert any("Jupiter" in m["content"] for m in replies), replies
+
+
+def test_prashna_answer(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will i ever travel abroad", h)
+    assert any("Prashna" in m["content"] or "prashna" in m["content"].lower() for m in replies), replies

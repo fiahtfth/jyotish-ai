@@ -16,6 +16,8 @@ import time
 import httpx
 
 from ..config import settings
+from ..astro import constants as K
+from ..astro import yogas
 from . import decider
 
 log = logging.getLogger(__name__)
@@ -664,7 +666,8 @@ def _facts_lines(facts: dict) -> list[str]:
         if rec["dignity"]:
             extra.append("/".join(rec["dignity"]))
         lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}, "
-                     f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']}"
+                     f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']} "
+                     f"(lord {rec['nakshatra']['lord']})"
                      + (f" [{', '.join(extra)}]" if extra else ""))
     func = facts["functional"]
     lines.append(f"Functional benefics: {', '.join(func['benefics'])}; "
@@ -672,6 +675,33 @@ def _facts_lines(facts: dict) -> list[str]:
                  f"yogakaraka: {func['yogakaraka']}; maraka: {', '.join(func['maraka_lords'])}")
     jk = facts["jaimini"]["karakas"]
     lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    ar = facts.get("jaimini", {})
+    if ar.get("arudha_lagna"):
+        parts = [f"A1 (arudha lagna) {ar['arudha_lagna']['sign_name']}"]
+        if ar.get("A10"):
+            parts.append(f"A10 (career arudha) {ar['A10']['sign_name']}")
+        if ar.get("upapada_lagna"):
+            parts.append(f"A12 (upapada) {ar['upapada_lagna']['sign_name']}")
+        lines.append("Arudhas: " + "; ".join(parts))
+    fired = [y for y in yogas.detect(facts) if y.get("conditions_fired")]
+    if fired:
+        lines.append("Natal yogas present: " + "; ".join(
+            f"{y['name']} ({y['level']}, {y['source'].split(',')[0]})" for y in fired))
+    # Drishti and conjunctions — what a reader cites when reasoning about a house.
+    by_sign = {}
+    for name, rec in p.items():
+        by_sign.setdefault(rec["sign"], []).append(name)
+    for name, rec in p.items():
+        touched = sorted({(s - lag["sign"]) % 12 + 1 for s in K.reaches(name, rec["sign"])})
+        lines.append(f"{name} aspects houses {', '.join(str(h) for h in touched)}")
+    conj = [f"{'+'.join(names)} in {p[names[0]]['sign_name']} (house {p[names[0]]['house']})"
+            for names in by_sign.values() if len(names) > 1]
+    if conj:
+        lines.append("Conjunctions: " + "; ".join(conj))
+    sav = facts.get("sarvastakavarga")
+    if sav:
+        lines.append("Sarvashtakavarga bindus per sign (Aries..Pisces): "
+                     + ", ".join(f"{K.SIGN_NAMES[i]} {int(v)}" for i, v in enumerate(sav)))
     for period in facts.get("current_vimshottari", []):
         lords = " → ".join(period["lords"])
         lines.append(f"Vimshottari running today: {lords} ({period['start']} through {period['end']})")
@@ -681,6 +711,25 @@ def _facts_lines(facts: dict) -> list[str]:
         spans = "; ".join(f"{p['maha']}–{p.get('antar') or p['maha']} "
                           f"({p['start']} to {p['end']})" for p in window_periods[:8])
         lines.append(f"Vimshottari active during {label}: {spans}")
+    pratyantar = facts.get("window_pratyantar") or []
+    if pratyantar:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['lords'][2]} ({p['start']} to {p['end']})"
+                          for p in pratyantar[:12])
+        lines.append(f"Pratyantardasha sequence during {label}: {spans}")
+    dom_chart = facts.get("domain_chart")
+    if dom_chart:
+        lines.append("Domain divisional chart (houses counted from its own ascendant): "
+                     + json.dumps(dom_chart, ensure_ascii=False))
+    window_transits = facts.get("window_transits") or {}
+    if window_transits:
+        label = facts.get("window_label") or "the asked period"
+        lines.append(f"Transit signs during {label}: " + "; ".join(
+            f"{planet} in {', '.join(signs)}" for planet, signs in window_transits.items()))
+    remedy = facts.get("domain_remedy")
+    if remedy:
+        lines.append(f"Traditional upaya for this domain (attribute to tradition if offered): "
+                     f"propitiate {remedy[0]} — {remedy[1]}")
     for period in facts.get("referenced_mahadashas", []):
         lines.append(f"Vimshottari mahadasha of {period['lord']}: {period['start']} through {period['end']}")
     if facts.get("selected_chart"):

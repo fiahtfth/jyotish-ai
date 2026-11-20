@@ -11,12 +11,12 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import classical, calibration, inspection, panchang, pillars, precision, registry, report, sensitivity, prediction, transits, verify
-from ..astro.constants import DOMAINS
+from ..astro import classical, calibration, inspection, panchang, pillars, precision, registry, report, sensitivity, prediction, transits, verify, vimshottari
+from ..astro.constants import DOMAINS, DOMAIN_REMEDIES, SIGN_NAMES
 from .. import geo
 from ..config import settings
 from ..policy import TERMS_VERSION
-from ..astro.engine import BirthInput, birth_fingerprint, engine
+from ..astro.engine import BirthInput, birth_fingerprint, engine, _ymd
 from ..astro.settings import CalcSettings
 from ..db import (
     BirthProfile, CalibrationEvent, Conversation, Message, PredictionRecord, UserMilestone,
@@ -179,6 +179,7 @@ DOMAIN_KEYWORDS = {
     "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest"],
     "direction": ["direction", "purpose", "path in life", "meaning"],
     "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical", "accident", "injury", "injur"],
+    "property": ["property", "real estate", "buy a house", "buy a home", "buy a flat", "buy a plot", "makaan", "vehicle", "a car"],
 }
 
 # panchang: the day's limbs — factual almanac, not a prediction
@@ -658,6 +659,25 @@ def _vimshottari_lookup(db, conv, profile, facts, birth, text):
                 lines.append(f"During {label}, the saved timeline shows {clocks} at the mahādasha and antardasha levels.")
             else:
                 lines.append(f"{label} falls outside the saved Vimshottari timeline.")
+            # Retrospective causation: a pandit also weighs what Saturn, Rahu
+            # and Mars were transiting at the time.
+            transit_bits = []
+            moon_sign = facts["planets"]["Moon"]["sign"]
+            for name in ("Saturn", "Mars", "Rahu"):
+                try:
+                    signs = {s for s, _, _ in transits.sign_intervals(birth, name, *reported)}
+                except Exception:
+                    continue
+                for s in sorted(signs):
+                    if s == moon_sign:
+                        transit_bits.append(f"{name} was transiting the natal Moon sign ({SIGN_NAMES[s]})")
+                    elif s == facts["lagna"]["sign"]:
+                        transit_bits.append(f"{name} was transiting the lagna sign ({SIGN_NAMES[s]})")
+                    elif (s - moon_sign) % 12 + 1 in (8, 12):
+                        transit_bits.append(
+                            f"{name} was in the {(s - moon_sign) % 12 + 1}th from the Moon ({SIGN_NAMES[s]})")
+            if transit_bits:
+                lines.append("Transits then: " + "; ".join(transit_bits) + ".")
         else:
             lines.append("The chart can’t establish the month of an accident. If you remember the approximate year or month and year, I can check which dasha was active.")
     _add_msg(db, conv, "assistant", "\n\n".join(lines),
@@ -1284,6 +1304,124 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                      meta={"pending_sade_sati": True})
             return conv.messages[-2:]
 
+    # prashna — a yes/no question ("will i …", "kya hoga") cast for the moment
+    # of asking, the classical horary instrument for questions the natal chart
+    # cannot time.
+    prashna = bool(re.search(
+        r"\b(will i|will it|is it (?:going|possible)|kya hoga|hoga kya|kabhi hoga|"
+        r"shall i|should i go|will my)\b", t))
+    if prashna and detect_domain(t):
+        domain = detect_domain(t)
+        spec = DOMAINS.get(domain)
+        # A timed question or a forecastable event still goes through the
+        # normal flow; prashna covers the untimed yes/no ask.
+        has_period = bool(re.search(
+            r"\b(?:19|20)\d{2}\b|this (?:year|month|week)|next (?:year|month|week)|"
+            r"in \d+ (?:years?|months?)|january|february|march|april|may|june|july|"
+            r"august|september|october|november|december|kab\b", t))
+        if spec and not has_period and not prediction.event_spec(language.focus_text(text), domain):
+            now = _utcnow()
+            tz = birth.tz_offset
+            local = now + timedelta(hours=tz)
+            pb = BirthInput(name="prashna", year=local.year, month=local.month,
+                            day=local.day, hour=local.hour, minute=local.minute,
+                            second=local.second, lat=birth.lat, lon=birth.lon,
+                            tz_offset=tz, place_label=birth.place_label,
+                            settings=birth.settings)
+            pf = engine.compute(pb)
+            lagna = pf["lagna"]["sign"]
+            lagna_lord = pf["houses"]["1"]["lord"] if "1" in pf["houses"] else pf["houses"][1]["lord"]
+            moon = pf["planets"]["Moon"]
+            house = spec["houses"][0]
+            lord = pf["houses"][house]["lord"]
+            lord_rec = pf["planets"][lord]
+            lord_house = lord_rec["house"]
+            kendra = {1, 4, 7, 10}
+            trikona = {1, 5, 9}
+            score = 0
+            notes = []
+            if lord_house in kendra | trikona:
+                score += 1
+                notes.append(f"{lord} (lord of your {domain} house) sits in a strong "
+                             f"{lord_house}th prashna house")
+            elif lord_house in (6, 8, 12):
+                score -= 1
+                notes.append(f"{lord} (lord of your {domain} house) sits in the "
+                             f"{lord_house}th prashna house, a dusthana")
+            tags = lord_rec.get("dignity") or []
+            if any(d in ("exalted", "own sign", "moolatrikona") for d in tags):
+                score += 1
+                notes.append(f"{lord} is {tags[0]} in {lord_rec['sign_name']}")
+            elif "debilitated" in tags:
+                score -= 1
+                notes.append(f"{lord} is debilitated in {lord_rec['sign_name']}")
+            if moon["house"] in kendra | trikona | {11}:
+                score += 1
+                notes.append(f"the prashna Moon is in the {moon['house']}th, a favourable house")
+            elif moon["house"] in (6, 8, 12):
+                score -= 1
+                notes.append(f"the prashna Moon is in the {moon['house']}th")
+            lagna_lord_rec = pf["planets"][lagna_lord]
+            if lagna_lord_rec["house"] in kendra | trikona:
+                score += 1
+            verdict = ("leans favourable" if score >= 2
+                       else "leans unfavourable" if score <= -1
+                       else "is mixed — the outcome depends on effort and timing")
+            lines = [f"Prashna cast for {local:%Y-%m-%d %H:%M} local ({birth.place_label}) — "
+                     f"lagna {pf['lagna']['sign_name']}, Moon in {moon['sign_name']} "
+                     f"(house {moon['house']}).",
+                     f"The chart for this moment {verdict} on the {domain} question."]
+            if notes:
+                lines.append("- " + "\n- ".join(n.capitalize() for n in notes))
+            lines.append("Prashna is a snapshot of the moment of asking, not a guarantee; "
+                         "for a timed forecast, name a period.")
+            _add_msg(db, conv, "assistant", "\n\n".join(lines),
+                     meta={"prashna": {"domain": domain, "score": score,
+                                       "lagna": pf["lagna"]["sign_name"]}})
+            return conv.messages[-2:]
+
+    # transit lookup — "when does Jupiter enter my 7th", "Jupiter gochar kab"
+    tm = re.search(
+        r"when (?:does|will|is|do)\s+(\w+)\s+(?:enter|come|move|transit|reach|go\s+into)|"
+        r"(\w+)\s+(?:gochar|transit)\s+(?:kab|kab hoga|when)",
+        t)
+    if tm:
+        pname = (tm.group(1) or tm.group(2)).title()
+        if pname in ("Jupiter", "Saturn", "Rahu", "Ketu", "Mars", "Venus"):
+            house_m = re.search(r"(\d+)(?:st|nd|rd|th)?\s*(?:house|bhav|bhava|from (?:the )?lagna|from (?:the )?moon)", t)
+            sign_m = re.search(
+                rf"\b({'|'.join(k.lower() for k in SIGN_NAMES)})\b", t)
+            today = _today_at(birth)
+            horizon = today + timedelta(days=366 * 15)
+            rows = transits.sign_intervals(birth, pname, today, horizon)
+            lines = []
+            if house_m:
+                h = int(house_m.group(1))
+                base = facts["planets"]["Moon"]["sign"] if "moon" in house_m.group(0) else facts["lagna"]["sign"]
+                wanted = (base + h - 1) % 12
+                hits = [r for r in rows if r[0] == wanted]
+                src = "Moon" if "moon" in house_m.group(0) else "lagna"
+                for s, first, last in hits[:3]:
+                    lines.append(f"{pname} is in {SIGN_NAMES[s]} (your {h}th from {src}) "
+                                 f"from {first} to {last}.")
+                if not lines:
+                    lines.append(f"{pname} does not reach your {h}th house from {src} before {horizon}.")
+            elif sign_m:
+                wanted = [i for i, n in enumerate(SIGN_NAMES) if n.lower() == sign_m.group(1)]
+                hits = [r for r in rows if r[0] in wanted]
+                for s, first, last in hits[:3]:
+                    lines.append(f"{pname} enters {SIGN_NAMES[s]} on {first} and stays until {last}.")
+                if not lines:
+                    lines.append(f"{pname} does not reach {sign_m.group(1).title()} before {horizon}.")
+            else:
+                for s, first, last in rows[:4]:
+                    lines.append(f"{pname} is in {SIGN_NAMES[s]} (house "
+                                 f"{(s - facts['lagna']['sign']) % 12 + 1} from lagna) "
+                                 f"from {first} to {last}.")
+            _add_msg(db, conv, "assistant", "\n".join(lines),
+                     meta={"transit_lookup": pname})
+            return conv.messages[-2:]
+
     if re.search(r"\b(?:current dasha|(?:which|what) dasha (?:am i in|is running)|dasha (?:am i in|kya hai)|"
                  r"meri (?:kaunsi )?dasha)\b|वर्तमान दशा|कौन सी दशा", t):
         when = _today_at(birth)
@@ -1498,9 +1636,16 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             if full:
                 narrowed = (full[0], min(full[1], date(full[0].year, 12, 31)))
         if narrowed is not None:
-            _add_msg(db, conv, "assistant",
-                     f"I can assess up to one year at a time. Shall I start with "
-                     f"{language.window_label(narrowed)}? Or name a different year in that span.",
+            overview = _dasha_overview(facts, full)
+            body = ("I can assess up to one year at a time in depth — "
+                    "but here's the dasha overview for the whole span first:\n"
+                    + "\n".join(overview)
+                    + f"\n\nShall I start with {language.window_label(narrowed)}? "
+                      "Or name a different year in that span."
+                    if overview else
+                    f"I can assess up to one year at a time. Shall I start with "
+                    f"{language.window_label(narrowed)}? Or name a different year in that span.")
+            _add_msg(db, conv, "assistant", body,
                      meta={"requested_window": [d.isoformat() for d in narrowed],
                            "pending_domain": domain or previous.get("domain") or prior.get("pending_domain"),
                            "pending_event": prediction.event_spec(focus, domain) or (
@@ -1636,12 +1781,48 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     # The model must ground dasha claims in the period the user asked about,
     # not in whatever is running today ("my accident in Jan 2014" ≠ current MD).
     window_periods = []
+    pratyantar = []
+    window_transits = {}
+    domain_chart = None
     if window:
         ws, we = (d.isoformat() for d in window)
         window_periods = [p for p in facts.get("vimshottari", {}).get("periods", [])
                           if p["start"] <= we and ws <= p["end"]]
+        if window_periods:
+            # Pratyantar subdivisions are how a reader narrows a year to months.
+            try:
+                pds = vimshottari.pd_periods(
+                    window_periods, window_periods[0]["start_jd"],
+                    window_periods[-1]["end_jd"])
+                pratyantar = [
+                    {**r, "start": _ymd(r["start_jd"]),
+                     "end": _ymd(r["end_jd"])}
+                    for r in pds
+                    if _ymd(r["start_jd"]) <= we
+                    and ws <= _ymd(r["end_jd"])]
+            except Exception:
+                log.exception("pratyantar expansion unavailable")
+        for planet in ("Jupiter", "Saturn", "Rahu", "Ketu", "Mars"):
+            try:
+                ivs = transits.sign_intervals(birth, planet, *window)
+                window_transits[planet] = list(dict.fromkeys(
+                    SIGN_NAMES[s] for s, _, _ in ivs))
+            except Exception:
+                log.exception("transit intervals unavailable for %s", planet)
+    if domain and not selected:
+        spec = DOMAINS.get(domain)
+        chart = facts["vargas"].get(spec["varga"]) if spec else None
+        if chart:
+            vlag = chart["Lagna"]["sign"]
+            domain_chart = {
+                "name": spec["varga"], "lagna": SIGN_NAMES[vlag],
+                "placements": {name: {"sign": SIGN_NAMES[p["sign"]],
+                                      "house": (p["sign"] - vlag) % 12 + 1}
+                               for name, p in chart.items()}}
     facts = {**facts, "current_vimshottari": run, "referenced_mahadashas": referenced,
-             "window_vimshottari": window_periods,
+             "window_vimshottari": window_periods, "window_pratyantar": pratyantar,
+             "window_transits": window_transits, "domain_chart": domain_chart,
+             "domain_remedy": DOMAIN_REMEDIES.get(domain or ""),
              "window_label": language.window_label(window) if window else None}
     recent_user_text = [m["content"] for m in providers._prompt_history(history) if m["role"] == "user"]
     remembered = memory.relevant(memory.saved(conv.messages, profile.calc_fingerprint), domain, focus, recent_user_text)
@@ -1697,6 +1878,29 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                       if domain == "career" and prior.get("career_match") else {}),
                    **({"varga": varga} if selected else {})})
     return conv.messages[-2:]
+
+
+def _dasha_overview(facts: dict, span: tuple) -> list[str]:
+    """MD–AD phases covering a multi-year span with a support verdict per phase."""
+    periods = facts.get("vimshottari", {}).get("periods", [])
+    ws, we = (d.isoformat() for d in span)
+    rows = [p for p in periods if p["start"] <= we and ws <= p["end"]]
+    if not rows:
+        return []
+    func = facts.get("functional", {})
+    benefics, malefics = set(func.get("benefics", [])), set(func.get("malefics", []))
+    yoga = func.get("yogakaraka")
+    lines = []
+    for p in rows[:14]:
+        md, ad = p["lords"][0], p["lords"][1]
+        verdict = ("strongly supportive" if ad == yoga or md == yoga
+                   else "supportive" if ad in benefics
+                   else "frictional" if ad in malefics
+                   else "mixed")
+        lines.append(f"- {md}–{ad} ({p['start']} to {p['end']}): {verdict}")
+    if len(rows) > 14:
+        lines.append(f"- … and {len(rows) - 14} further phases")
+    return lines
 
 
 # ------------------------------------------------------------ prediction follow-ups

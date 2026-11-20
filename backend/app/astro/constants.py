@@ -116,8 +116,27 @@ DOMAINS = {
     "debt": {"houses": [6, 2], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6"], "label": "debt"},
     "litigation": {"houses": [6, 7], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6"], "label": "litigation"},
     "health":     {"houses": [1, 6, 8, 12], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6", "A8"], "label": "health or physical resilience", "disclaimer": HEALTH_DISCLAIMER},
+    "property":   {"houses": [4, 2, 11], "varga": "D4", "karaka": "Matrukaraka", "arudhas": ["A4"], "label": "property, home or vehicles"},
 }
 MIN_CALIBRATION_AGE_FOR_DOMAIN = {"relationship": 21, "career": 16, "finance": 16}
+
+# Traditional remedial significators per domain — upaya is always attributed
+# to tradition, never presented as a guaranteed fix.
+DOMAIN_REMEDIES = {
+    "career": ("Saturn", "Saturday observance — service to workers, sesame oil lamp at sunset"),
+    "education": ("Mercury", "Wednesday observance — study of a shastra, gift of books or green items"),
+    "relationship": ("Venus", "Friday observance — white flowers at a Devi shrine, sweets shared with women"),
+    "marriage": ("Venus", "Friday observance — white flowers at a Devi shrine, sweets shared with women"),
+    "relocation": ("Rahu", "Saturday observance — coconut donation, feeding the poor"),
+    "finance": ("Jupiter", "Thursday observance — yellow items donated to a teacher or temple"),
+    "direction": ("Jupiter", "Thursday observance — yellow items donated to a teacher or temple"),
+    "children": ("Jupiter", "Thursday observance — feeding children, turmeric donation"),
+    "parents": ("Sun", "Sunday observance — water offering (arghya) to the rising Sun"),
+    "debt": ("Mars", "Tuesday observance — Hanuman Chalisa, jaggery donation"),
+    "litigation": ("Mars", "Tuesday observance — Hanuman Chalisa, jaggery donation"),
+    "health": ("Sun", "Sunday observance — arghya to the Sun, Aditya Hridaya Stotra"),
+    "property": ("Mars", "Tuesday observance — Hanuman worship, donation of red items"),
+}
 
 VARGA_FUNCTIONS = {}  # filled lazily in engine to avoid importing jhora at module import time
 
