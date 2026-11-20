@@ -2797,3 +2797,28 @@ def test_surgery_timing_suggestion_carries_health_disclaimer():
     _open_calibrated(h)
     replies = send("which day is good for my surgery", h)
     assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
+
+
+def test_concise_reply_trims_long_readings():
+    from app.astro import prediction
+    short = "A short answer."
+    assert prediction.concise_reply(short) == short
+    paragraphs = [f"Paragraph {i}. " + "x" * 200 for i in range(8)]
+    long = "\n\n".join(paragraphs)
+    trimmed = prediction.concise_reply(long, limit=800)
+    assert len(trimmed) <= 800
+    assert "\n\n" not in trimmed[-20:]
+    # no clean boundary inside the limit -> returned as is
+    blob = "x" * 2000
+    assert prediction.concise_reply(blob, limit=800) == blob
+
+
+def test_long_health_reply_keeps_appended_disclaimer(monkeypatch):
+    from app.llm import providers
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    long_reply = "A long health reading. " + "x" * 2000
+    monkeypatch.setattr(providers, "generate", lambda *a, **k: (long_reply, "test"))
+    replies = send("how is my health looking", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
