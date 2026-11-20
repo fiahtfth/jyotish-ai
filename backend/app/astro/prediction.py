@@ -3,7 +3,7 @@ import re
 import math
 from datetime import date
 
-VERSION = "2026-11-19.1"
+VERSION = "2026-11-21.1"
 # These definitions are prospective scoring targets, not generated event promises.
 EVENTS = [
     ("career", r"promot|move up (?:at work|the ladder)|higher role|पदोन्नति", "promotion", "A formal promotion to a higher role takes effect"),
@@ -49,7 +49,9 @@ def decide(question, analysis, event=None, *, as_of=None):
     spec = event or event_spec(question, analysis["domain"])
     reasons = []
     prec, sens = analysis.get("precision", {}), analysis.get("sensitivity", {})
-    if date.fromisoformat(analysis["analysis_window"]["end"]) < (as_of or date.today()):
+    today = (as_of or date.today()).isoformat()
+    requested = analysis["analysis_window"]
+    if requested["end"] <= today:
         reasons.append("This is a retrospective interval, not a future event forecast.")
     if not spec:
         reasons.append("The question needs one observable event before it can be scored.")
@@ -64,22 +66,33 @@ def decide(question, analysis, event=None, *, as_of=None):
     if prec.get("confirmation") == "Hidden friction":
         reasons.append("The secondary methods conflict with a positive event forecast.")
     audit = analysis.get("classical")
-    if audit:
+    window = requested
+    if audit is not None:
         if audit["promise"] not in ("Strong", "Moderate"):
             reasons.append("The natal and divisional checks give limited or unavailable support.")
         if audit["timing_sensitive"]:
             reasons.append("The relevant divisional ascendant changes within five minutes.")
-        if not any(s["complete"] and s["count"] >= 3 for s in audit["scores"]):
-            reasons.append("Fewer than three classical gates align on a fully evaluated sample.")
+        candidates = [w for w in prec.get("timing_windows", [])
+                      if today < w["start"] and requested["start"] <= w["start"] <= w["end"] <= requested["end"]]
+        if not candidates:
+            reasons.append("No prospective window passed the aligned dasha and micro-timing checks.")
+        elif method := analysis.get("career_event_method"):
+            qualifying = {(w["start"], w["end"]) for w in method["windows"] if w["qualifies"]}
+            candidates = [w for w in candidates if (w["start"], w["end"]) in qualifying]
+            if not candidates:
+                reasons.append("No window also met the rules for this specific career event.")
+        if candidates:
+            window = {key: candidates[0][key] for key in ("start", "end")}
     disposition = "abstain"
     if not reasons and (audit or (analysis["support_count"] >= 3 and analysis["conflict_count"] == 0)):
         disposition = "event_indicated"
     elif not reasons:
         reasons.append("The methods do not provide sufficient conflict-free support for an event forecast.")
+    if disposition == "abstain":
+        window = requested
     return {"version": VERSION, "disposition": disposition, "event": spec,
-            "window": analysis["analysis_window"], "reasons": reasons,
-            "success_criteria": ((spec["definition"] + " within " + analysis["analysis_window"]["start"] +
-                                  " to " + analysis["analysis_window"]["end"] + ".") if spec else None),
+            "window": window, "reasons": reasons,
+            "success_criteria": (f"{spec['definition']} within {window['start']} to {window['end']}." if spec else None),
             "note": "Rule-based indication, not a measured probability or guarantee."}
 
 
@@ -141,7 +154,7 @@ def scorecard(rows, today=None):
 
 def reading_subject(analysis):
     from ..chat.language import window_label
-    window = analysis["analysis_window"]
+    window = (analysis.get("decision") or {}).get("window", analysis["analysis_window"])
     period = window_label((date.fromisoformat(window["start"]), date.fromisoformat(window["end"])))
     event = (analysis.get("decision", {}).get("event") or {}).get("event_type")
     labels = {"job_change": "a job change", "job_offer": "a job offer", "promotion": "a promotion",
@@ -149,6 +162,22 @@ def reading_subject(analysis):
               "relocation": "a move", "engagement": "an engagement"}
     subject = labels.get(event, (event or analysis["domain"]).replace("_", " "))
     return f"For {subject} in {period}"
+
+
+def issued_reading(analysis):
+    """Render the frozen event and single window without model substitutions."""
+    decision = analysis["decision"]
+    start, end = (date.fromisoformat(decision["window"][key]).strftime("%d %b %Y") for key in ("start", "end"))
+    event = decision["event"]["definition"]
+    labels = {"promotion": "a formal promotion taking effect",
+              "job_change": "starting a job with a different employer",
+              "job_offer": "receiving a formal job offer"}
+    label = labels.get(decision["event"]["event_type"])
+    period = f"on {start}" if start == end else f"from {start} through {end}"
+    lead = (f"The traditional chart indicators for {label} overlap {period}." if label else
+            f"The traditional timing rules point to {period.removeprefix('from ').removeprefix('on ')}. "
+            f"The event being assessed is whether {event[0].lower()}{event[1:]}.")
+    return f"{lead} The actual outcome remains uncertain."
 
 
 def interpretation_reading(analysis, facts=None, messages=None):
@@ -198,7 +227,14 @@ def interpretation_reading(analysis, facts=None, messages=None):
         evidence = analysis.get("calculation_evidence_ids") or []
         details = [item.split(": ", 1)[-1].rstrip(".") for item in evidence if "error:" not in item]
         detail = next((item for item in details if all(item not in old for old in history)), "")
-        if audit and facts and decision.get("event"):
+        background = analysis.get("career_event_method", {}).get("background_sample", {})
+        contacts = background.get("contacts", [])
+        if contacts:
+            contact = next((c for c in contacts if c["chart"] == "D10"), contacts[0])
+            chart_name = "the career chart (D10)" if contact["chart"] == "D10" else "the natal chart"
+            detail = (f"At the midpoint of this period, the active lord {contact['planet']} "
+                      f"{' and '.join(contact['relations'])} house {contact['house']} in {chart_name}")
+        elif audit and facts and decision.get("event"):
             h = DOMAINS[domain]["houses"][0]
             n = facts["houses"][h]["lord"]
             rec = facts["planets"][n]
@@ -227,9 +263,6 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
                   or (decision.get("event") and audit["promise"] in ("Weak", "Unavailable"))):
         return interpretation_reading(analysis, facts, messages)
     allowed = set() if abstained else {decision["window"]["start"], decision["window"]["end"]}
-    if not abstained:
-        for w in analysis.get("precision", {}).get("timing_windows", []):
-            allowed.update((w["start"], w["end"]))
     dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", reply))
     certainty = re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", reply, re.I)
     prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?|20\d{2})\b", reply, re.I)

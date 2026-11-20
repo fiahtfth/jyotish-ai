@@ -24,6 +24,87 @@ def test_decisions_require_specific_event_and_stable_conflict_free_support():
     assert Q.decide('Will I get a promotion?', a)['disposition'] == 'abstain'
 
 
+def test_classical_forecast_requires_one_eligible_window_for_that_event():
+    a = analysis()
+    a["classical"] = {"promise": "Moderate", "timing_sensitive": False, "scores": [
+        {"start": "2027-01-01", "end": "2027-12-31", "complete": True, "count": 3, "micro_aligned": False},
+    ]}
+    assert Q.decide("Will I get a promotion?", a, as_of=date(2026, 12, 1))["disposition"] == "abstain"
+    first = {"start": "2027-01-05", "end": "2027-01-12"}
+    second = {"start": "2027-03-03", "end": "2027-03-10"}
+    a["precision"]["timing_windows"] = [first, second]
+    a["career_event_method"] = {"windows": [{**first, "qualifies": False}, {**second, "qualifies": True}]}
+    a["decision"] = Q.decide("Will I get a promotion?", a, as_of=date(2026, 12, 1))
+    assert a["decision"]["disposition"] == "event_indicated"
+    assert a["decision"]["window"] == second
+    assert "2027-03-03 to 2027-03-10" in a["decision"]["success_criteria"]
+    assert "03 Mar 2027 through 10 Mar 2027" in Q.issued_reading(a)
+    assert "2027-01-05" not in Q.constrain_reply("The period starts at 2027-01-05.", a)
+
+
+def test_career_events_use_different_contacts_and_deduplicate_repeated_lords():
+    from app.astro.career_events import signals
+
+    aries = {"Lagna": {"sign": 0}, "Saturn": {"sign": 9}, "Mercury": {"sign": 5}, "Moon": {"sign": 3}}
+    facts = {"vargas": {"D1": aries, "D10": aries}}
+    promotion = signals(facts, ["Moon", "Saturn", "Saturn"], "promotion")
+    assert promotion["qualifies"]
+    contacts = promotion["contacts"]
+    assert len({c["factor"] for c in contacts}) == len(contacts)
+    assert {"rules", "occupies"} == set(contacts[0]["relations"])
+    assert not signals(facts, ["Moon", "Saturn", "Saturn"], "job_change")["qualifies"]
+    assert signals(facts, ["Moon", "Mercury", "Mercury"], "job_change")["qualifies"]
+    assert not signals(facts, ["Moon", "Mercury", "Mercury"], "promotion")["qualifies"]
+    assert not signals({"vargas": {"D1": aries}}, ["Moon", "Saturn", "Moon"], "promotion")["qualifies"]
+
+
+def test_a_shared_clock_or_transit_is_not_counted_again_in_micro_timing():
+    from app.astro.classical import _new_factors
+
+    factors = _new_factors([(label, "Aligned", "") for label in
+                            ("Multi-dasha", "Annual progression", "Slow transits", "Micro-timing")])
+    assert factors["Micro-timing"] == ["fast_transit", "kakshya_bindu"]
+    all_factors = [factor for group in factors.values() for factor in group]
+    assert len(set(all_factors)) == len(all_factors)
+
+
+def test_holdout_comparison_stays_person_separated_and_uses_shuffled_charts(monkeypatch):
+    from app.astro import career_validation as validation
+
+    def trial(person, *, train=False, **extra):
+        year = 2027 if train else 2028
+        return {**{"profile_id": person, "event_type": "promotion", "protocol": Q.VERSION, "consented": True,
+                   "birth_input": {}, "calibrated": True, "career_stage": "review_scheduled",
+                   "registered_at": f"{year}-01-01", "window_start": f"{year}-02-01",
+                   "window_end": f"{year}-04-01", "outcome_at": f"{year}-04-02",
+                   "outcome": "happened", "event_date": f"{year}-03-05"}, **extra}
+
+    pairs = []
+
+    def replay(row, chart):
+        pairs.append((row["profile_id"], chart["profile_id"]))
+        if chart["profile_id"] in (1, 3):
+            return date(row["start"].year, 3, 1), date(row["start"].year, 3, 10)
+        return None
+
+    monkeypatch.setattr(validation, "_replay", replay)
+    data = [trial(1, train=True), trial(2, train=True, outcome="did_not", event_date=None),
+            trial(3), trial(4, outcome="did_not", event_date=None),
+            trial(5, consented=False), trial(4), trial(6, outcome_at="2028-01-12")]
+    result = validation.evaluate_career_trials(data, cutoff="2028-01-01", holdout_profiles=[3, 4, 5, 6],
+                                               today=date(2028, 4, 3))
+    r = result["events"]["promotion"]
+    assert r["development"] == r["holdout"] == 2
+    assert result["duplicate_person_events"] == 1 and result["ineligible_trials"] == 2
+    assert pairs == [(1, 1), (2, 2), (3, 3), (4, 4), (3, 4), (4, 3)]
+    assert r["chart"]["exact_window_hits"] == r["chart"]["abstained"] == 1
+    assert r["shuffled_chart"]["exact_window_hits"] == 0
+    comparison = r["same_horizon_comparison"]
+    assert comparison["career_context_plus_chart"]["correct"] == 2
+    assert comparison["career_context"]["correct"] == 1
+    assert comparison["career_context_plus_shuffled_chart"]["correct"] == 0
+
+
 def test_birth_time_samples_cross_midnight_and_do_not_mutate_input(monkeypatch):
     b, f = make_facts('approximate')
     b.hour, b.minute = 0, 10

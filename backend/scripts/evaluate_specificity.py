@@ -33,14 +33,11 @@ def trial(number, *, seed, domain, event):
     facts = engine.compute(birth)
     analysis, _ = _precision_analysis(facts, birth, domain, start, end, profile,
                                       event=event, as_of=start - timedelta(days=1))
-    issued = analysis["decision"]["disposition"] == "event_indicated"
-    covered = set()
-    if issued:
-        for interval in analysis["precision"]["timing_windows"]:
-            lo = max(start, date.fromisoformat(interval["start"]))
-            hi = min(end, date.fromisoformat(interval["end"]))
-            covered.update(lo + timedelta(days=k) for k in range((hi - lo).days + 1))
-    return issued, len(covered) / ((end - start).days + 1), analysis["unavailable_count"] > 0
+    decision = analysis["decision"]
+    issued = decision["disposition"] == "event_indicated"
+    interval = decision["window"]
+    covered = (date.fromisoformat(interval["end"]) - date.fromisoformat(interval["start"])).days + 1 if issued else 0
+    return issued, covered / ((end - start).days + 1), analysis["unavailable_count"] > 0
 
 
 def main():
@@ -67,7 +64,7 @@ def main():
               "supportive_chart_rate": sum(issued for issued, _, _ in rows) / len(rows),
               "mean_supportive_window_share": sum(share for _, share, _ in rows) / len(rows),
               "unavailable_chart_windows": sum(unavailable for _, _, unavailable in rows),
-              "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."}
+              "scope": "Synthetic chart-window frequency. The share covers days in the exact issued window."}
     payload = json.dumps(result, indent=2) + "\n"
     if args.output:
         args.output.write_text(payload, encoding="utf-8")

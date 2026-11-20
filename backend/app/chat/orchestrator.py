@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import classical, calibration, inspection, panchang, pillars, precision, registry, report, sensitivity, prediction, transits, verify, vimshottari
+from ..astro import career_events, classical, calibration, inspection, panchang, pillars, precision, registry, report, sensitivity, prediction, transits, verify, vimshottari
 from ..astro.constants import DOMAINS, DOMAIN_REMEDIES, SIGN_NAMES
 from .. import geo
 from ..config import settings
@@ -114,6 +114,19 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
         analysis["precision"]["timing_windows"] = []
     classical.apply(analysis, facts, birth, domain, start, end, _calibrated(profile), prec, natal)
     audit = analysis["classical"]
+    spec = event or prediction.event_spec(question, domain) or {}
+    event_type = spec.get("event_type")
+    if event_type in career_events.RULES:
+        method = career_events.qualify_windows(facts, birth, event_type, analysis["precision"]["timing_windows"],
+                                               start + (end - start) // 2)
+        analysis["career_event_method"] = method
+        for item in [method["background_sample"], *method["windows"]]:
+            rows = [[c["planet"], c["chart"], str(c["house"]), ", ".join(c["relations"])]
+                    for c in item["contacts"]]
+            rows += [["", "", "", "Missing " + missing] for missing in item["missing"]]
+            audit["tables"].append(classical.table(
+                f"{event_type.replace('_', ' ').capitalize()} checks at {item['sample']}",
+                ["Active lord", "Chart", "House", "Contact"], rows))
     opening_checks = [e for e in profile.calibrations if e.calc_fingerprint == profile.calc_fingerprint]
     classical.birth_checks(audit, facts, birth, opening_checks[:3])
     if profile.milestone_search_done:
@@ -137,8 +150,8 @@ def _save_prediction(db, profile, question, analysis, reply):
     event = decision.get("event") or {}
     db.add(PredictionRecord(
         profile_id=profile.id, domain=analysis["domain"], question=question,
-        window_start=date.fromisoformat(analysis["analysis_window"]["start"]),
-        window_end=date.fromisoformat(analysis["analysis_window"]["end"]),
+        window_start=date.fromisoformat(decision["window"]["start"]),
+        window_end=date.fromisoformat(decision["window"]["end"]),
         convergence=analysis["convergence"], layer_verdicts=json.dumps(analysis["precision"]["layer_verdicts"]),
         protocol=prediction.VERSION, forecast=decision["disposition"], event_type=event.get("event_type"),
         success_criteria=decision["success_criteria"],
@@ -1644,17 +1657,15 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             if full:
                 narrowed = (full[0], min(full[1], date(full[0].year, 12, 31)))
         if narrowed is not None:
-            overview = _dasha_overview(facts, full)
-            body = ("I can assess up to one year at a time in depth — "
-                    "but here's the dasha overview for the whole span first:\n"
-                    + "\n".join(overview)
-                    + f"\n\nShall I start with {language.window_label(narrowed)}? "
-                      "Or name a different year in that span."
-                    if overview else
-                    f"I can assess up to one year at a time. Shall I start with "
-                    f"{language.window_label(narrowed)}? Or name a different year in that span.")
+            overview_domain = domain or prior.get("pending_domain") or previous.get("domain")
+            overview = _dasha_overview(facts, full, overview_domain)
+            detail = (f"I can assess one year at a time in detail. Shall I start with {language.window_label(narrowed)}? "
+                      "You can choose a different year in that span.")
+            body = (f"Here’s the dasha overview for {language.window_label(full)}.\n\n"
+                    + "\n".join(overview) + "\n\n" + detail if overview else detail)
             _add_msg(db, conv, "assistant", body,
                      meta={"requested_window": [d.isoformat() for d in narrowed],
+                           "overview_window": [d.isoformat() for d in full],
                            "pending_domain": domain or previous.get("domain") or prior.get("pending_domain"),
                            "pending_event": prediction.event_spec(focus, domain) or (
                                previous.get("decision", {}).get("event")
@@ -1781,6 +1792,11 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         question = f"{domain} outlook" if domain_only else focus
         analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=question, event=event)
         analysis["period_requested"] = True
+        career_event = (analysis["decision"].get("event") or {}).get("event_type")
+        if career_event in career_events.RULES and not _is_other(profile):
+            user_messages = [m["content"] for m in history if m["role"] == "user"]
+            if stage := career_events.reported_stage(career_event, user_messages):
+                analysis["career_context"] = {"stage": stage, "source": "user_reported"}
     if selected:
         facts = {**facts, "selected_chart": selected}
     run = engine.running_vimshottari(birth, (today.year, today.month, today.day))
@@ -1849,21 +1865,26 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
                 remembered.append({"kind": "reported_forecast_outcome", "domain": domain,
                                    "event": rec.event_type, "status": rec.outcome,
                                    "event_date": rec.event_date.isoformat() if rec.event_date else None})
-    reply, provider = providers.generate(
-        history, facts=facts, analysis=analysis,
-        context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
-                      "Use the supplied Vimshottari dates for period boundaries. Periods marked 'running today' "
-                      "describe the present only; for a question about another time, use the 'active during' "
-                      "lines for that period. Use the resolved event and analysis window when supplied. "
-                      "Name the period when timing was requested. Answer using the selected divisional chart when present. "
-                      + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
-                         if window is None else "")),
-        # Wait for verification before sending any part of a reading to the client.
-        allow_external=_external_ok(profile), on_delta=None,
-        routing_seconds=routing_seconds, consultation_memory=remembered)
-    if analysis and provider != "offline":
+    if analysis and analysis["decision"]["disposition"] == "event_indicated":
+        reply, provider = prediction.issued_reading(analysis), "computed"
+    else:
+        reply, provider = providers.generate(
+            history, facts=facts, analysis=analysis,
+            context_note=(_context_prefix(profile) + f"Calibration state: {profile.calibration_state}. "
+                          "Use the supplied Vimshottari dates for period boundaries. Periods marked 'running today' "
+                          "describe the present only; for a question about another time, use the 'active during' "
+                          "lines for that period. Use the resolved event and analysis window when supplied. "
+                          "Name the period when timing was requested. Answer using the selected divisional chart when present. "
+                          "When supplied, use the career-event chart evidence and the user’s reported career stage. "
+                          "The midpoint sample describes themes only. Explain practical context separately from chart indications. "
+                          + ("No prediction period has been selected. Give an untimed chart interpretation and avoid choosing a forecast horizon."
+                             if window is None else "")),
+            # Wait for verification before sending any part of a reading to the client.
+            allow_external=_external_ok(profile), on_delta=None,
+            routing_seconds=routing_seconds, consultation_memory=remembered)
+    if analysis and provider not in ("computed", "offline"):
         reply = prediction.constrain_reply(reply, analysis, facts, history)
-    if provider != "offline":
+    if provider not in ("computed", "offline"):
         # reject/strip degrees, signs, nakshatras, dates, durations and
         # probability wording the model was never given
         check = verify.verify_response(
@@ -1873,7 +1894,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             log.warning("verifier stripped unsupported claims: %s", check["issues"][:5])
             reply = verify.repair_response(reply, check["issues"])
     reply = _apply_disclaimer(reply, domain)
-    if on_delta:
+    if on_delta and provider != "computed":
         on_delta(reply)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)
@@ -1888,26 +1909,47 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     return conv.messages[-2:]
 
 
-def _dasha_overview(facts: dict, span: tuple) -> list[str]:
-    """MD–AD phases covering a multi-year span with a support verdict per phase."""
+_LONG_RANGE_HOUSES = (
+    "personal direction", "resources and family responsibilities", "skills and communication",
+    "home and family", "learning and creative work", "daily work and practical obligations",
+    "partnerships", "shared obligations and change", "higher study and travel",
+    "professional responsibility", "networks and longer-term goals", "work behind the scenes and distant ties",
+)
+
+
+def _dasha_overview(facts: dict, span: tuple, domain=None) -> list[str]:
+    """Describe the themes and show their chart contacts across the requested span."""
     periods = facts.get("vimshottari", {}).get("periods", [])
     ws, we = (d.isoformat() for d in span)
     rows = [p for p in periods if p["start"] <= we and ws <= p["end"]]
     if not rows:
         return []
-    func = facts.get("functional", {})
-    benefics, malefics = set(func.get("benefics", [])), set(func.get("malefics", []))
-    yoga = func.get("yogakaraka")
-    lines = []
-    for p in rows[:14]:
-        md, ad = p["lords"][0], p["lords"][1]
-        verdict = ("strongly supportive" if ad == yoga or md == yoga
-                   else "supportive" if ad in benefics
-                   else "frictional" if ad in malefics
-                   else "mixed")
-        lines.append(f"- {md}–{ad} ({p['start']} to {p['end']}): {verdict}")
+    spec = DOMAINS.get(domain)
     if len(rows) > 14:
-        lines.append(f"- … and {len(rows) - 14} further phases")
+        # Use the major periods to cover the full span in a readable reply.
+        rows = [{**p, "lords": [p["lord"]]} for p in inspection.vimshottari_mahadashas(facts)
+                if p["start"] <= we and ws <= p["end"]]
+    lines = []
+    for p in rows:
+        lords = p["lords"]
+        planet = lords[-1]
+        natal_house = facts["planets"][planet]["house"]
+        theme = f"{planet} is in natal house {natal_house}, linked to {_LONG_RANGE_HOUSES[natal_house - 1]}."
+        if spec:
+            varga = spec["varga"]
+            natal = career_events.house_contacts(facts, lords, spec["houses"], "D1")
+            divisional = career_events.house_contacts(facts, lords, spec["houses"], varga)
+            if natal:
+                contact = natal[0]
+                theme = (f"{contact['planet']} links to natal house {contact['house']}, associated with "
+                         f"{_LONG_RANGE_HOUSES[contact['house'] - 1]}.")
+            if divisional:
+                contact = divisional[0]
+                theme += f" {varga} adds a link from {contact['planet']} to house {contact['house']}."
+            elif natal:
+                theme += f" The corresponding house contacts in {varga} are limited."
+        window = tuple(date.fromisoformat(d) for d in (max(ws, p["start"]), min(we, p["end"])))
+        lines.append(f"• {'–'.join(lords)} ({language.window_label(window)}). {theme}")
     return lines
 
 
@@ -1975,16 +2017,36 @@ def _record_followup_reply(db: Session, conv: Conversation, profile: BirthProfil
     if not profile.user or not profile.user.prediction_followups:
         return False
     outcome = _FOLLOWUP_OUTCOME.get(_norm_reply(text))
-    if outcome is None:
+    previous = next((m for m in reversed(conv.messages) if m.role == "assistant"), None)
+    awaiting = json.loads(previous.meta_json or "{}").get("followup_date_for") if previous else None
+    if outcome is None and not awaiting:
         return False
-    rec = (db.query(PredictionRecord)
-           .filter(PredictionRecord.profile_id == profile.id,
-                   PredictionRecord.outcome.is_(None),
-                   PredictionRecord.followup_asked_at.isnot(None))
-           .order_by(PredictionRecord.followup_asked_at.desc(), PredictionRecord.id.desc())
-           .first())
+    query = db.query(PredictionRecord).filter(
+        PredictionRecord.profile_id == profile.id, PredictionRecord.outcome.is_(None),
+        PredictionRecord.followup_asked_at.isnot(None))
+    if awaiting:
+        query = query.filter(PredictionRecord.id == awaiting)
+    rec = query.order_by(PredictionRecord.followup_asked_at.desc(), PredictionRecord.id.desc()).first()
     if rec is None:
         return False
+    if awaiting and outcome is None:
+        if not re.search(r"\b(?:19|20)\d{2}\b", text) or _QUESTIONISH.search(text):
+            return False
+        today = _today_at(birth_input(profile))
+        try:
+            supplied = language.requested_window(text, today)
+        except ValueError:
+            supplied = None
+        if not supplied or supplied[0] != supplied[1] or supplied[0] > today:
+            _add_msg(db, conv, "assistant", "What was the exact date? For example, 15 July 2027.",
+                     meta={"followup_id": rec.id, "followup_date_for": rec.id})
+            return True
+        rec.event_date = supplied[0]
+        outcome = "happened" if rec.window_start <= rec.event_date <= rec.window_end else "outside_window"
+    elif outcome == "happened" and rec.protocol == prediction.VERSION:
+        _add_msg(db, conv, "assistant", "What date did it happen? I’ll check it against the forecast window.",
+                 meta={"followup_id": rec.id, "followup_date_for": rec.id})
+        return True
     rec.outcome = outcome
     rec.outcome_at = _utcnow()
     thanks = {"happened": "Thank you — I've noted that it did happen.",

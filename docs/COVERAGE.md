@@ -20,7 +20,7 @@ The public coverage page reads the [versioned intent registry](../backend/data/i
 
 ## Synthetic specificity
 
-The file [specificity_results.json](../backend/data/specificity_results.json) contains 1,000 seeded chart-window simulations for each of the ten observable event rules in the current protocol. Each window spans 12 calendar months. The supportive chart rate counts issued event windows. Supportive share measures the fraction of days inside qualified micro-timing intervals.
+The file [specificity_results.json](../backend/data/specificity_results.json) contains 1,000 seeded chart-window simulations for ten observable event rules in protocol `2026-11-19.1`. Each window spans 12 calendar months. The supportive chart rate counts issued event windows. Supportive share measures the fraction of days inside qualified micro-timing intervals.
 
 | Event rule | Supportive charts out of 1,000 |
 | --- | ---: |
@@ -37,4 +37,4 @@ The file [specificity_results.json](../backend/data/specificity_results.json) co
 
 Two chart windows per rule had an unavailable pillar. These runs measure rule firing and abstention on synthetic inputs. Forecast accuracy requires separately scored, held-out events. The recurring counts across events in the same domain reflect shared domain calculations.
 
-Run a single event from the backend with `python scripts/evaluate_specificity.py promotion --samples 1000`. The coverage page loads results only for the current protocol and intent version.
+Protocol `2026-11-21.1` requires aligned dasha and micro-timing evidence in a qualifying candidate before it issues a forecast. Promotion, employer change and job offer also require distinct D1 contacts and corroboration in D10. In the new runs, the engine issued two employer-change windows, zero promotion windows and zero offer windows per 1,000 synthetic cases for each event. Run a single event from the backend with `python scripts/evaluate_specificity.py promotion --samples 1000`. The coverage page loads results only for the current protocol and intent version.

@@ -140,8 +140,7 @@ def requested_window(text, today, prior=None):
 
 
 def raw_window(text, today, prior=None):
-    """The parsed period without the one-year cap — used to offer the first
-    year when the user names a span that is too long to compute."""
+    """Parse the full span before selecting the level of timing detail."""
     return _parse_window(text.casefold(), today, prior)
 
 
@@ -222,7 +221,7 @@ def _parse_window(t, today, prior):
         return start, end
     if len(set(re.findall(rf"\b{_CALENDAR_YEAR}\b", t))) > 1:
         span = (re.search(rf"\bbetween\s+({_CALENDAR_YEAR})\s+and\s+({_CALENDAR_YEAR})\b", t)
-                or re.search(rf"\b({_CALENDAR_YEAR})\s*(?:-|–|—|to|through|until|till)\s*({_CALENDAR_YEAR})\b", t))
+                or re.search(rf"\b({_CALENDAR_YEAR})\s*(?:-|–|—|to|through|until|till|से|se)\s*({_CALENDAR_YEAR})\b", t))
         if span:
             start_year, end_year = int(span[1]), int(span[2])
             if end_year <= start_year:
@@ -252,8 +251,8 @@ def window_label(window):
     start, end = window
     if _month_window(start.year, start.month) == window:
         return start.strftime("%B %Y")
-    if start == date(start.year, 1, 1) and end == date(start.year, 12, 31):
-        return str(start.year)
+    if start == date(start.year, 1, 1) and end == date(end.year, 12, 31):
+        return str(start.year) if start.year == end.year else f"{start.year}–{end.year}"
     if start == end:
         return f"{start:%d %B %Y}"
     return f"{start:%d %b %Y} to {end:%d %b %Y}"

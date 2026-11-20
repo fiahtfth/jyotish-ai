@@ -1223,6 +1223,43 @@ def test_future_analysis_persists_prediction_record():
     assert p["window_start"] and p["window_end"] and p["convergence"] and p["outcome"] is None
 
 
+def test_issued_career_forecast_streams_and_stores_the_same_window(monkeypatch):
+    from app.astro import prediction
+    from app.chat import orchestrator
+    from datetime import date
+
+    monkeypatch.setattr(orchestrator, "_today_at", lambda birth: date(2026, 11, 21))
+
+    def compute(facts, birth, domain, start, end, profile, question, event):
+        assert (start.isoformat(), end.isoformat()) == ("2027-01-01", "2027-12-31")
+        candidate = {"start": "2027-03-03", "end": "2027-03-10"}
+        result = {"domain": domain, "analysis_window": {"start": str(start), "end": str(end)},
+                  "unavailable_count": 0, "support_count": 3, "conflict_count": 0, "convergence": "test",
+                  "classical": {"promise": "Moderate", "timing_sensitive": False},
+                  "precision": {"timing_windows": [candidate], "layer_verdicts": {}},
+                  "sensitivity": {"verdict_stable": True, "timing_stable": True},
+                  "career_event_method": {"windows": [{**candidate, "qualifies": True}]}}
+        result["decision"] = prediction.decide(question, result, event, as_of=date(2026, 11, 21))
+        return result, {}
+
+    monkeypatch.setattr(orchestrator, "_precision_analysis", compute)
+    monkeypatch.setattr(orchestrator.providers, "generate",
+                        lambda *a, **kw: pytest.fail("The event and its dates must come from the decision"))
+    h = register_and_profile()
+    _open_calibrated(h)
+    events = _parse_sse(client.post("/api/chat/stream", headers=h, json={
+        "text": "My performance review is scheduled. Will I get a promotion in 2027?",
+    }))
+    assert [e["type"] for e in events] == ["done"]
+    reply = events[-1]["messages"][-1]
+    assert "03 Mar 2027 through 10 Mar 2027" in reply["content"]
+    assert reply["meta"]["requested_window"] == ["2027-01-01", "2027-12-31"]
+    stored = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    assert (stored["window_start"], stored["window_end"]) == ("2027-03-03", "2027-03-10")
+    assert stored["snapshot"]["reply"] == reply["content"]
+    assert stored["snapshot"]["analysis"]["career_context"]["stage"] == "review_scheduled"
+
+
 def test_followup_asked_after_window_and_reply_records_outcome():
     h = register_and_profile()
     assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
@@ -1259,8 +1296,15 @@ def test_followup_option_mapping(text, outcome):
     send("Will I get a promotion in my career next year?", h)
     _age_predictions(h)
     send("hello", h)
-    send(text, h)
-    assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] == outcome
+    response = send(text, h)
+    before = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    if outcome == "happened":
+        assert before["outcome"] is None and "What date" in response[-1]["content"]
+        send(before["window_start"], h)
+    after = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    assert after["outcome"] == outcome
+    if outcome == "happened":
+        assert after["event_date"] == before["window_start"]
 
 
 def test_no_followup_while_calibrating_and_export_includes_predictions():
@@ -2729,18 +2773,20 @@ def test_facts_lines_include_pratyantar_transits_and_remedy():
     assert "Natal yogas" in text or "aspects" in text  # yogas only if fired
 
 
-def test_dasha_overview_marks_verdicts():
+def test_career_dasha_overview_uses_natal_and_d10_evidence_within_range():
     from app.chat.orchestrator import _dasha_overview
     from datetime import date
-    facts = {"vimshottari": {"periods": [
-        {"lords": ["Jupiter", "Saturn"], "start": "2027-01-01", "end": "2028-01-01"},
-        {"lords": ["Jupiter", "Mars"], "start": "2028-01-01", "end": "2029-01-01"}]},
-        "functional": {"benefics": ["Jupiter", "Mars"], "malefics": ["Saturn"],
-                       "yogakaraka": None}}
-    lines = _dasha_overview(facts, (date(2027, 1, 1), date(2030, 1, 1)))
-    assert len(lines) == 2
-    assert "Jupiter–Saturn" in lines[0] and "frictional" in lines[0]
-    assert "Jupiter–Mars" in lines[1] and "supportive" in lines[1]
+    _, chart = make_facts()
+    periods = [
+        {"lords": ["Jupiter", "Saturn"], "start": "2026-01-01", "end": "2028-01-01"},
+        {"lords": ["Jupiter", "Mars"], "start": "2028-01-01", "end": "2031-01-01"},
+    ]
+    facts = {**chart, "vimshottari": {**chart["vimshottari"], "periods": periods}}
+    lines = _dasha_overview(facts, (date(2027, 1, 1), date(2030, 12, 31)), "career")
+    assert len(lines) == 2 and all("natal house" in line and "D10" in line for line in lines)
+    assert "Jupiter–Saturn" in lines[0] and "01 Jan 2027" in lines[0]
+    assert "Jupiter–Mars" in lines[1] and "2028–2030" in lines[1]
+    assert not any("strongly supportive" in line or "frictional" in line for line in lines)
 
 
 def test_new_event_types_parse():

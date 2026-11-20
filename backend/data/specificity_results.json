@@ -118,5 +118,41 @@
     "mean_supportive_window_share": 0.0001589041095890411,
     "unavailable_chart_windows": 2,
     "scope": "Synthetic chart-window frequency. The share covers qualified micro-timing days within issued windows."
+  },
+  {
+    "intent": "PROMOTION",
+    "intent_version": "1.0",
+    "protocol": "2026-11-21.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.0,
+    "mean_supportive_window_share": 0.0,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers days in the exact issued window."
+  },
+  {
+    "intent": "JOB_CHANGE",
+    "intent_version": "1.0",
+    "protocol": "2026-11-21.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.002,
+    "mean_supportive_window_share": 0.00012038326222022606,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers days in the exact issued window."
+  },
+  {
+    "intent": "JOB_TIMING",
+    "intent_version": "1.0",
+    "protocol": "2026-11-21.1",
+    "seed": 4326,
+    "chart_windows": 1000,
+    "status": "evaluated",
+    "supportive_chart_rate": 0.0,
+    "mean_supportive_window_share": 0.0,
+    "unavailable_chart_windows": 2,
+    "scope": "Synthetic chart-window frequency. The share covers days in the exact issued window."
   }
 ]
