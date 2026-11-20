@@ -2785,6 +2785,8 @@ def test_conception_possibility_is_declined_but_child_schooling_is_not():
     assert private_reply("is it possible for me to conceive and have children")
     assert private_reply("will i have children")
     assert private_reply("when will my baccha get college admission") is None
+    assert private_reply("will my wife and i have a baccha")
+    assert private_reply("i have children. when will i get a promotion") is None
 
 
 def test_surgery_timing_suggestion_carries_health_disclaimer():
