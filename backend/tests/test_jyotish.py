@@ -2808,3 +2808,24 @@ def test_long_health_reply_keeps_appended_disclaimer(monkeypatch):
     monkeypatch.setattr(providers, "generate", lambda *a, **k: (long_reply, "test"))
     replies = send("how is my health looking", h)
     assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
+
+
+def test_opening_prefers_strong_old_windows_over_recent(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    windows = [{"lords": ["Sun", "Moon"], "start": date(2000, 1, 1), "end": date(2000, 12, 31)},
+               {"lords": ["Sun", "Mars"], "start": date(2010, 1, 1), "end": date(2010, 12, 31)},
+               {"lords": ["Sun", "Rahu"], "start": date(2020, 1, 1), "end": date(2020, 12, 31)},
+               {"lords": ["Sun", "Jupiter"], "start": date(2025, 1, 1), "end": date(2025, 12, 31)}]
+    monkeypatch.setattr(C, "_past_ad_windows", lambda *args: windows)
+    def evaluate(facts, birth, domain, start, end):
+        score = 5 if start.year == 2010 else (3 if start.year == 2000 else 1)
+        return {"support_count": score, "conflict_count": 0, "traditional_rule_ids": [],
+                "pillars": {}, "convergence": "support"}
+    monkeypatch.setattr(C.pillars, "evaluate", evaluate)
+    statements = C.generate_statements(facts, birth, "fp")
+    # the strongest indication anywhere in life comes first — not the most recent
+    assert statements[0]["predicted_window"]["start"].startswith("2010")
+    assert "Sun–Mars" in statements[0]["predicted_event"]
+    # a moderately strong 2000 window still beats weak recent ones
+    assert statements[1]["predicted_window"]["start"].startswith("2000")

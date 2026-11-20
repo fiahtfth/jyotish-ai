@@ -21,18 +21,19 @@ OPENING_EVENT_PREFIX = "recent_calibration_v3_"
 # {poss}/{subj}/{were}/{memory} adapt to the person: "you" for the account
 # owner, otherwise the family member's name (see subject_words).
 _STATEMENTS = {
-    "career": "Between {start} and {end}, {poss} work responsibilities or professional direction "
-              "appear to have changed. Does that fit {memory}?",
-    "education": "Between {start} and {end}, education or learning appears to have been an important "
-                 "focus for {obj}. Does that fit {memory}?",
-    "relationship": "Between {start} and {end}, a close relationship or family commitment "
-                    "appears to have become an important focus for {obj}. Does that fit {memory}?",
-    "relocation": "Between {start} and {end}, {poss} living situation appears to have changed. "
-                  "Does that fit {memory}?",
-    "finance": "Between {start} and {end}, {poss} financial responsibilities appear to have changed. "
-               "Does that fit {memory}?",
-    "direction": "Between {start} and {end}, {poss} personal goals appear to have changed. "
-                 "Does that fit {memory}?",
+    "career": "During {lords}, between {start} and {end}, {poss} work responsibilities "
+              "or professional direction appear to have changed. Does that fit {memory}?",
+    "education": "During {lords}, between {start} and {end}, education or learning "
+                 "appears to have been an important focus for {obj}. Does that fit {memory}?",
+    "relationship": "During {lords}, between {start} and {end}, a close relationship "
+                    "or family commitment appears to have become an important focus for {obj}. "
+                    "Does that fit {memory}?",
+    "relocation": "During {lords}, between {start} and {end}, {poss} living situation "
+                  "appears to have changed. Does that fit {memory}?",
+    "finance": "During {lords}, between {start} and {end}, {poss} financial "
+               "responsibilities appear to have changed. Does that fit {memory}?",
+    "direction": "During {lords}, between {start} and {end}, {poss} personal goals "
+                 "appear to have changed. Does that fit {memory}?",
 }
 
 
@@ -114,24 +115,41 @@ def generate_statements(facts, birth: BirthInput, fingerprint: str,
             evidence = pillars.evaluate(facts, birth, domain, window["start"], window["end"])
             score = evidence["support_count"] - evidence["conflict_count"]
             candidates.append((score, window["end"], domain, window, evidence))
-    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
+    # Rank by indication strength, not recency: the highest-scoring window in
+    # the whole life wins, and equal scores prefer a window far from the ones
+    # already chosen — the three checks should span the life, not cluster on
+    # the most recent periods.
+    candidates.sort(key=lambda candidate: candidate[0], reverse=True)
     used_domains, used_spans = set(), []
-    for score, _, domain, w, ev in candidates:
-        if domain in used_domains or any(
-                w["start"] <= end and start <= w["end"] for start, end in used_spans):
-            continue
+    while len(statements) < 3:
+        eligible = [c for c in candidates
+                    if c[2] not in used_domains and not any(
+                        c[3]["start"] <= end and start <= c[3]["end"]
+                        for start, end in used_spans)]
+        if not eligible:
+            break
+        top = eligible[0][0]
+        pool = [c for c in eligible if c[0] == top]
+        if used_spans:
+            score, _, domain, w, ev = max(
+                pool, key=lambda c: min(abs((c[3]["start"] - s).days)
+                                        for s, _ in used_spans))
+        else:
+            score, _, domain, w, ev = pool[0]
         used_domains.add(domain)
         used_spans.append((w["start"], w["end"]))
         i = len(statements)
         sm, em = _fmt_range(w["start"], w["end"])
+        lw = w.get("lords") or []
+        lords = f"the {lw[0]}–{lw[1]} period" if len(lw) >= 2 else "this period"
         weak = score <= 0
-        text = _STATEMENTS[domain].format(start=sm, end=em, **words)
+        text = _STATEMENTS[domain].format(start=sm, end=em, lords=lords, **words)
         if weak:
             text = ("The timing indicators here are weaker, so treat this one as tentative. " + text)
         statements.append({
             "event_id": f"{OPENING_EVENT_PREFIX}{i+1:03d}",
             "domain": domain,
-            "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, **words),
+            "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, lords=lords, **words),
             "chat_text": text,
             "predicted_window": {"start": f"{w['start'].year:04d}-{w['start'].month:02d}",
                                  "end": f"{w['end'].year:04d}-{w['end'].month:02d}"},
