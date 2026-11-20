@@ -218,22 +218,6 @@ def interpretation_reading(analysis, facts=None, messages=None):
     return " ".join(lines)
 
 
-def concise_reply(reply: str, limit: int = 800) -> str:
-    """Keep chat readings short: trim an over-long reply at the last clean
-    paragraph or sentence boundary inside `limit` characters. A reply with no
-    usable boundary is returned as is rather than cut mid-thought."""
-    if len(reply) <= limit:
-        return reply
-    cut = reply.rfind("\n\n", 0, limit)
-    if cut < limit // 2:
-        cut = reply.rfind("\n", 0, limit)
-    if cut < limit // 2:
-        cut = reply.rfind(". ", 0, limit) + 1  # keep the period
-    if cut < limit // 2:
-        return reply
-    return reply[:cut].rstrip()
-
-
 def constrain_reply(reply, analysis, facts=None, messages=None):
     """Preserve helpful readings while rejecting unsupported event promises."""
     decision = analysis["decision"]
