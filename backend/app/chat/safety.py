@@ -32,8 +32,16 @@ def private_reply(text: str) -> str | None:
                 "stay with you. In India, you can call Tele-MANAS at 14416. Are you safe right now?")
     # Pregnancy wording and a prediction cue must appear in the SAME clause —
     # "I have children. When will I get promoted?" is not a conception ask.
-    if any(_PREGNANCY.search(clause) and _PREDICT.search(clause)
-           for clause in re.split(r"[.!?।;\n]+|,\s*", text)):
+    # A conditional clause joins its question: "if I do IVF, what are my
+    # chances?" is one ask.
+    clauses = re.split(r"[.!?।;\n]+|,\s*", text)
+    merged = []
+    for clause in clauses:
+        if merged and re.match(r"\s*(?:if|when)\b", merged[-1], re.I):
+            merged[-1] += " " + clause
+        else:
+            merged.append(clause)
+    if any(_PREGNANCY.search(clause) and _PREDICT.search(clause) for clause in merged):
         if hindi:
             return ("कुंडली से गर्भधारण, गर्भपात या किसी चिकित्सकीय परिणाम का अनुमान नहीं लगाया जा सकता। "
                     "अगर यह आपके स्वास्थ्य से जुड़ा सवाल है, तो योग्य चिकित्सक से बात करें।")
