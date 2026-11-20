@@ -1565,8 +1565,14 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             _add_msg(db, conv, "assistant",
                      "I couldn't compute the day ranking — try a shorter range.")
             return conv.messages[-2:]
-        _add_msg(db, conv, "assistant",
-                 _format_timing(sug, horizon, _subject(profile) or "you"),
+        body = _format_timing(sug, horizon, _subject(profile) or "you")
+        # Auspicious-day suggestions for medical events still need the
+        # disclaimer — the chart ranks days, it cannot judge the outcome.
+        if detect_domain(t) == "health":
+            note = DOMAINS["health"].get("disclaimer")
+            if note:
+                body += "\n\n" + note
+        _add_msg(db, conv, "assistant", body,
                  kind="timing", meta={"timing": sug})
         return conv.messages[-2:]
 
