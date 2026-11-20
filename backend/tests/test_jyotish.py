@@ -2745,10 +2745,11 @@ def test_dasha_overview_marks_verdicts():
 
 def test_new_event_types_parse():
     from app.astro.prediction import event_spec
-    assert event_spec("when will I have a baby", "children")["event_type"] == "childbirth"
     assert event_spec("when will I buy a house", "property")["event_type"] == "property_purchase"
-    assert event_spec("will I settle abroad", "relocation")["event_type"] == "foreign_travel"
-    assert event_spec("will I win the court case", "litigation")["event_type"] == "litigation_outcome"
+    assert event_spec("will I settle abroad", "relocation")["event_type"] == "foreign_settlement"
+    assert event_spec("will I travel abroad", "relocation")["event_type"] == "foreign_travel"
+    assert event_spec("will I win the court case", "litigation")["event_type"] == "litigation_win"
+    assert event_spec("when will the court case resolve", "litigation")["event_type"] == "litigation_resolution"
     assert event_spec("when will I be debt free", "debt")["event_type"] == "debt_cleared"
 
 
@@ -2762,5 +2763,18 @@ def test_transit_lookup_shortcut(monkeypatch):
 def test_prashna_answer(monkeypatch):
     h = register_and_profile()
     _open_calibrated(h)
-    replies = send("will i ever travel abroad", h)
+    replies = send("will i ever travel", h)
     assert any("Prashna" in m["content"] or "prashna" in m["content"].lower() for m in replies), replies
+
+
+def test_childbirth_prediction_is_declined():
+    from app.chat.safety import private_reply
+    assert private_reply("when will I have a baby")
+    assert private_reply("when will childbirth happen")
+
+
+def test_surgery_question_gets_no_prashna_verdict():
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will my surgery go well", h)
+    assert not any("Prashna" in m["content"] for m in replies)

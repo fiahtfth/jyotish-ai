@@ -15,19 +15,24 @@ EVENTS = [
     ("education", r"pass.{0,20}exam", "exam_pass", "An official passing result for the stated exam is received"),
     ("education", r"admission|admitted", "admission", "A formal admission offer is received"),
     ("education", r"graduat|complete.{0,15}degree", "graduation", "The stated qualification is officially completed"),
-    ("relocation", r"settle abroad|move abroad|going abroad|foreign (?:posting|assignment|job|travel)|"
+    ("relocation", r"settle abroad|move abroad", "foreign_settlement",
+     "The stated party establishes primary residence in a foreign country"),
+    ("relocation", r"going abroad|travel(?:l?ing)? abroad|trip abroad|"
+                   r"foreign (?:posting|assignment|job|travel|trip)|"
                    r"videsh|overseas", "foreign_travel",
-     "Travel to or settlement in a foreign country occurs"),
+     "Travel to a foreign country occurs"),
     ("relocation", r"\b(?:move|moving|relocat\w*|settle|settling|change of residence)\b",
      "relocation", "A move of primary residence to the stated destination occurs"),
-    ("children", r"conceiv\w*|pregnant|pregnancy|\bbaby\b|child\s?birth|santaa?n|संतान",
-     "childbirth", "Birth or conception of a child occurs"),
+    # Conception/childbirth asks are declined by safety.private_reply before
+    # any event is scored, so no childbirth event is defined here.
     ("property", r"buy.{0,25}(?:house|home|flat|property|plot|land|car|vehicle)|"
                  r"purchas\w*.{0,20}(?:house|home|flat|property|car|vehicle)|"
                  r"own (?:a )?(?:house|home|flat|car)|makaan|gaadi",
      "property_purchase", "Purchase of the stated property or vehicle completes"),
-    ("litigation", r"win.{0,15}(?:case|lawsuit|litigation)|court|legal",
-     "litigation_outcome", "A ruling in the stated litigation is delivered"),
+    ("litigation", r"win.{0,15}(?:case|lawsuit|litigation)|favou?r",
+     "litigation_win", "A ruling in favour of the stated party is delivered"),
+    ("litigation", r"court|lawsuit|legal|resolve|settle", "litigation_resolution",
+     "A final ruling in the stated litigation is delivered"),
     ("debt", r"clear.{0,15}(?:debt|loan)|debt.{0,10}free|repay|pay off",
      "debt_cleared", "The stated debt or loan is fully repaid"),
 ]
