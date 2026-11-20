@@ -218,7 +218,7 @@ def interpretation_reading(analysis, facts=None, messages=None):
     return " ".join(lines)
 
 
-def concise_reply(reply: str, limit: int = 800) -> str:
+def concise_reply(reply: str, limit: int = 1600) -> str:
     """Keep chat readings short: trim an over-long reply at the last clean
     paragraph or sentence boundary inside `limit` characters. A reply with no
     usable boundary is returned as is rather than cut mid-thought."""
