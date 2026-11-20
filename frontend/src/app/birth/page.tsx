@@ -66,8 +66,14 @@ export default function Birth() {
       });
       setAmbig(null);
       if (adding) setCreated(true);
-      // Show the resolved offset + any time-zone warnings before continuing.
-      setResolved(p);
+      // Confirm the resolved offset only when it could surprise the user:
+      // tz warnings, or a non-tzdb resolution (lmt/manual/fallback). A clean
+      // tzdb lookup is unambiguous — go straight to the chat.
+      if ((p.tz_warnings?.length ?? 0) > 0 || p.offset_source !== "tzdb") {
+        setResolved(p);
+      } else {
+        router.replace("/chat");
+      }
     } catch (x) {
       if (x instanceof TzError) {
         if (x.detail.code === "ambiguous_time") setAmbig(x.detail);
