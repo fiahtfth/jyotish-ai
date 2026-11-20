@@ -5,8 +5,9 @@ _DISTRESS = re.compile(
     r"\b(?:suicid(?:e|al)|kill myself|end(?:ing)? my life|want to die|don.t want to live|hurt myself|"
     r"self.harm|khudkushi|marna chaht[ai]|jeena nahi)\b|आत्महत्या|खुदकुशी|जीना नहीं|मरना चाहता|मरना चाहती", re.I)
 _PREGNANCY = re.compile(
-    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh)\b"
-    r"|गर्भ|गर्भपात|गर्भधारण", re.I)
+    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh|"
+    r"child\s?birth|santaa?n|baccha|have a (?:baby|child))\b"
+    r"|गर्भ|गर्भपात|गर्भधारण|संतान|बच्चा", re.I)
 _PREDICT = re.compile(
     r"\b(?:will|when|how soon|predict|prediction|chances?|guarantee|likely|risk|cause|can (?:i|my chart)|kab|yog)\b"
     r"|कब|योग|संभावना|भविष्यवाणी|होग[ाीे]", re.I)
