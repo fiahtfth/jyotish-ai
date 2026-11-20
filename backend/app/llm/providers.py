@@ -16,6 +16,8 @@ import time
 import httpx
 
 from ..config import settings
+from ..astro import constants as K
+from ..astro import yogas
 from . import decider
 
 log = logging.getLogger(__name__)
@@ -66,6 +68,29 @@ _PARTIAL_REFERENCE = re.compile(r"[\[【]\s*(?:[FER]\d*(?:\s*[,;]\s*[FER]?\d*)*)
 def visible_reply(text: str) -> str:
     """Remove internal grounding markers from client-visible prose."""
     return _INTERNAL_REFERENCE.sub("", text)
+
+
+def _plain_reply(text: str) -> str:
+    """Flatten stray markdown into the plain text the chat client renders.
+
+    The persona asks for paragraphs, but models still emit headings and
+    tables; left as-is they show literally in the client."""
+    text = visible_reply(text)
+    text = re.sub(r"[*_`]{1,2}", "", text)
+    # A heading marker becomes a blank line so the heading stands on its own.
+    text = re.sub(r"(?:^|(?<=[ \t]))#{1,6}[ \t]+", "\n\n", text, flags=re.M)
+    lines = []
+    for raw in text.split("\n"):
+        # Leading indent marks a wrapped continuation — downstream reply
+        # filters need it to recognize a claim split across lines.
+        line = raw.rstrip()
+        if "|" in line:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue                      # markdown table separator
+            line = " · ".join(c for c in cells if c)
+        lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def _completion_text(data: dict) -> str:
@@ -553,8 +578,8 @@ def generate(messages: list[dict], facts: dict | None = None,
                     else:
                         text = STREAM_PROVIDERS[p](system, provider_messages, _emit, timeout=remaining)
                     if text:
-                        # the persona demands plain text; strip stray markdown
-                        return visible_reply(re.sub(r"[*_`]{1,2}", "", text)), p
+                        # the persona demands plain text; flatten stray markdown
+                        return _plain_reply(text), p
                     log.warning("LLM provider %s returned empty text", p)
                     retryable = False
                 except httpx.HTTPStatusError as exc:
@@ -641,7 +666,8 @@ def _facts_lines(facts: dict) -> list[str]:
         if rec["dignity"]:
             extra.append("/".join(rec["dignity"]))
         lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}, "
-                     f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']}"
+                     f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']} "
+                     f"(lord {rec['nakshatra']['lord']})"
                      + (f" [{', '.join(extra)}]" if extra else ""))
     func = facts["functional"]
     lines.append(f"Functional benefics: {', '.join(func['benefics'])}; "
@@ -649,9 +675,61 @@ def _facts_lines(facts: dict) -> list[str]:
                  f"yogakaraka: {func['yogakaraka']}; maraka: {', '.join(func['maraka_lords'])}")
     jk = facts["jaimini"]["karakas"]
     lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    ar = facts.get("jaimini", {})
+    if ar.get("arudha_lagna"):
+        parts = [f"A1 (arudha lagna) {ar['arudha_lagna']['sign_name']}"]
+        if ar.get("A10"):
+            parts.append(f"A10 (career arudha) {ar['A10']['sign_name']}")
+        if ar.get("upapada_lagna"):
+            parts.append(f"A12 (upapada) {ar['upapada_lagna']['sign_name']}")
+        lines.append("Arudhas: " + "; ".join(parts))
+    fired = [y for y in yogas.detect(facts) if y.get("conditions_fired")]
+    if fired:
+        lines.append("Natal yogas present: " + "; ".join(
+            f"{y['name']} ({y['level']}, {y['source'].split(',')[0]})" for y in fired))
+    # Drishti and conjunctions — what a reader cites when reasoning about a house.
+    by_sign = {}
+    for name, rec in p.items():
+        by_sign.setdefault(rec["sign"], []).append(name)
+    for name, rec in p.items():
+        touched = sorted({(s - lag["sign"]) % 12 + 1 for s in K.reaches(name, rec["sign"])})
+        lines.append(f"{name} aspects houses {', '.join(str(h) for h in touched)}")
+    conj = [f"{'+'.join(names)} in {p[names[0]]['sign_name']} (house {p[names[0]]['house']})"
+            for names in by_sign.values() if len(names) > 1]
+    if conj:
+        lines.append("Conjunctions: " + "; ".join(conj))
+    sav = facts.get("sarvastakavarga")
+    if sav:
+        lines.append("Sarvashtakavarga bindus per sign (Aries..Pisces): "
+                     + ", ".join(f"{K.SIGN_NAMES[i]} {int(v)}" for i, v in enumerate(sav)))
     for period in facts.get("current_vimshottari", []):
         lords = " → ".join(period["lords"])
-        lines.append(f"Active Vimshottari {lords}: {period['start']} through {period['end']}")
+        lines.append(f"Vimshottari running today: {lords} ({period['start']} through {period['end']})")
+    window_periods = facts.get("window_vimshottari") or []
+    if window_periods:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['maha']}–{p.get('antar') or p['maha']} "
+                          f"({p['start']} to {p['end']})" for p in window_periods[:8])
+        lines.append(f"Vimshottari active during {label}: {spans}")
+    pratyantar = facts.get("window_pratyantar") or []
+    if pratyantar:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['lords'][2]} ({p['start']} to {p['end']})"
+                          for p in pratyantar[:12])
+        lines.append(f"Pratyantardasha sequence during {label}: {spans}")
+    dom_chart = facts.get("domain_chart")
+    if dom_chart:
+        lines.append("Domain divisional chart (houses counted from its own ascendant): "
+                     + json.dumps(dom_chart, ensure_ascii=False))
+    window_transits = facts.get("window_transits") or {}
+    if window_transits:
+        label = facts.get("window_label") or "the asked period"
+        lines.append(f"Transit signs during {label}: " + "; ".join(
+            f"{planet} in {', '.join(signs)}" for planet, signs in window_transits.items()))
+    remedy = facts.get("domain_remedy")
+    if remedy:
+        lines.append(f"Traditional upaya for this domain (attribute to tradition if offered): "
+                     f"propitiate {remedy[0]} — {remedy[1]}")
     for period in facts.get("referenced_mahadashas", []):
         lines.append(f"Vimshottari mahadasha of {period['lord']}: {period['start']} through {period['end']}")
     if facts.get("selected_chart"):

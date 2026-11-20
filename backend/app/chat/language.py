@@ -26,7 +26,7 @@ _DASHA_LORDS = {
     "rahu": "Rahu", "राहु": "Rahu", "राहू": "Rahu", "ketu": "Ketu", "केतु": "Ketu",
 }
 _LORD = "|".join(_DASHA_LORDS)
-_MD = r"(?:mah[aā][\s-]*d[aā](?:sh|ś|s)[aā]|dasha|महादशा|दशा)"
+_MD = r"(?:mah[aā][\s-]*d[aā](?:sh|ś|s)[aā]|dash[ae]?|महादशा|दशा)"
 _NAMED_MD = re.compile(
     rf"(?<!\w)(?:(?P<before>{_LORD})(?:['’]s)?\s*(?:(?:ki|की)\s+)?{_MD}|"
     rf"{_MD}\s+(?:of\s+)?(?P<after>{_LORD}))(?!\w)", re.I)
@@ -48,7 +48,7 @@ def named_mahadasha(text):
         match = matches[-1]
         return _DASHA_LORDS[match["before"] or match["after"]]
     if specific_accident(text) and not _TRANSIT.search(focus):
-        match = re.search(rf"(?<!\w)({_LORD})(?:['’]s)?\s+(?:period|phase)(?!\w)", focus)
+        match = re.search(rf"(?<!\w)({_LORD})(?:['’]s)?\s+(?:period|phase|dash[ae]?)(?!\w)", focus)
         if match:
             return _DASHA_LORDS[match[1]]
     return None
@@ -80,7 +80,12 @@ def reported_accident_window(text, today):
     t = text.casefold().strip(" .!?")
     if not re.search(rf"\b{_CALENDAR_YEAR}\b", t):
         return None
-    if not specific_accident(t):
+    if specific_accident(t):
+        # Other years in the message usually belong to the reading being
+        # discussed; the event's date sits in the accident's own clause.
+        clauses = re.split(r"[.!?;]+", t)
+        t = next((c for c in clauses if _ACCIDENT.search(c)), t)
+    else:
         t = re.sub(r"^(?:(?:it (?:was|happened)|i think(?: it was)?)\s+)?(?:in |on |around |about )?", "", t)
         day = r"\d{1,2}(?:st|nd|rd|th)?"
         month_date = rf"(?:{day}\s+(?:of\s+)?)?{_MONTH.pattern}(?:\s+{day})?[ ,]+{_CALENDAR_YEAR}"
@@ -132,6 +137,12 @@ def requested_window(text, today, prior=None):
     if result and (result[1] - result[0]).days > 365:
         raise ValueError("choose a period of up to one year")
     return result
+
+
+def raw_window(text, today, prior=None):
+    """The parsed period without the one-year cap — used to offer the first
+    year when the user names a span that is too long to compute."""
+    return _parse_window(text.casefold(), today, prior)
 
 
 def _shift_months(day, count):
@@ -200,10 +211,23 @@ def _parse_window(t, today, prior):
         end_year = last_year or year + (last < first)
         start = date(year, first, first_day or 1)
         end = date(end_year, last, last_day or calendar.monthrange(end_year, last)[1])
+        if len(months) == 1 and not first_day:
+            # "nov 2027 to 2040" — a bare year after the range connector
+            # closes the span at the end of that year.
+            tail = re.search(rf"(?:to|through|until|till|and|–|—)\s*({_CALENDAR_YEAR})\s*[.!?]*$", t)
+            if tail and int(tail[1]) != year:
+                end = date(int(tail[1]), 12, 31)
         if end < start:
             raise ValueError("reversed interval")
         return start, end
     if len(set(re.findall(rf"\b{_CALENDAR_YEAR}\b", t))) > 1:
+        span = (re.search(rf"\bbetween\s+({_CALENDAR_YEAR})\s+and\s+({_CALENDAR_YEAR})\b", t)
+                or re.search(rf"\b({_CALENDAR_YEAR})\s*(?:-|–|—|to|through|until|till)\s*({_CALENDAR_YEAR})\b", t))
+        if span:
+            start_year, end_year = int(span[1]), int(span[2])
+            if end_year <= start_year:
+                raise ValueError("reversed interval")
+            return date(start_year, 1, 1), date(end_year, 12, 31)
         raise ValueError("choose one year")
     if year_match or relative_year:
         year = int(year_match[1]) if year_match else relative_year

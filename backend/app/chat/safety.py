@@ -5,10 +5,13 @@ _DISTRESS = re.compile(
     r"\b(?:suicid(?:e|al)|kill myself|end(?:ing)? my life|want to die|don.t want to live|hurt myself|"
     r"self.harm|khudkushi|marna chaht[ai]|jeena nahi)\b|आत्महत्या|खुदकुशी|जीना नहीं|मरना चाहता|मरना चाहती", re.I)
 _PREGNANCY = re.compile(
-    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh)\b"
-    r"|गर्भ|गर्भपात|गर्भधारण", re.I)
+    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh|"
+    r"child\s?birth|santaa?n|have (?:a )?(?:baby|child(?:ren)?|kid|baccha)s?|"
+    r"baccha\s+(?:hona|hoga|paida|chaahiye))\b"
+    r"|गर्भ|गर्भपात|गर्भधारण|संतान|बच्चा\s+(?:होगा|होना|पैदा)", re.I)
 _PREDICT = re.compile(
-    r"\b(?:will|when|how soon|predict|prediction|chances?|guarantee|likely|risk|cause|can (?:i|my chart)|kab|yog)\b"
+    r"\b(?:will|when|how soon|predict|prediction|chances?|guarantee|likely|risk|cause|"
+    r"possible|is it (?:possible|going)|can (?:i|my chart)|kab|yog)\b"
     r"|कब|योग|संभावना|भविष्यवाणी|होग[ाीे]", re.I)
 _OTHER_MIND = re.compile(
     r"\b(?:does (?:he|she|my (?:ex|partner|spouse|wife|husband)) (?:love|miss|want) me|"
@@ -27,7 +30,18 @@ def private_reply(text: str) -> str | None:
         return ("I’m sorry things feel so hard right now. If you might hurt yourself soon, call your local emergency "
                 "number or go to the nearest emergency department. If you can, tell someone you trust and ask them to "
                 "stay with you. In India, you can call Tele-MANAS at 14416. Are you safe right now?")
-    if _PREGNANCY.search(text) and _PREDICT.search(text):
+    # Pregnancy wording and a prediction cue must appear in the SAME clause —
+    # "I have children. When will I get promoted?" is not a conception ask.
+    # A conditional clause joins its question: "if I do IVF, what are my
+    # chances?" is one ask.
+    clauses = re.split(r"[.!?।;\n]+|,\s*", text)
+    merged = []
+    for clause in clauses:
+        if merged and re.match(r"\s*(?:if|when)\b", merged[-1], re.I):
+            merged[-1] += " " + clause
+        else:
+            merged.append(clause)
+    if any(_PREGNANCY.search(clause) and _PREDICT.search(clause) for clause in merged):
         if hindi:
             return ("कुंडली से गर्भधारण, गर्भपात या किसी चिकित्सकीय परिणाम का अनुमान नहीं लगाया जा सकता। "
                     "अगर यह आपके स्वास्थ्य से जुड़ा सवाल है, तो योग्य चिकित्सक से बात करें।")

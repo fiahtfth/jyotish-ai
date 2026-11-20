@@ -10,7 +10,8 @@ log = logging.getLogger(__name__)
 
 NATURAL = {"career": "Sun", "relationship": "Venus", "finance": "Jupiter",
            "education": "Mercury", "relocation": "Moon", "health": "Sun", "direction": "Sun",
-           "children": "Jupiter", "parents": "Sun", "debt": "Mars", "litigation": "Saturn"}
+           "children": "Jupiter", "parents": "Sun", "debt": "Mars", "litigation": "Saturn",
+           "property": "Mars"}
 KENDRA = {1, 4, 7, 10}
 STRONG = {"exalted", "own sign", "moolatrikona"}
 PID = {name: i for i, name in K.PLANET_NAMES.items()}

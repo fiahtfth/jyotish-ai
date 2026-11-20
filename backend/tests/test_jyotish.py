@@ -1025,8 +1025,8 @@ def test_vimshottari_dates_and_sequence_use_saved_timeline(monkeypatch):
     h = register_and_profile()
     timeline = send("Show me the full Mahadasha sequence", h)[-1]["content"]
     assert len(timeline.split("\n- ")) == 10
-    rahu_dates = next(line.removeprefix("- **Rahu** ") for line in timeline.splitlines()
-                      if line.startswith("- **Rahu** "))
+    rahu_dates = next(line.removeprefix("- Rahu ") for line in timeline.splitlines()
+                      if line.startswith("- Rahu "))
     assert rahu_dates in send("Rahu ki Mahadasha kab shuru hui?", h)[-1]["content"]
     assert rahu_dates in send("राहु की महादशा कब शुरू हुई?", h)[-1]["content"]
 
@@ -1049,7 +1049,50 @@ def test_named_dasha_interpretation_grounds_provider_with_engine_dates(monkeypat
     rahu = seen["referenced_mahadashas"][0]
     grounding = providers.grounding_text(seen, None)
     assert f"Vimshottari mahadasha of Rahu: {rahu['start']} through {rahu['end']}" in grounding
-    assert f"Active Vimshottari {seen['current_vimshottari'][0]['lords'][0]}:" in grounding
+    assert f"Vimshottari running today: {seen['current_vimshottari'][0]['lords'][0]}" in grounding
+
+
+def test_asked_period_grounds_provider_with_window_vimshottari(monkeypatch):
+    from app.llm import providers
+
+    seen = {}
+
+    def generate(messages, *, facts, analysis, **kwargs):
+        seen.update(facts)
+        return "This is a traditional interpretation.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
+    h = register_and_profile()
+    _open_conv(h)
+    send("i had an accident way back in Jan 2014", h)
+    assert seen["window_label"] == "January 2014"
+    covering = seen["window_vimshottari"]
+    assert covering and all(p["start"] <= "2014-01-31" and "2014-01-01" <= p["end"] for p in covering)
+    grounding = providers.grounding_text(seen, seen.get("analysis"))
+    assert "Vimshottari active during January 2014" in grounding
+
+
+def test_dasha_correction_complaint_gets_lookup_not_date_prompt():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("i think you are not able to predict properly...."
+             "my accident happened in rahu dash in 2014..."
+             "you are connecting it to 2027", h)
+    reply = r[-1]["content"]
+    assert "Which dates did you mean" not in reply
+    assert "Rahu" in reply and "2014" in reply
+
+
+def test_oversized_year_range_offers_the_first_year():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("tell me my future from 2027 to 2040", h)
+    reply = r[-1]
+    assert "one year at a time" in reply["content"] and "2027" in reply["content"]
+    assert reply["meta"]["requested_window"] == ["2027-01-01", "2027-12-31"]
+    # the offer is a real selection — "yes" must not be asked for dates again
+    r = send("yes", h)
+    assert "Which dates did you mean" not in r[-1]["content"]
 
 
 def test_stream_same_guards_as_send():
@@ -2005,6 +2048,118 @@ def test_conversational_periods_are_calendar_intervals():
         requested_window("2027-01-01 to 2099-12-31", today)
 
 
+def test_year_ranges_parse_then_hit_the_one_year_cap():
+    from datetime import date
+    from app.chat.language import requested_window, raw_window
+    today = date(2026, 11, 18)
+    assert raw_window("2027 to 2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("between 2027 and 2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("2027-2040", today) == (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("nov 2027 to 2040", today) == (date(2027, 11, 1), date(2040, 12, 31))
+    for q in ("2027 to 2040", "nov 2027 to 2040", "between 2027 and 2040"):
+        with pytest.raises(ValueError, match="one year"):
+            requested_window(q, today)
+
+
+def test_bare_dash_names_a_mahadasha_and_accident_keeps_its_own_clause():
+    from datetime import date
+    from app.chat.language import named_mahadasha, reported_accident_window
+    today = date(2026, 11, 18)
+    complaint = ("i think you are not able to predict properly...."
+                 "my accident happened in rahu dash in 2014...you are connecting it to 2027")
+    assert named_mahadasha(complaint) == "Rahu"
+    assert reported_accident_window(complaint, today) == (date(2014, 1, 1), date(2014, 12, 31))
+
+
+def test_repair_response_preserves_line_breaks():
+    issues = ["unsupported date '2027-08-09'"]
+    fixed = V.repair_response(
+        "Fine sentence here.\n\n- bullet one stays.\n- Expect news on 2027-08-09.", issues)
+    assert fixed == "Fine sentence here.\n\n- bullet one stays."
+    # A claim wrapped across lines is still caught (the wrap must not bypass
+    # the filter), while kept sentences preserve their original newlines.
+    wrapped = V.repair_response(
+        "You will\nreceive news on 2027-08-09.\nFine line stays.", issues)
+    assert wrapped == "Fine line stays."
+    # Unpunctuated rows read as one sentence: only the bad row is dropped.
+    table = V.repair_response(
+        "| Work | grows\n| Health | 2027-08-09\n| Family | steady", issues)
+    assert table == "| Work | grows\n| Family | steady"
+    # Rows already flattened to "a · b" by _plain_reply count as rows too.
+    flat = V.repair_response(
+        "Work · grows\nHealth · 2027-08-09\nFamily · steady", issues)
+    assert flat == "Work · grows\nFamily · steady"
+    # A wrapped claim riding on a row run: the rows survive, both halves of
+    # the claim go.
+    tail = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nyou will\nreceive news on 2027-08-09.",
+        issues)
+    assert tail == "| Work | grows\n| Home | steady\n| Family | calm"
+    # A caveat heading before the table is kept when only one row is bad.
+    caveat = V.repair_response(
+        "Indicative timings\n| Work | 2027-08-09\n| Home | steady\n| Family | calm",
+        issues)
+    assert caveat == "Indicative timings\n| Home | steady\n| Family | calm"
+    # A bad prose line after the table doesn't take the last row with it.
+    tailrow = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nYou will receive news on 2027-08-09",
+        issues)
+    assert tailrow == "| Work | grows\n| Home | steady\n| Family | calm"
+    # When every row is rejected, a bare lead-in is no reply — full fallback.
+    empty = V.repair_response(
+        "Key dates\n| Work | 2027-08-09\n| Home | 2027-08-09\n| Family | 2027-08-09",
+        issues)
+    assert "doesn't support" in empty
+    # A claim wrapped as a bullet plus continuation drops both halves.
+    wrapbullet = V.repair_response(
+        "- Saturn sits\n  in Aries\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert wrapbullet == "- Home steady"
+    # When rows all fail, a substantive prose takeaway still answers.
+    takeaway = V.repair_response(
+        "- Work | 2027-08-09\n- Home | 2027-08-09\n- Family | 2027-08-09\n"
+        "Overall the period still looks broadly supportive",
+        issues)
+    assert takeaway == "Overall the period still looks broadly supportive"
+    # A colon lead-in under a fully rejected list is still no reply.
+    colon = V.repair_response(
+        "Here are the key dates:\n- a | 2027-08-09\n- b | 2027-08-09\n- c | 2027-08-09",
+        issues)
+    assert "doesn't support" in colon
+    # A valid bullet and prose line sharing the claim's words are kept —
+    # neither alone makes the rejected claim.
+    shared = V.repair_response(
+        "- Saturn rises\nAries supports you\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert shared == "- Saturn rises\nAries supports you\n- Home steady"
+    # Prose halves separated by dropped rows must not rejoin into the claim.
+    rejoined = V.repair_response(
+        "The chart places Saturn in\n- x | 2027-08-09\n- y | 2027-08-09\n"
+        "- z | 2027-08-09\nthe sign of Aries",
+        issues + ["Saturn in Aries claim"])
+    assert "doesn't support" in rejoined
+    # Wrapped prose in a 3-line sentence still drops whole — its leading
+    # fragment must not survive row recovery.
+    wrapped3 = V.repair_response(
+        "Intro line\nYou will\nreceive news on 2027-08-09.\nCloser stays.", issues)
+    assert wrapped3 == "Closer stays."
+
+
+def test_llm_markdown_is_flattened_to_plain_text():
+    from app.llm.providers import _plain_reply
+    text = ("Intro sentence. ### Health outlook\n\n"
+            "| Theme | Jupiter | Saturn |\n|---|---|---|\n| Work | grows | steady |\n\n**Keep going.**")
+    out = _plain_reply(text)
+    assert "###" not in out and "|" not in out and "**" not in out
+    assert "Health outlook" in out and "Work · grows · steady" in out
+    # Indentation marks a wrapped continuation — repair_response needs it.
+    wrapped = _plain_reply("- Saturn sits\n  in Aries\n- Home steady")
+    assert wrapped == "- Saturn sits\n  in Aries\n- Home steady"
+    # An indented table divider is still a divider, not a bogus row.
+    table = _plain_reply("| Work | grows |\n  |---|---|\n| Home | steady |")
+    assert table == "Work · grows\nHome · steady"
+
+
 
 def test_initial_checks_score_the_displayed_window(monkeypatch):
     from datetime import date
@@ -2521,3 +2676,124 @@ def test_automatic_outcome_requests_default_to_off():
     assert client.get("/api/predictions", headers=h).json()["followups_enabled"] is False
     assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
     assert any(m["meta"].get("followup_id") for m in send("Hello", h))
+
+
+# ---------- professional-review improvements ----------
+
+def test_verifier_lordship_claims():
+    _, f = make_facts()
+    h3 = f["houses"][3]["lord"]
+    wrong = "Mars" if h3 != "Mars" else "Venus"
+    r = V.verify_response(f"Your {h3} rules the 3rd house.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Your {wrong} rules the 3rd house.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_varga_claims():
+    _, f = make_facts()
+    d9_sun = f["vargas"]["D9"]["Sun"]
+    right = f["vargas"]["D9"]["Sun"]["sign_name"] if "sign_name" in d9_sun else None
+    if right is None:
+        from app.astro.constants import SIGN_NAMES
+        right = SIGN_NAMES[d9_sun["sign"]]
+    wrong = "Sagittarius" if right != "Sagittarius" else "Leo"
+    r = V.verify_response(f"Sun is in {right} navamsa.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Sun is in {wrong} navamsa.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_transit_claims():
+    _, f = make_facts()
+    f = {**f, "window_transits": {"Jupiter": ["Taurus", "Gemini"]}}
+    r = V.verify_response("Jupiter is transiting Taurus now.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response("Jupiter is transiting Aries now.", f, {})
+    assert not r["ok"]
+
+
+def test_facts_lines_include_pratyantar_transits_and_remedy():
+    from app.llm.providers import _facts_lines
+    _, f = make_facts()
+    f = {**f,
+         "window_label": "2027",
+         "window_pratyantar": [{"lords": ["Jupiter", "Saturn", "Sun"],
+                                "start": "2027-01-01", "end": "2027-02-15"}],
+         "window_transits": {"Jupiter": ["Taurus"]},
+         "domain_remedy": ("Jupiter", "Thursday observance — yellow donation")}
+    text = "\n".join(_facts_lines(f))
+    assert "Pratyantardasha" in text and "2027-01-01 to 2027-02-15" in text
+    assert "Jupiter in Taurus" in text
+    assert "Thursday observance" in text
+    assert "Natal yogas" in text or "aspects" in text  # yogas only if fired
+
+
+def test_dasha_overview_marks_verdicts():
+    from app.chat.orchestrator import _dasha_overview
+    from datetime import date
+    facts = {"vimshottari": {"periods": [
+        {"lords": ["Jupiter", "Saturn"], "start": "2027-01-01", "end": "2028-01-01"},
+        {"lords": ["Jupiter", "Mars"], "start": "2028-01-01", "end": "2029-01-01"}]},
+        "functional": {"benefics": ["Jupiter", "Mars"], "malefics": ["Saturn"],
+                       "yogakaraka": None}}
+    lines = _dasha_overview(facts, (date(2027, 1, 1), date(2030, 1, 1)))
+    assert len(lines) == 2
+    assert "Jupiter–Saturn" in lines[0] and "frictional" in lines[0]
+    assert "Jupiter–Mars" in lines[1] and "supportive" in lines[1]
+
+
+def test_new_event_types_parse():
+    from app.astro.prediction import event_spec
+    assert event_spec("when will I buy a house", "property")["event_type"] == "property_purchase"
+    assert event_spec("will I settle abroad", "relocation")["event_type"] == "foreign_settlement"
+    assert event_spec("will I travel abroad", "relocation")["event_type"] == "foreign_travel"
+    assert event_spec("will I win the court case", "litigation")["event_type"] == "litigation_win"
+    assert event_spec("when will the court case resolve", "litigation")["event_type"] == "litigation_resolution"
+    assert event_spec("when will I be debt free", "debt")["event_type"] == "debt_cleared"
+
+
+def test_transit_lookup_shortcut(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("when does Jupiter enter my 7th house", h)
+    assert any("Jupiter" in m["content"] for m in replies), replies
+
+
+def test_prashna_answer(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will i ever travel", h)
+    assert any("Prashna" in m["content"] or "prashna" in m["content"].lower() for m in replies), replies
+
+
+def test_childbirth_prediction_is_declined():
+    from app.chat.safety import private_reply
+    assert private_reply("when will I have a baby")
+    assert private_reply("when will childbirth happen")
+
+
+def test_surgery_question_gets_no_prashna_verdict():
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will my surgery go well", h)
+    assert not any("Prashna" in m["content"] for m in replies)
+
+
+def test_conception_possibility_is_declined_but_child_schooling_is_not():
+    from app.chat.safety import private_reply
+    assert private_reply("is it possible for me to conceive and have children")
+    assert private_reply("will i have children")
+    assert private_reply("when will my baccha get college admission") is None
+    assert private_reply("will my wife and i have a baccha")
+    assert private_reply("i have children. when will i get a promotion") is None
+    assert private_reply("if i do ivf, what are my chances")
+    assert private_reply("when i conceive, will it be safe")
+
+
+def test_surgery_timing_suggestion_carries_health_disclaimer():
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("which day is good for my surgery", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies

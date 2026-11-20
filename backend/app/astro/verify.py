@@ -23,6 +23,12 @@ def _claims_planet_sign(text: str):
     for m in re.finditer(
             rf"({ _PLANET_PAT })\s+(?:is\s+)?(?:in|placed in|occupying|sits in)\s+({_SIGN_PAT})",
             text, re.I):
+        # a divisional-chart claim ("in Capricorn navamsa") is checked against
+        # that varga, not the D1 chart — skip it here
+        if re.search(r"^\s+(?:in\s+(?:the\s+)?)?(navamsa|dasamsa|dashamsha|saptamsa|hora|"
+                     r"chaturthamsa|dwadasamsa|rashi|d[- ]?\d+)\b",
+                     text[m.end():], re.I):
+            continue
         out.append((m.group(1).title(), m.group(2).title()))
     return out
 
@@ -40,6 +46,47 @@ def _claims_house(text: str):
     out = []
     for m in re.finditer(rf"({_PLANET_PAT})\s+(?:is\s+)?(?:in|in the)\s+(\d+)(?:st|nd|rd|th)?\s+house", text, re.I):
         out.append((m.group(1).title(), int(m.group(2))))
+    return out
+
+
+def _claims_lordship(text: str):
+    out = []
+    for m in re.finditer(
+            rf"({_PLANET_PAT})\s+(?:is\s+(?:the\s+)?)?(?:rules?|lords?|governs?|"
+            rf"lord of|lordship of)\s+(?:the\s+)?(\d+)(?:st|nd|rd|th)?\s*(?:house|bhava)?",
+            text, re.I):
+        out.append((m.group(1).title(), int(m.group(2))))
+    for m in re.finditer(
+            rf"(\d+)(?:st|nd|rd|th)?\s+(?:house|bhava)?\s*lord\s+(?:is\s+)?({_PLANET_PAT})",
+            text, re.I):
+        out.append((m.group(2).title(), int(m.group(1))))
+    return out
+
+
+_VARGA_NAMES = {"navamsa": "D9", "d9": "D9", "dasamsa": "D10", "dashamsha": "D10",
+                "d10": "D10", "d7": "D7", "saptamsa": "D7", "d2": "D2", "hora": "D2",
+                "d4": "D4", "chaturthamsa": "D4", "d12": "D12", "dwadasamsa": "D12",
+                "d24": "D24", "d6": "D6", "d1": "D1", "rashi": "D1"}
+
+
+def _claims_varga(text: str):
+    out = []
+    for m in re.finditer(
+            rf"({_PLANET_PAT})\s+(?:is\s+)?(?:in|placed in|occupying)\s+({_SIGN_PAT})\s+"
+            rf"(?:in\s+(?:the\s+)?|of\s+(?:the\s+)?)?({'|'.join(_VARGA_NAMES)})\b",
+            text, re.I):
+        out.append((m.group(1).title(), m.group(2).title(),
+                    _VARGA_NAMES[m.group(3).lower()]))
+    return out
+
+
+def _claims_transit(text: str):
+    out = []
+    for m in re.finditer(
+            rf"({_PLANET_PAT})\s+(?:is\s+)?transit\w*\s+(?:(?:in|into|through|over)\s+)?"
+            rf"(?:the\s+|your\s+)?(?:sign\s+of\s+)?({_SIGN_PAT})",
+            text, re.I):
+        out.append((m.group(1).title(), m.group(2).title()))
     return out
 
 
@@ -156,6 +203,30 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
             if house != actual:
                 issues.append(f"claims {planet} in {house}th house, chart has {actual}th")
 
+    # 2b. Lordship claims — the chart's house lords are exact
+    houses = facts.get("houses") or {}
+    for planet, house in _claims_lordship(text):
+        actual = houses.get(str(house), houses.get(house, {})).get("lord")
+        if actual and planet != actual:
+            issues.append(f"claims {planet} rules the {house}th house, chart has {actual}")
+
+    # 2c. Divisional (varga) placement claims
+    vargas = facts.get("vargas") or {}
+    for planet, sign, chart in _claims_varga(text):
+        rec = (vargas.get(chart) or {}).get(planet)
+        if rec is not None:
+            actual = K.SIGN_NAMES[rec["sign"]]
+            if sign != actual:
+                issues.append(f"claims {planet} in {sign} in {chart}, chart has {actual}")
+
+    # 2d. Transit claims — checked against the transits supplied for the window
+    window_transits = facts.get("window_transits") or {}
+    for planet, sign in _claims_transit(text):
+        actual = window_transits.get(planet)
+        if actual and sign not in actual:
+            issues.append(
+                f"claims {planet} transits {sign}, chart has {', '.join(actual)}")
+
     # 3. Dasha lord claims vs the running dasha used in context
     running = context.get("running_dasha") or []
     if running:
@@ -184,28 +255,99 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
 
 
 def repair_response(text: str, issues: list[str]) -> str:
-    """Strip sentences that carry unverifiable/false astro claims."""
+    """Strip sentences that carry unverifiable/false astro claims.
+
+    Paragraph and line structure is preserved — joining kept sentences with
+    spaces once collapsed every newline in a reply into one blob."""
     if not issues:
         return text
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    kept = []
-    for s in sentences:
-        bad = False
+
+    def bad(s: str) -> bool:
         for it in issues:
             quoted = re.search(r"'([^']+)'", it)
             if quoted:
                 if quoted.group(1).lower() in s.lower():
-                    bad = True
-                    break
+                    return True
                 continue
             # crude: if the sentence contains both nouns involved in the issue
             words = [w for w in re.findall(r"[A-Za-z]+", it) if len(w) > 2]
             if sum(1 for w in words if w.lower() in s.lower()) >= 2:
-                bad = True
-                break
-        if not bad and s.strip():
-            kept.append(s.strip())
-    if kept:
-        return " ".join(kept)
+                return True
+        return False
+
+    paragraphs = []
+    for para in re.split(r"\n\s*\n", text):
+        # Sentences may wrap across newlines; keep each sentence's original
+        # trailing whitespace so kept text preserves the line structure.
+        pieces = re.split(r"((?<=[.!?])\s+)", para)
+        kept_parts = []
+        for i in range(0, len(pieces), 2):
+            sentence = pieces[i]
+            sep = pieces[i + 1] if i + 1 < len(pieces) else ""
+            if not sentence.strip():
+                continue
+            if bad(sentence):
+                # A run of list/table rows reads as one sentence: drop only
+                # the offending rows, not the whole table. Wrapped prose must
+                # still drop whole so a claim's leading fragment can't survive.
+                rows = sentence.split("\n")
+
+                def is_row(ln: str) -> bool:
+                    # "·" lines are table rows already flattened by _plain_reply.
+                    return bool(re.match(r"\s*(?:[-*•|>]|\d+[.)])\s*\S", ln)
+                                or "·" in ln)
+
+                rowish = sum(1 for ln in rows if is_row(ln))
+                if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
+                    def fragment(i: int, ln: str) -> bool:
+                        # A line that wraps into another line forming a bad
+                        # claim goes too — but a caveat before a bad *row*
+                        # stays, and so does a row before a bad prose line.
+                        # A row only wraps into an *indented* continuation.
+                        nxt = rows[i + 1] if i + 1 < len(rows) else None
+                        if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
+                                and not is_row(nxt) and bad(ln + " " + nxt)
+                                and (not is_row(ln)
+                                     or (nxt[:1] in (" ", "\t")
+                                         and not bad(nxt)))):
+                            return True
+                        prv = rows[i - 1] if i else ""
+                        return bool(
+                            not is_row(ln) and prv and not bad(prv)
+                            and fragment(i - 1, prv)
+                            and bad(prv + " " + ln))
+                    kept_pairs = [(i, ln) for i, ln in enumerate(rows)
+                                  if ln.strip() and not bad(ln)
+                                  and not fragment(i, ln)]
+                    kept_lines = [ln for _, ln in kept_pairs]
+                    if not any(is_row(ln) for ln in kept_lines):
+                        # No rows survive: complete or substantive prose
+                        # still answers, but a bare lead-in is no reply.
+                        kept_pairs = [(i, ln) for i, ln in kept_pairs
+                                      if ln.rstrip()[-1:] in ".!?"
+                                      or (len(ln.split()) >= 4
+                                          and not ln.rstrip().endswith(":"))]
+                    # Deleting rows can leave two prose halves adjacent whose
+                    # join rebuilds the rejected claim — drop both halves.
+                    final = []
+                    for i, ln in kept_pairs:
+                        if (final and i > final[-1][0] + 1
+                                and not is_row(final[-1][1])
+                                and final[-1][1].rstrip()[-1:] not in ".!?"
+                                and not is_row(ln)
+                                and bad(final[-1][1] + " " + ln)):
+                            final.pop()
+                            continue
+                        final.append((i, ln))
+                    sentence = "\n".join(ln for _, ln in final)
+                else:
+                    continue
+            if sentence.strip():
+                kept_parts.append(sentence + sep)
+        kept = "".join(kept_parts)
+        if kept.strip():
+            paragraphs.append(kept.strip())
+    if paragraphs:
+        return "\n\n".join(paragraphs)
     return ("I'd rather not state that — the calculated chart doesn't support "
             "the claim as phrased. Let me answer from what the chart actually shows.")

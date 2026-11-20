@@ -15,8 +15,26 @@ EVENTS = [
     ("education", r"pass.{0,20}exam", "exam_pass", "An official passing result for the stated exam is received"),
     ("education", r"admission|admitted", "admission", "A formal admission offer is received"),
     ("education", r"graduat|complete.{0,15}degree", "graduation", "The stated qualification is officially completed"),
+    ("relocation", r"settle abroad|move abroad", "foreign_settlement",
+     "The stated party establishes primary residence in a foreign country"),
+    ("relocation", r"going abroad|travel(?:l?ing)? abroad|trip abroad|"
+                   r"foreign (?:posting|assignment|job|travel|trip)|"
+                   r"videsh|overseas", "foreign_travel",
+     "Travel to a foreign country occurs"),
     ("relocation", r"\b(?:move|moving|relocat\w*|settle|settling|change of residence)\b",
      "relocation", "A move of primary residence to the stated destination occurs"),
+    # Conception/childbirth asks are declined by safety.private_reply before
+    # any event is scored, so no childbirth event is defined here.
+    ("property", r"buy.{0,25}(?:house|home|flat|property|plot|land|car|vehicle)|"
+                 r"purchas\w*.{0,20}(?:house|home|flat|property|car|vehicle)|"
+                 r"own (?:a )?(?:house|home|flat|car)|makaan|gaadi",
+     "property_purchase", "Purchase of the stated property or vehicle completes"),
+    ("litigation", r"win.{0,15}(?:case|lawsuit|litigation)|favou?r",
+     "litigation_win", "A ruling in favour of the stated party is delivered"),
+    ("litigation", r"court|lawsuit|legal|resolve|settle", "litigation_resolution",
+     "A final ruling in the stated litigation is delivered"),
+    ("debt", r"clear.{0,15}(?:debt|loan)|debt.{0,10}free|repay|pay off",
+     "debt_cleared", "The stated debt or loan is fully repaid"),
 ]
 
 
@@ -217,22 +235,89 @@ def constrain_reply(reply, analysis, facts=None, messages=None):
     prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?|20\d{2})\b", reply, re.I)
     internal = re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", reply, re.I)
     if dates - allowed or certainty or prose_date or internal:
-        # Remove only the offending sentences. A single unsupported claim
-        # must not erase the rest of an otherwise useful answer.
-        sentences = re.split(r"(?<=[.!?])\s+|\n\n", reply)
-        if len(sentences) > 1:
-            kept = []
-            for sentence in sentences:
-                bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
-                if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
+        # Remove only the offending sentences, preserving the reply's line
+        # structure. A single unsupported claim must not erase the rest of an
+        # otherwise useful answer — or collapse every newline into one blob.
+        def bad(sentence: str) -> bool:
+            bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
+            if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
+                return True
+            if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
+                return True
+            return bool(re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I))
+        paragraphs = []
+        for para in re.split(r"\n\s*\n", reply):
+            # Sentences may wrap across newlines; keep each sentence's original
+            # trailing whitespace so kept text preserves the line structure.
+            pieces = re.split(r"((?<=[.!?])\s+)", para)
+            kept_parts = []
+            for i in range(0, len(pieces), 2):
+                sentence = pieces[i]
+                sep = pieces[i + 1] if i + 1 < len(pieces) else ""
+                if not sentence.strip():
                     continue
-                if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
-                    continue
-                if re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I):
-                    continue
+                if bad(sentence):
+                    # A run of list/table rows reads as one sentence: drop only
+                    # the offending rows, not the whole table. Wrapped prose must
+                    # still drop whole so a claim's leading fragment can't survive.
+                    rows = sentence.split("\n")
+
+                    def is_row(ln: str) -> bool:
+                        # "·" lines are table rows already flattened by _plain_reply.
+                        return bool(re.match(r"\s*(?:[-*•|>]|\d+[.)])\s*\S", ln)
+                                    or "·" in ln)
+
+                    rowish = sum(1 for ln in rows if is_row(ln))
+                    if sentence.count("\n") >= 2 and rowish * 2 > len(rows):
+                        def fragment(i: int, ln: str) -> bool:
+                            # A line that wraps into another line forming a bad
+                            # claim goes too — but a caveat before a bad *row*
+                            # stays, and so does a row before a bad prose line.
+                            # A row only wraps into an *indented* continuation.
+                            nxt = rows[i + 1] if i + 1 < len(rows) else None
+                            if (ln.rstrip()[-1:] not in ".!?" and nxt is not None
+                                    and not is_row(nxt) and bad(ln + " " + nxt)
+                                    and (not is_row(ln)
+                                         or (nxt[:1] in (" ", "\t")
+                                             and not bad(nxt)))):
+                                return True
+                            prv = rows[i - 1] if i else ""
+                            return bool(
+                                not is_row(ln) and prv and not bad(prv)
+                                and fragment(i - 1, prv)
+                                and bad(prv + " " + ln))
+                        kept_pairs = [(i, ln) for i, ln in enumerate(rows)
+                                      if ln.strip() and not bad(ln)
+                                      and not fragment(i, ln)]
+                        kept_lines = [ln for _, ln in kept_pairs]
+                        if not any(is_row(ln) for ln in kept_lines):
+                            # No rows survive: complete or substantive prose
+                            # still answers, but a bare lead-in is no reply.
+                            kept_pairs = [(i, ln) for i, ln in kept_pairs
+                                          if ln.rstrip()[-1:] in ".!?"
+                                          or (len(ln.split()) >= 4
+                                              and not ln.rstrip().endswith(":"))]
+                        # Deleting rows can leave two prose halves adjacent whose
+                        # join rebuilds the rejected claim — drop both halves.
+                        final = []
+                        for i, ln in kept_pairs:
+                            if (final and i > final[-1][0] + 1
+                                    and not is_row(final[-1][1])
+                                    and final[-1][1].rstrip()[-1:] not in ".!?"
+                                    and not is_row(ln)
+                                    and bad(final[-1][1] + " " + ln)):
+                                final.pop()
+                                continue
+                            final.append((i, ln))
+                        sentence = "\n".join(ln for _, ln in final)
+                    else:
+                        continue
                 if sentence.strip():
-                    kept.append(sentence.strip())
-            if kept:
-                return " ".join(kept)
+                    kept_parts.append(sentence + sep)
+            kept = "".join(kept_parts)
+            if kept.strip():
+                paragraphs.append(kept.strip())
+        if paragraphs:
+            return "\n\n".join(paragraphs)
         return interpretation_reading(analysis, facts, messages)
     return reply
