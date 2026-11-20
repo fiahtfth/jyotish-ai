@@ -1319,7 +1319,9 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
             r"\b(?:19|20)\d{2}\b|this (?:year|month|week)|next (?:year|month|week)|"
             r"in \d+ (?:years?|months?)|january|february|march|april|may|june|july|"
             r"august|september|october|november|december|kab\b", t))
-        if spec and not has_period and not prediction.event_spec(language.focus_text(text), domain):
+        # Medical outcomes are never given an astrological verdict.
+        if (spec and domain != "health" and not has_period
+                and not prediction.event_spec(language.focus_text(text), domain)):
             now = _utcnow()
             tz = birth.tz_offset
             local = now + timedelta(hours=tz)
