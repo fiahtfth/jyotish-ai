@@ -150,7 +150,7 @@ def test_yogini_never_separate_pillar(monkeypatch):
     with_y = p1(make_facts())
     assert len(with_y) == 1 and with_y[0].pillar == "P1" and with_y[0].value == base.value
     yev = [e for e in with_y[0].evidence if e.rule_id == "P1_YOGINI_XCHECK"]
-    assert yev and all("MOON_NAKSHATRA" in e.factors for e in yev)
+    assert yev and all("MOON_NAKSHATRA" in e.factors for e in yev if e.direction != 0)
     # de-dup: a later pillar relying only on MOON_NAKSHATRA is dependent on P1, never an extra n
     from app.astro.convergence.types import Evidence
     later = PillarResult("P3", S, (Evidence("X", "1", (), +1, 1.0, frozenset({"MOON_NAKSHATRA"})),))

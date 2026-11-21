@@ -862,9 +862,10 @@ _MONTH_WORDS = {m: i for i, m in enumerate(
 def _milestones_from_entries(db, profile, entries) -> list:
     """Confirmed life events the user mentions become structured facts
     (UserMilestone): they feed the look-back bundle and the birth-time check,
-    and are never re-asked."""
-    known = {(m.domain, m.year, m.month) for m in
-             db.query(UserMilestone).filter_by(profile_id=profile.id)}
+    and are never re-asked. A correction ("actually, it was 2018") replaces the
+    earlier date for that domain instead of adding a second event."""
+    existing = db.query(UserMilestone).filter_by(profile_id=profile.id).all()
+    known = {(m.domain, m.year, m.month) for m in existing}
     out = []
     for e in entries:
         if e.get("kind") != "milestone" or not e.get("domain"):
@@ -875,11 +876,19 @@ def _milestones_from_entries(db, profile, entries) -> list:
             continue
         month = next((n for name, n in _MONTH_WORDS.items() if name in quote.lower()), None)
         key = (e["domain"], int(ym.group(1)), month)
+        if e.get("correction"):
+            for m in list(existing):
+                if m.domain == e["domain"] and (m.year, m.month) != (key[1], key[2]):
+                    db.delete(m)
+                    existing.remove(m)
+                    known.discard((m.domain, m.year, m.month))
         if key in known or (e["domain"], key[1], None) in known:
             continue
         known.add(key)
-        out.append(UserMilestone(profile_id=profile.id, domain=e["domain"],
-                                 description=quote[:200], year=key[1], month=month))
+        row = UserMilestone(profile_id=profile.id, domain=e["domain"],
+                            description=quote[:200], year=key[1], month=month)
+        existing.append(row)
+        out.append(row)
     return out
 
 

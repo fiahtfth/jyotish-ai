@@ -461,7 +461,11 @@ def analysis_from_run(run: TimingRun, domain: str, start, end, *, calibrated=Tru
                        "end": timing_p1.iso(timing_p1.to_date(b))} for a, b in ivs]
     yogini_ev = any(e.rule_id == "P1_YOGINI_XCHECK" for p in wr.pillars for e in p.evidence)
     p3 = next((p for p in wr.pillars if p.pillar == "P3"), None)
-    sud = "evaluated" if p3 and p3.value != NE else "unavailable"
+    # evaluated means the Sudarshana sub-check actually ran: P3 can complete
+    # (non-NE) while recording its failure in a ne_reason note
+    sud_failed = p3 is not None and any("Sudarshana unavailable" in (e.ne_reason or "")
+                                        for e in p3.evidence)
+    sud = "unavailable" if p3 is None or p3.value == NE or sud_failed else "evaluated"
     conflicting = any(e.direction < 0 for p in wr.pillars for e in p.evidence)
     confirmation = ("Hidden friction" if any(p.value == A for p in wr.pillars)
                     else "Both confirmation methods support" if wr.n >= 2 and not conflicting

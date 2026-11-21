@@ -25,10 +25,14 @@ EVENTS = [
      "relocation", "A move of primary residence to the stated destination occurs"),
     # Conception/childbirth asks are declined by safety.private_reply before
     # any event is scored, so no childbirth event is defined here.
-    ("property", r"buy.{0,25}(?:house|home|flat|property|plot|land|car|vehicle)|"
-                 r"purchas\w*.{0,20}(?:house|home|flat|property|car|vehicle)|"
-                 r"own (?:a )?(?:house|home|flat|car)|makaan|gaadi",
-     "property_purchase", "Purchase of the stated property or vehicle completes"),
+    ("property", r"buy.{0,25}(?:car|vehicle|bike|scooter|motorcycle)|"
+                 r"purchas\w*.{0,20}(?:car|vehicle|bike|scooter|motorcycle)|"
+                 r"own (?:a )?(?:car|vehicle|bike)|gaadi",
+     "vehicle_purchase", "Purchase of the stated vehicle completes"),
+    ("property", r"buy.{0,25}(?:house|home|flat|property|plot|land)|"
+                 r"purchas\w*.{0,20}(?:house|home|flat|property)|"
+                 r"own (?:a )?(?:house|home|flat)|makaan",
+     "property_purchase", "Purchase of the stated property completes"),
     ("litigation", r"win.{0,15}(?:case|lawsuit|litigation)|favou?r",
      "litigation_win", "A ruling in favour of the stated party is delivered"),
     ("litigation", r"court|lawsuit|legal|resolve|settle", "litigation_resolution",

@@ -230,3 +230,52 @@ def test_select_for_event_and_domain():
     assert select.for_domain("career", "will i get a promotion").number == 2
     assert select.for_domain("relocation", "settle abroad permanently").number == 32
     assert select.for_domain("nonsense") is None
+
+
+def test_unsure_outcomes_never_count_as_misses():
+    class R:
+        def __init__(self, domain, outcome, rid):
+            self.domain, self.outcome = domain, outcome
+            self.snapshot_json = json.dumps({"analysis": {"rule_ids": [rid], "intent": {"id": "I"}}})
+    records = [R("career", "happened", "P1_A")] * 3 + [R("career", "unsure", "P1_A")] * 5
+    assert backtest.score_records(records)["P1_A"] == {"scored": 3, "hits": 3}
+    tr = backtest.track_record(records, "career", "I")
+    assert tr["scored"] == 3 and tr["hits"] == 3 and tr["misses"] == 0 and tr["unsure"] == 5
+
+
+def test_vehicle_event_selects_vehicle_intent():
+    from app.astro import prediction
+    spec = prediction.event_spec("Will I buy a car next year?", "property")
+    assert spec["event_type"] == "vehicle_purchase"
+    assert select.for_event(spec["event_type"]).intent_id == "VEHICLE_PURCHASE"
+    spec = prediction.event_spec("Will I buy a flat next year?", "property")
+    assert spec["event_type"] == "property_purchase"
+
+
+def _analysis_with_p3(evidence, value=W):
+    from app.astro.convergence.runner import TimingRun
+    from app.astro.convergence.types import WindowResult
+    p3 = PillarResult("P3", value, evidence, ("2027-01-01", "2027-12-31"))
+    wr = WindowResult(None, (p3,), 0, 1, (),
+                      PromiseResult(PROMISE_STRONG, 4, (), (), ()),
+                      WEAK_INDICATION, None, "badge", "disc")
+    run = TimingRun(cfg(), wr, (), (), "high")
+    return analysis_from_run(run, "relationship", date(2027, 1, 1), date(2027, 12, 31))
+
+
+def test_confirmation_availability_tracks_the_actual_check():
+    # P3 completed but its Sudarshana sub-check failed -> unavailable
+    fail = Evidence("P3_RESULT", "1.0", (), 0, 0.0, frozenset(), None, "not evaluated",
+                    ne_reason="Sudarshana unavailable (RuntimeError)")
+    a = _analysis_with_p3((fail,))
+    assert a["precision"]["sudarshana"] == "unavailable"
+    ok = Evidence("P3_SUDARSHANA_TRIPLE", "1.0", (), 1, 1.0, frozenset(), None, "year sign active")
+    a = _analysis_with_p3((ok,), value=W)
+    assert a["precision"]["sudarshana"] == "evaluated"
+    # yogini: no cross-check evidence at all -> unavailable
+    a = _analysis_with_p3((ok,), value=W)
+    assert a["precision"]["yogini"] == "unavailable"
+    # a completed check that found no link still emits a marker -> evaluated
+    yog = Evidence("P1_YOGINI_XCHECK", "1.0", (), 0, 0.0, frozenset(), None, "no link")
+    a = _analysis_with_p3((ok, yog), value=W)
+    assert a["precision"]["yogini"] == "evaluated"
