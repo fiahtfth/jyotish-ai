@@ -10,7 +10,8 @@ log = logging.getLogger(__name__)
 
 NATURAL = {"career": "Sun", "relationship": "Venus", "finance": "Jupiter",
            "education": "Mercury", "relocation": "Moon", "health": "Sun", "direction": "Sun",
-           "children": "Jupiter", "parents": "Sun", "debt": "Mars", "litigation": "Saturn"}
+           "children": "Jupiter", "parents": "Sun", "debt": "Mars", "litigation": "Saturn",
+           "property": "Mars"}
 KENDRA = {1, 4, 7, 10}
 STRONG = {"exalted", "own sign", "moolatrikona"}
 PID = {name: i for i, name in K.PLANET_NAMES.items()}
@@ -188,6 +189,23 @@ def promise(facts, domain):
     return grade, table(f"Static promise · {grade}", ["Frame", "Target", "Lord", "Karaka contacts", "Reading"], rows)
 
 
+_GATE_FACTORS = {
+    "Multi-dasha": {"moon_dasha_clock", "chara_sign_clock"},
+    "Annual progression": {"solar_return", "sudarshana_progression"},
+    "Slow transits": {"jupiter_transit", "saturn_transit"},
+    "Micro-timing": {"moon_dasha_clock", "jupiter_transit", "saturn_transit", "kakshya_bindu", "fast_transit"},
+}
+
+
+def _new_factors(gates):
+    counted, additions = set(), {}
+    for name, status, _ in gates:
+        if status == "Aligned":
+            additions[name] = sorted(_GATE_FACTORS[name] - counted)
+            counted.update(additions[name])
+    return additions
+
+
 def window_audit(facts, birth, domain, when, calibrated):
     spec, planets = K.DOMAINS[domain], facts["planets"]
     h = spec["houses"][0]
@@ -309,7 +327,7 @@ def window_audit(facts, birth, domain, when, calibrated):
     gate("Micro-timing", available, eligible and fast and pd and (relevant(pd) or relevant(nak["lord"])),
          (f"{pd} in {nak['name']} pada {nak['pada']}, ruled by {nak['lord']}. " if pd else "") +
          ". ".join(triggers) + ". Fast contact: " + (", ".join(fast) or "none"))
-    count = sum(row[1] == "Aligned" for row in gates)
+    count = sum(bool(factors) for factors in _new_factors(gates).values())
     return count, table(f"Multi-dasha timeline · {when}", ["System", "Active period", "From", "Until"], timeline), gates
 
 
@@ -328,7 +346,9 @@ def evaluate(facts, birth, domain, start, end, candidates, calibrated, natal=Non
                                       ["Gate", "At " + str(sample), "Evidence"], gates)])
         scores.append({"start": str(a), "end": str(b), "sample": str(sample), "count": count,
                        "complete": all(g[1] != "Unavailable" for g in gates),
-                       "micro_aligned": gates[-1][1] == "Aligned"})
+                       "dasha_aligned": gates[0][1] == "Aligned",
+                       "micro_aligned": gates[-1][1] == "Aligned",
+                       "new_factors_by_gate": _new_factors(gates)})
     return {"promise": grade, "cusp_flips": flips, "timing_sensitive": timing_sensitive, "scores": scores,
             "calibrated": calibrated, "tables": tables, "note": "Each score describes the listed sample date. D60 houses are conditional "
             "because birth-time accuracy within one minute has not been established. Gate counts measure "
@@ -349,10 +369,10 @@ def apply(analysis, facts, birth, domain, start, end, calibrated, prec, natal):
         audit["tables"].append(table("Eclipses in the requested interval", ["Date", "Kind", "Natal points within 3°"],
                                      [[e["date"], e["kind"], ", ".join(e["touches"]) or "None"]
                                       for e in eclipses["eclipses"]]))
-    qualified = {(s["start"], s["end"]) for s in audit["scores"]
-                 if s["complete"] and s["count"] >= 3 and s["micro_aligned"]}
+    qualified = {(s["start"], s["end"], s["sample"]) for s in audit["scores"]
+                 if s["complete"] and s["count"] >= 3 and s["dasha_aligned"] and s["micro_aligned"]}
     analysis["precision"]["timing_windows"] = [
-        w for w in candidates if (w["start"], w["end"]) in qualified and calibrated
+        w for w in candidates if (w["start"], w["end"], w.get("peak_date", w["start"])) in qualified and calibrated
         and not audit["timing_sensitive"] and audit["promise"] in ("Strong", "Moderate")]
 
 

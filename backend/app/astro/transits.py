@@ -1,4 +1,5 @@
 """Sidereal UT transit transitions in the natal chart's calculation frame."""
+from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 import logging
 
@@ -41,8 +42,38 @@ def _changes(read, start, end, grid=0.5):
         left, before = right, after
 
 
+# Transit ephemeris work is deterministic per (birth frame, planet, range);
+# the same chart asks about overlapping windows repeatedly in one chat.
+_SCAN_CACHE = OrderedDict()
+_SCAN_CACHE_MAX = 256
+
+
+def _birth_key(birth):
+    return (birth.year, birth.month, birth.day, birth.hour, birth.minute,
+            round(birth.lat, 4), round(birth.lon, 4), birth.tz_offset,
+            repr(getattr(birth, "settings", None)))
+
+
+def _cached(key, fn):
+    hit = _SCAN_CACHE.get(key)
+    if hit is not None:
+        _SCAN_CACHE.move_to_end(key)
+        return hit
+    val = fn()
+    _SCAN_CACHE[key] = val
+    if len(_SCAN_CACHE) > _SCAN_CACHE_MAX:
+        _SCAN_CACHE.popitem(last=False)
+    return val
+
+
 def scan(birth, start, end, planet):
-    """Scan a bounded date range. The dates mark UTC midnights."""
+    """Scan a bounded date range. The dates mark UTC midnights. Cached per
+    chart + planet + range."""
+    return _cached((_birth_key(birth), planet, start.isoformat(), end.isoformat()),
+                   lambda: _scan_uncached(birth, start, end, planet))
+
+
+def _scan_uncached(birth, start, end, planet):
     if planet not in BODIES or not 0 < (end - start).days <= 366 * 15:
         raise ValueError("Choose a supported planet and a date range of up to 15 years.")
     a = swe.julday(start.year, start.month, start.day, 0)

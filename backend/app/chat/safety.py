@@ -37,8 +37,10 @@ _DIAGNOSE = re.compile(
     r"is (?:this|it|my \w+) (?:cancer|tumou?r|diabetes|tb|a tumou?r|serious)|what(?:'s| is) wrong with my)\b"
     r"|क्या मुझे .{0,20}(?:कैंसर|बीमारी|रोग)|कौन सी बीमारी", re.I)
 _PREGNANCY = re.compile(
-    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh)\b"
-    r"|गर्भ|गर्भपात|गर्भधारण", re.I)
+    r"\b(?:pregnan\w*|concep(?:tion|tive)|conceive|miscarri\w*|stillbirth|fertility treatment|IVF|garbh|"
+    r"child\s?birth|santaa?n|have (?:a )?(?:baby|child(?:ren)?|kid|baccha)s?|"
+    r"baccha\s+(?:hona|hoga|paida|chaahiye))\b"
+    r"|गर्भ|गर्भपात|गर्भधारण|संतान|बच्चा\s+(?:होगा|होना|पैदा)", re.I)
 _CHILD_TIMING = re.compile(
     r"\bwhen\b.{0,30}\b(?:have|get|conceive|expect|welcome|blessed with)\b.{0,15}"
     r"\b(?:a |an |our |another |my )?(?:child|baby|kid|son|daughter|first child)\b"
@@ -55,7 +57,8 @@ _REMEDY = re.compile(
     r"\b(?:gem ?stones?|ratna|pukhraj|neelam|moonga|manik|panna|moti|which (?:stone|ring)|"
     r"what (?:stone|ring)|should i wear (?:a |an |any )?(?:stone|ring|gem)\w*|remed(?:y|ies)|upay|totka)\b", re.I)
 _PREDICT = re.compile(
-    r"\b(?:will|when|how soon|predict|prediction|chances?|guarantee|likely|risk|cause|can (?:i|my chart)|kab|yog)\b"
+    r"\b(?:will|when|how soon|predict|prediction|chances?|guarantee|likely|risk|cause|"
+    r"possible|is it (?:possible|going)|can (?:i|my chart)|kab|yog)\b"
     r"|कब|योग|संभावना|भविष्यवाणी|होग[ाीे]", re.I)
 _OTHER_MIND = re.compile(
     r"\b(?:does (?:he|she|my (?:ex|partner|spouse|wife|husband)) (?:love|miss|want) me|"
@@ -97,7 +100,19 @@ def private_reply(text: str, *, minor: bool = False) -> str | None:
                 "about someone’s health, or your own, a doctor is the right person to ask, and spending time with "
                 "them matters more than any date. I’m glad to talk through care and wellbeing themes in the chart "
                 "if that would help.")
-    if (_PREGNANCY.search(text) and _PREDICT.search(text)) or _CHILD_TIMING.search(text):
+    # Pregnancy wording and a prediction cue must appear in the SAME clause —
+    # "I have children. When will I get promoted?" is not a conception ask.
+    # A conditional clause joins its question: "if I do IVF, what are my
+    # chances?" is one ask.
+    clauses = re.split(r"[.!?।;\n]+|,\s*", text)
+    merged = []
+    for clause in clauses:
+        if merged and re.match(r"\s*(?:if|when)\b", merged[-1], re.I):
+            merged[-1] += " " + clause
+        else:
+            merged.append(clause)
+    if (any(_PREGNANCY.search(clause) and _PREDICT.search(clause) for clause in merged)
+            or _CHILD_TIMING.search(text)):
         if hindi:
             return ("कुंडली से गर्भधारण, गर्भावस्था, गर्भपात या संतान के समय का अनुमान नहीं लगाया जा सकता; "
                     "परिवार और संतान के विषय केवल प्रतीकात्मक रूप से देखे जा सकते हैं। "

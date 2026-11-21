@@ -62,7 +62,7 @@ def date_to_jd(d: date) -> float:
 
 def merge(ivs: Iterable[tuple]) -> list:
     out = []
-    for a, b in sorted(ivs):
+    for a, b in sorted((to_date(a), to_date(b)) for a, b in ivs):
         if out and a <= out[-1][1] + timedelta(days=1):
             out[-1] = (out[-1][0], max(out[-1][1], b))
         else:
@@ -73,8 +73,9 @@ def merge(ivs: Iterable[tuple]) -> list:
 def intersect(xs: list, ys: list) -> list:
     out = []
     for a, b in xs:
+        a, b = to_date(a), to_date(b)
         for c, d in ys:
-            lo, hi = max(a, c), min(b, d)
+            lo, hi = max(a, to_date(c)), min(b, to_date(d))
             if lo <= hi:
                 out.append((lo, hi))
     return merge(out)
@@ -247,9 +248,12 @@ def ad_interval(row: dict, start, end) -> tuple:
     return (a, max(a, b))
 
 
-def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
+def evaluate(facts: dict, birth, cfg: IntentConfig, start, end,
+             divisionals_dropped: bool = False) -> list:
     """P1 for every Antardasha overlapping [start, end] (dates). One PillarResult per AD,
-    in the order of ad_rows(facts, start, end)."""
+    in the order of ad_rows(facts, start, end).
+    divisionals_dropped: every divisional chart was unstable at the stated birth-time
+    accuracy — the varga item becomes NE instead of quietly checking D1."""
     start, end = to_date(start), to_date(end)
     if not cfg.E and not cfg.E_adverse_explicit:
         return [PillarResult.not_evaluated("P1", "intent has no event houses")]
@@ -270,11 +274,13 @@ def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
         dt_err = None
     results = []
     for row in rows:
-        results.append(_eval_ad(facts, birth, cfg, E, row, pds, dts, dt_err, start, end, refs, mode_b))
+        results.append(_eval_ad(facts, birth, cfg, E, row, pds, dts, dt_err, start, end,
+                                refs, mode_b, divisionals_dropped))
     return results
 
 
-def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, mode_b) -> PillarResult:
+def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, mode_b,
+             divisionals_dropped=False) -> PillarResult:
     md, ad = row["lords"][0], row["lords"][1]
     ad_iv = ad_interval(row, start, end)
     dasha_tag = (MOON_NAK,)
@@ -316,8 +322,14 @@ def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, 
                      f"AD lord {ad} links to E={list(E)}: {bool(ad_e)}; MD lord links: {bool(md_e)}; "
                      f"PD lords linking: {[p[0] for p in pd_hits]}", [f"vimshottari.{md}.{ad}"]))
 
-    # item 2 varga
-    item2, vev = varga_check(facts, cfg, ad, mode_b)
+    # item 2 varga — NE when every divisional was dropped for instability
+    if divisionals_dropped:
+        item2 = None
+        vev = [_note(R_VARGA, 0, (),
+                     "divisional checks skipped — the divisional Lagna changes inside the "
+                     "stated birth-time uncertainty", ne_reason="varga lagna unstable")]
+    else:
+        item2, vev = varga_check(facts, cfg, ad, mode_b)
     evs += vev
 
     # item 3 MD-AD relationship
@@ -350,9 +362,16 @@ def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, 
     ylords = _yogini_lords(birth, mid)
     if ylords:
         yl = ylords[-1]
+        ylinked = False
         for e in links.links_to_E(yl, E, facts, refs):
+            ylinked = True
             evs.append(_tag(e, rule=R_YOG, extra=dasha_tag, mult=0.5,
                             text=f"Yogini cross-check (same Moon-nakshatra factor): Yogini lord {yl}: {e.text}"))
+        if not ylinked:
+            # the check ran and found no link — still "evaluated", so the
+            # availability flags don't report a missing method
+            evs.append(_note(R_YOG, 0, (),
+                             f"Yogini cross-check: lord {yl} has no link to the event factor"))
 
     value = _classify(bal["adverse_dominates"], item1, friction, item2, item4)
     # S/M/W narrow to PD ∩ double-transit; an adverse AD applies to the whole AD

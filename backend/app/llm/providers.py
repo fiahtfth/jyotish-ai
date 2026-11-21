@@ -19,7 +19,9 @@ import httpx
 
 from ..config import settings
 from .. import moonmode
+from ..astro import constants as K
 from ..astro import digest
+from ..astro import yogas
 from . import decider
 
 log = logging.getLogger(__name__)
@@ -42,6 +44,20 @@ How to answer
 - Be honest about uncertainty without hedging every line. The chart shows tendencies and
   periods, not certainties: never promise an outcome, and never give a percentage or probability.
 - Interpretations are interpretations. Separate them from the established facts of the chart.
+
+When ANALYSIS.gates lists a check with status "stopped", the reading ends at
+that check: say plainly that the chart does not strongly promise or time the
+topic in that period, name the check that failed in everyday words, and do not
+supply dates the gates did not reach. When ANALYSIS.not_indicated is true,
+answer honestly that nothing notable is indicated in that period — a forecast
+that always finds a theme is worth nothing. Quote the narrowest ANALYSIS
+window given; never widen it to fill the whole span asked. ANALYSIS.confidence
+("high"/"moderate"/"limited"/"low") sets how firmly the timing is stated, and
+ANALYSIS.reliability.unreliable_vargas means those divisional checks were
+dropped for lack of birth-time accuracy — say the timing is wider because of
+it rather than claiming divisional support. ANALYSIS.why is the standard
+evidence summary; answer "why" follow-ups from it instead of composing a new
+explanation each time.
 
 Facts and grounding
 - Use only the CHART FACTS and ANALYSIS supplied for placements, signs, nakshatras, periods,
@@ -179,6 +195,29 @@ _PARTIAL_REFERENCE = re.compile(r"[\[【]\s*(?:[FER]\d*(?:\s*[,;]\s*[FER]?\d*)*)
 def visible_reply(text: str) -> str:
     """Remove internal grounding markers from client-visible prose."""
     return _INTERNAL_REFERENCE.sub("", text)
+
+
+def _plain_reply(text: str) -> str:
+    """Flatten stray markdown into the plain text the chat client renders.
+
+    The persona asks for paragraphs, but models still emit headings and
+    tables; left as-is they show literally in the client."""
+    text = visible_reply(text)
+    text = re.sub(r"[*_`]{1,2}", "", text)
+    # A heading marker becomes a blank line so the heading stands on its own.
+    text = re.sub(r"(?:^|(?<=[ \t]))#{1,6}[ \t]+", "\n\n", text, flags=re.M)
+    lines = []
+    for raw in text.split("\n"):
+        # Leading indent marks a wrapped continuation — downstream reply
+        # filters need it to recognize a claim split across lines.
+        line = raw.rstrip()
+        if "|" in line:
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells and all(re.fullmatch(r":?-{2,}:?", c) for c in cells):
+                continue                      # markdown table separator
+            line = " · ".join(c for c in cells if c)
+        lines.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
 
 
 def _completion_text(data: dict) -> str:
@@ -711,7 +750,7 @@ def generate(messages: list[dict], facts: dict | None = None,
                         text = STREAM_PROVIDERS[p](system, provider_messages, _emit, timeout=remaining)
                     if text:
                         # the persona asks for plain text; strip emphasis, keep list structure
-                        return visible_reply(plain_text(text)), p
+                        return _plain_reply(plain_text(text)), p
                     log.warning("LLM provider %s returned empty text", p)
                     retryable = False
                 except httpx.HTTPStatusError as exc:
@@ -899,15 +938,74 @@ def _facts_lines(facts: dict) -> list[str]:
         lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}"
                      f"{' from Moon' if moon_mode else ''}, "
                      f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']}"
+                     f" (lord {rec['nakshatra']['lord']})"
                      + (f" [{', '.join(extra)}]" if extra else ""))
     func = facts.get("functional") or {}
     if func.get("benefics") or func.get("malefics"):
         lines.append(f"Functional benefics: {', '.join(func['benefics'])}; "
                      f"malefics: {', '.join(func['malefics'])}; "
-                     f"yogakaraka: {func.get('yogakaraka')}")
+                     f"yogakaraka: {func.get('yogakaraka')}"
+                     + (f"; maraka: {', '.join(func['maraka_lords'])}"
+                        if func.get("maraka_lords") else ""))
+    jk = (facts.get("jaimini") or {}).get("karakas")
+    if jk:
+        lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    ar = facts.get("jaimini") or {}
+    if ar.get("arudha_lagna"):
+        parts = [f"A1 (arudha lagna) {ar['arudha_lagna']['sign_name']}"]
+        if ar.get("A10"):
+            parts.append(f"A10 (career arudha) {ar['A10']['sign_name']}")
+        if ar.get("upapada_lagna"):
+            parts.append(f"A12 (upapada) {ar['upapada_lagna']['sign_name']}")
+        lines.append("Arudhas: " + "; ".join(parts))
+    if not moon_mode:
+        fired = [y for y in yogas.detect(facts) if y.get("conditions_fired")]
+        if fired:
+            lines.append("Natal yogas present: " + "; ".join(
+                f"{y['name']} ({y['level']}, {y['source'].split(',')[0]})" for y in fired))
+    # Drishti and conjunctions — what a reader cites when reasoning about a house.
+    by_sign = {}
+    for name, rec in p.items():
+        by_sign.setdefault(rec["sign"], []).append(name)
+    for name, rec in p.items():
+        touched = sorted({(s - lag["sign"]) % 12 + 1 for s in K.reaches(name, rec["sign"])})
+        lines.append(f"{name} aspects houses {', '.join(str(h) for h in touched)}")
+    conj = [f"{'+'.join(names)} in {p[names[0]]['sign_name']} (house {p[names[0]]['house']})"
+            for names in by_sign.values() if len(names) > 1]
+    if conj:
+        lines.append("Conjunctions: " + "; ".join(conj))
+    sav = facts.get("sarvastakavarga")
+    if sav:
+        lines.append("Sarvashtakavarga bindus per sign (Aries..Pisces): "
+                     + ", ".join(f"{K.SIGN_NAMES[i]} {int(v)}" for i, v in enumerate(sav)))
     for period in facts.get("current_vimshottari", []):
         lords = " → ".join(period["lords"])
-        lines.append(f"Active Vimshottari {lords}: {period['start']} through {period['end']}")
+        lines.append(f"Vimshottari running today: {lords} ({period['start']} through {period['end']})")
+    window_periods = facts.get("window_vimshottari") or []
+    if window_periods:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['maha']}–{p.get('antar') or p['maha']} "
+                          f"({p['start']} to {p['end']})" for p in window_periods[:8])
+        lines.append(f"Vimshottari active during {label}: {spans}")
+    pratyantar = facts.get("window_pratyantar") or []
+    if pratyantar:
+        label = facts.get("window_label") or "the asked period"
+        spans = "; ".join(f"{p['lords'][2]} ({p['start']} to {p['end']})"
+                          for p in pratyantar[:12])
+        lines.append(f"Pratyantardasha sequence during {label}: {spans}")
+    dom_chart = facts.get("domain_chart")
+    if dom_chart:
+        lines.append("Domain divisional chart (houses counted from its own ascendant): "
+                     + json.dumps(dom_chart, ensure_ascii=False))
+    window_transits = facts.get("window_transits") or {}
+    if window_transits:
+        label = facts.get("window_label") or "the asked period"
+        lines.append(f"Transit signs during {label}: " + "; ".join(
+            f"{planet} in {', '.join(signs)}" for planet, signs in window_transits.items()))
+    remedy = facts.get("domain_remedy")
+    if remedy:
+        lines.append(f"Traditional upaya for this domain (attribute to tradition if offered): "
+                     f"propitiate {remedy[0]} — {remedy[1]}")
     for period in facts.get("referenced_mahadashas", []):
         lines.append(f"Vimshottari mahadasha of {period['lord']}: {period['start']} through {period['end']}")
     if facts.get("selected_chart"):
@@ -939,6 +1037,16 @@ def offline_response(messages: list[dict], facts: dict | None,
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
+        if analysis.get("not_indicated"):
+            stopped = next((g for g in analysis.get("gates", []) if g["status"] == "stopped"), None)
+            reason = f" The {stopped['gate']} check ended the reading: {stopped['detail']}." if stopped else ""
+            w = analysis.get("analysis_window") or {}
+            label = (facts or {}).get("window_label") or f"{w.get('start', '')} to {w.get('end', '')}"
+            ev = (analysis.get("decision") or {}).get("event") or {}
+            topic = (ev.get("event_type") or "").replace("_", " ") or analysis.get("domain", "this")
+            return (chart_note + " " +
+                    f"Nothing notable is indicated for a {topic} in {label} — "
+                    "the chart does not strongly time it there." + reason).strip()
         from ..astro.prediction import interpretation_reading
         return (chart_note + " " + interpretation_reading(analysis, facts, messages, ask_followup=False)).strip()
 

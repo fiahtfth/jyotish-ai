@@ -339,7 +339,13 @@ def test_followup_survey_is_not_appended_to_an_unrelated_answer(model):
     assert related["meta"]["followup"]["id"]
     assert related["content"].startswith("Model reply.") and related["content"].count("\n\n") == 1
     reply = send("yes", h)
-    assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] == "happened"
+    # a "happened" answer is confirmed against the window: the date is asked first
+    assert "What date" in reply[-1]["content"]
+    before = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    send(before["window_start"], h)
+    after = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    assert after["outcome"] == "happened"
+    assert after["event_date"] == before["window_start"]
     assert len(reply) == 2
 
 

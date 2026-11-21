@@ -1054,8 +1054,8 @@ def test_vimshottari_dates_and_sequence_use_saved_timeline(monkeypatch):
     h = register_and_profile()
     timeline = send("Show me the full Mahadasha sequence", h)[-1]["content"]
     assert len(timeline.split("\n- ")) == 10
-    rahu_dates = next(line.removeprefix("- **Rahu** ") for line in timeline.splitlines()
-                      if line.startswith("- **Rahu** "))
+    rahu_dates = next(line.removeprefix("- Rahu ") for line in timeline.splitlines()
+                      if line.startswith("- Rahu "))
     assert rahu_dates in send("Rahu ki Mahadasha kab shuru hui?", h)[-1]["content"]
     assert rahu_dates in send("राहु की महादशा कब शुरू हुई?", h)[-1]["content"]
 
@@ -1078,7 +1078,50 @@ def test_named_dasha_interpretation_grounds_provider_with_engine_dates(monkeypat
     rahu = seen["referenced_mahadashas"][0]
     grounding = providers.grounding_text(seen, None)
     assert f"Vimshottari mahadasha of Rahu: {rahu['start']} through {rahu['end']}" in grounding
-    assert f"Active Vimshottari {seen['current_vimshottari'][0]['lords'][0]}:" in grounding
+    assert f"Vimshottari running today: {seen['current_vimshottari'][0]['lords'][0]}" in grounding
+
+
+def test_asked_period_grounds_provider_with_window_vimshottari(monkeypatch):
+    from app.llm import providers
+
+    seen = {}
+
+    def generate(messages, *, facts, analysis, **kwargs):
+        seen.update(facts)
+        return "This is a traditional interpretation.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
+    h = register_and_profile()
+    _open_conv(h)
+    send("i had an accident way back in Jan 2014", h)
+    assert seen["window_label"] == "January 2014"
+    covering = seen["window_vimshottari"]
+    assert covering and all(p["start"] <= "2014-01-31" and "2014-01-01" <= p["end"] for p in covering)
+    grounding = providers.grounding_text(seen, seen.get("analysis"))
+    assert "Vimshottari active during January 2014" in grounding
+
+
+def test_dasha_correction_complaint_gets_lookup_not_date_prompt():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("i think you are not able to predict properly...."
+             "my accident happened in rahu dash in 2014..."
+             "you are connecting it to 2027", h)
+    reply = r[-1]["content"]
+    assert "Which dates did you mean" not in reply
+    assert "Rahu" in reply and "2014" in reply
+
+
+def test_oversized_year_range_gets_a_span_outlook():
+    h = register_and_profile()
+    _open_conv(h)
+    r = send("tell me my future from 2027 to 2040", h)
+    reply = r[-1]
+    assert "2027" in reply["content"] and "2040" in reply["content"]
+    assert reply["meta"]["requested_window"] == ["2027-01-01", "2040-12-31"]
+    # a bare "yes" must not be asked for dates again
+    r = send("yes", h)
+    assert "Which dates did you mean" not in r[-1]["content"]
 
 
 def test_stream_same_guards_as_send():
@@ -1209,6 +1252,43 @@ def test_future_analysis_persists_prediction_record():
     assert p["window_start"] and p["window_end"] and p["convergence"] and p["outcome"] is None
 
 
+def test_issued_career_forecast_streams_and_stores_the_same_window(monkeypatch):
+    from app.astro import prediction
+    from app.chat import orchestrator
+    from datetime import date
+
+    monkeypatch.setattr(orchestrator, "_today_at", lambda birth: date(2026, 11, 21))
+
+    def compute(facts, birth, domain, start, end, profile, question, event):
+        assert (start.isoformat(), end.isoformat()) == ("2027-01-01", "2027-12-31")
+        candidate = {"start": "2027-03-03", "end": "2027-03-10"}
+        result = {"domain": domain, "analysis_window": {"start": str(start), "end": str(end)},
+                  "unavailable_count": 0, "support_count": 3, "conflict_count": 0, "convergence": "test",
+                  "classical": {"promise": "Moderate", "timing_sensitive": False},
+                  "precision": {"timing_windows": [candidate], "layer_verdicts": {}},
+                  "sensitivity": {"verdict_stable": True, "timing_stable": True},
+                  "career_event_method": {"windows": [{**candidate, "qualifies": True}]}}
+        result["decision"] = prediction.decide(question, result, event, as_of=date(2026, 11, 21))
+        return result, {}
+
+    monkeypatch.setattr(orchestrator, "_precision_analysis", compute)
+    monkeypatch.setattr(orchestrator.providers, "generate",
+                        lambda *a, **kw: pytest.fail("The event and its dates must come from the decision"))
+    h = register_and_profile()
+    _open_calibrated(h)
+    events = _parse_sse(client.post("/api/chat/stream", headers=h, json={
+        "text": "My performance review is scheduled. Will I get a promotion in 2027?",
+    }))
+    assert [e["type"] for e in events] == ["done"]
+    reply = events[-1]["messages"][-1]
+    assert "03 Mar 2027 through 10 Mar 2027" in reply["content"]
+    assert reply["meta"]["requested_window"] == ["2027-01-01", "2027-12-31"]
+    stored = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    assert (stored["window_start"], stored["window_end"]) == ("2027-03-03", "2027-03-10")
+    assert stored["snapshot"]["reply"] == reply["content"]
+    assert stored["snapshot"]["analysis"]["career_context"]["stage"] == "review_scheduled"
+
+
 def test_followup_asked_after_window_and_reply_records_outcome():
     h = register_and_profile()
     assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
@@ -1248,9 +1328,18 @@ def test_followup_option_mapping(text, outcome):
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     _age_predictions(h)
-    assert "followup" in send("How is my career looking?", h)[-1]["meta"]
-    send(text, h)
-    assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] == outcome
+    # the survey rides on a reply on the same topic — an unrelated "hello"
+    # does not trigger it
+    send("How is my career looking?", h)
+    response = send(text, h)
+    before = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    if outcome == "happened":
+        assert before["outcome"] is None and "What date" in response[-1]["content"]
+        send(before["window_start"], h)
+    after = client.get("/api/predictions", headers=h).json()["predictions"][0]
+    assert after["outcome"] == outcome
+    if outcome == "happened":
+        assert after["event_date"] == before["window_start"]
 
 
 def test_no_followup_while_calibrating_and_export_includes_predictions():
@@ -2042,6 +2131,121 @@ def test_conversational_periods_are_calendar_intervals():
         requested_window("2040 to 2027", today)
 
 
+def test_year_ranges_parse_the_full_span():
+    from datetime import date
+    from app.chat.language import requested_window, raw_window, resolve_window
+    today = date(2026, 11, 18)
+    span = (date(2027, 1, 1), date(2040, 12, 31))
+    assert raw_window("2027 to 2040", today) == span
+    assert raw_window("between 2027 and 2040", today) == span
+    assert raw_window("2027-2040", today) == span
+    assert raw_window("nov 2027 to 2040", today) == (date(2027, 11, 1), date(2040, 12, 31))
+    # Long spans are accepted: the caller routes them to a span outlook
+    # rather than rejecting them.
+    assert requested_window("2027 to 2040", today) == span
+    window, _note = resolve_window("tell me my future from 2027 to 2040", today)
+    assert window == span
+
+
+def test_bare_dash_names_a_mahadasha_and_accident_keeps_its_own_clause():
+    from datetime import date
+    from app.chat.language import named_mahadasha, reported_accident_window
+    today = date(2026, 11, 18)
+    complaint = ("i think you are not able to predict properly...."
+                 "my accident happened in rahu dash in 2014...you are connecting it to 2027")
+    assert named_mahadasha(complaint) == "Rahu"
+    assert reported_accident_window(complaint, today) == (date(2014, 1, 1), date(2014, 12, 31))
+
+
+def test_repair_response_preserves_line_breaks():
+    issues = ["unsupported date '2027-08-09'"]
+    fixed = V.repair_response(
+        "Fine sentence here.\n\n- bullet one stays.\n- Expect news on 2027-08-09.", issues)
+    assert fixed == "Fine sentence here.\n\n- bullet one stays."
+    # A claim wrapped across lines is still caught (the wrap must not bypass
+    # the filter), while kept sentences preserve their original newlines.
+    wrapped = V.repair_response(
+        "You will\nreceive news on 2027-08-09.\nFine line stays.", issues)
+    assert wrapped == "Fine line stays."
+    # Unpunctuated rows read as one sentence: only the bad row is dropped.
+    table = V.repair_response(
+        "| Work | grows\n| Health | 2027-08-09\n| Family | steady", issues)
+    assert table == "| Work | grows\n| Family | steady"
+    # Rows already flattened to "a · b" by _plain_reply count as rows too.
+    flat = V.repair_response(
+        "Work · grows\nHealth · 2027-08-09\nFamily · steady", issues)
+    assert flat == "Work · grows\nFamily · steady"
+    # A wrapped claim riding on a row run: the rows survive, both halves of
+    # the claim go.
+    tail = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nyou will\nreceive news on 2027-08-09.",
+        issues)
+    assert tail == "| Work | grows\n| Home | steady\n| Family | calm"
+    # A caveat heading before the table is kept when only one row is bad.
+    caveat = V.repair_response(
+        "Indicative timings\n| Work | 2027-08-09\n| Home | steady\n| Family | calm",
+        issues)
+    assert caveat == "Indicative timings\n| Home | steady\n| Family | calm"
+    # A bad prose line after the table doesn't take the last row with it.
+    tailrow = V.repair_response(
+        "| Work | grows\n| Home | steady\n| Family | calm\nYou will receive news on 2027-08-09",
+        issues)
+    assert tailrow == "| Work | grows\n| Home | steady\n| Family | calm"
+    # When every row is rejected, a bare lead-in is no reply — full fallback.
+    empty = V.repair_response(
+        "Key dates\n| Work | 2027-08-09\n| Home | 2027-08-09\n| Family | 2027-08-09",
+        issues)
+    assert "doesn't support" in empty
+    # A claim wrapped as a bullet plus continuation drops both halves.
+    wrapbullet = V.repair_response(
+        "- Saturn sits\n  in Aries\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert wrapbullet == "- Home steady"
+    # When rows all fail, a substantive prose takeaway still answers.
+    takeaway = V.repair_response(
+        "- Work | 2027-08-09\n- Home | 2027-08-09\n- Family | 2027-08-09\n"
+        "Overall the period still looks broadly supportive",
+        issues)
+    assert takeaway == "Overall the period still looks broadly supportive"
+    # A colon lead-in under a fully rejected list is still no reply.
+    colon = V.repair_response(
+        "Here are the key dates:\n- a | 2027-08-09\n- b | 2027-08-09\n- c | 2027-08-09",
+        issues)
+    assert "doesn't support" in colon
+    # A valid bullet and prose line sharing the claim's words are kept —
+    # neither alone makes the rejected claim.
+    shared = V.repair_response(
+        "- Saturn rises\nAries supports you\n- Home steady",
+        ["Saturn in Aries claim"])
+    assert shared == "- Saturn rises\nAries supports you\n- Home steady"
+    # Prose halves separated by dropped rows must not rejoin into the claim.
+    rejoined = V.repair_response(
+        "The chart places Saturn in\n- x | 2027-08-09\n- y | 2027-08-09\n"
+        "- z | 2027-08-09\nthe sign of Aries",
+        issues + ["Saturn in Aries claim"])
+    assert "doesn't support" in rejoined
+    # Wrapped prose in a 3-line sentence still drops whole — its leading
+    # fragment must not survive row recovery.
+    wrapped3 = V.repair_response(
+        "Intro line\nYou will\nreceive news on 2027-08-09.\nCloser stays.", issues)
+    assert wrapped3 == "Closer stays."
+
+
+def test_llm_markdown_is_flattened_to_plain_text():
+    from app.llm.providers import _plain_reply
+    text = ("Intro sentence. ### Health outlook\n\n"
+            "| Theme | Jupiter | Saturn |\n|---|---|---|\n| Work | grows | steady |\n\n**Keep going.**")
+    out = _plain_reply(text)
+    assert "###" not in out and "|" not in out and "**" not in out
+    assert "Health outlook" in out and "Work · grows · steady" in out
+    # Indentation marks a wrapped continuation — repair_response needs it.
+    wrapped = _plain_reply("- Saturn sits\n  in Aries\n- Home steady")
+    assert wrapped == "- Saturn sits\n  in Aries\n- Home steady"
+    # An indented table divider is still a divider, not a bogus row.
+    table = _plain_reply("| Work | grows |\n  |---|---|\n| Home | steady |")
+    assert table == "Work · grows\nHome · steady"
+
+
 
 def test_initial_checks_score_the_displayed_window(monkeypatch):
     from datetime import date
@@ -2722,3 +2926,222 @@ def test_fewer_than_three_statements_outcome_is_sensible():
     one_of_two = C.calibration_outcome([{"user_feedback": "confirmed"}, {"user_feedback": "rejected"}])
     assert one_of_two["state"] == "uncalibrated"
     assert C.calibration_outcome([{"user_feedback": "confirmed"}])["state"] == "partial"
+
+
+
+# ---------- professional-review improvements ----------
+
+def test_verifier_lordship_claims():
+    _, f = make_facts()
+    h3 = f["houses"][3]["lord"]
+    wrong = "Mars" if h3 != "Mars" else "Venus"
+    r = V.verify_response(f"Your {h3} rules the 3rd house.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Your {wrong} rules the 3rd house.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_varga_claims():
+    _, f = make_facts()
+    d9_sun = f["vargas"]["D9"]["Sun"]
+    right = f["vargas"]["D9"]["Sun"]["sign_name"] if "sign_name" in d9_sun else None
+    if right is None:
+        from app.astro.constants import SIGN_NAMES
+        right = SIGN_NAMES[d9_sun["sign"]]
+    wrong = "Sagittarius" if right != "Sagittarius" else "Leo"
+    r = V.verify_response(f"Sun is in {right} navamsa.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response(f"Sun is in {wrong} navamsa.", f, {})
+    assert not r["ok"]
+
+
+def test_verifier_transit_claims():
+    _, f = make_facts()
+    f = {**f, "window_transits": {"Jupiter": ["Taurus", "Gemini"]}}
+    r = V.verify_response("Jupiter is transiting Taurus now.", f, {})
+    assert r["ok"], r["issues"]
+    r = V.verify_response("Jupiter is transiting Aries now.", f, {})
+    assert not r["ok"]
+
+
+def test_facts_lines_include_pratyantar_transits_and_remedy():
+    from app.llm.providers import _facts_lines
+    _, f = make_facts()
+    f = {**f,
+         "window_label": "2027",
+         "window_pratyantar": [{"lords": ["Jupiter", "Saturn", "Sun"],
+                                "start": "2027-01-01", "end": "2027-02-15"}],
+         "window_transits": {"Jupiter": ["Taurus"]},
+         "domain_remedy": ("Jupiter", "Thursday observance — yellow donation")}
+    text = "\n".join(_facts_lines(f))
+    assert "Pratyantardasha" in text and "2027-01-01 to 2027-02-15" in text
+    assert "Jupiter in Taurus" in text
+    assert "Thursday observance" in text
+    assert "Natal yogas" in text or "aspects" in text  # yogas only if fired
+
+
+def test_career_dasha_overview_uses_natal_and_d10_evidence_within_range():
+    from app.chat.orchestrator import _dasha_overview
+    from datetime import date
+    _, chart = make_facts()
+    periods = [
+        {"lords": ["Jupiter", "Saturn"], "start": "2026-01-01", "end": "2028-01-01"},
+        {"lords": ["Jupiter", "Mars"], "start": "2028-01-01", "end": "2031-01-01"},
+    ]
+    facts = {**chart, "vimshottari": {**chart["vimshottari"], "periods": periods}}
+    lines = _dasha_overview(facts, (date(2027, 1, 1), date(2030, 12, 31)), "career")
+    assert len(lines) == 2 and all("natal house" in line and "D10" in line for line in lines)
+    assert "Jupiter–Saturn" in lines[0] and "01 Jan 2027" in lines[0]
+    assert "Jupiter–Mars" in lines[1] and "2028–2030" in lines[1]
+    assert not any("strongly supportive" in line or "frictional" in line for line in lines)
+
+
+def test_new_event_types_parse():
+    from app.astro.prediction import event_spec
+    assert event_spec("when will I buy a house", "property")["event_type"] == "property_purchase"
+    assert event_spec("will I settle abroad", "relocation")["event_type"] == "foreign_settlement"
+    assert event_spec("will I travel abroad", "relocation")["event_type"] == "foreign_travel"
+    assert event_spec("will I win the court case", "litigation")["event_type"] == "litigation_win"
+    assert event_spec("when will the court case resolve", "litigation")["event_type"] == "litigation_resolution"
+    assert event_spec("when will I be debt free", "debt")["event_type"] == "debt_cleared"
+
+
+def test_transit_lookup_shortcut(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("when does Jupiter enter my 7th house", h)
+    assert any("Jupiter" in m["content"] for m in replies), replies
+
+
+def test_prashna_answer(monkeypatch):
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will i ever travel", h)
+    assert any("Prashna" in m["content"] or "prashna" in m["content"].lower() for m in replies), replies
+
+
+def test_childbirth_prediction_is_declined():
+    from app.chat.safety import private_reply
+    assert private_reply("when will I have a baby")
+    assert private_reply("when will childbirth happen")
+
+
+def test_surgery_question_gets_no_prashna_verdict():
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("will my surgery go well", h)
+    assert not any("Prashna" in m["content"] for m in replies)
+
+
+def test_conception_possibility_is_declined_but_child_schooling_is_not():
+    from app.chat.safety import private_reply
+    assert private_reply("is it possible for me to conceive and have children")
+    assert private_reply("will i have children")
+    assert private_reply("when will my baccha get college admission") is None
+    assert private_reply("will my wife and i have a baccha")
+    assert private_reply("i have children. when will i get a promotion") is None
+    assert private_reply("if i do ivf, what are my chances")
+    assert private_reply("when i conceive, will it be safe")
+
+
+def test_surgery_timing_suggestion_carries_health_disclaimer():
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    replies = send("which day is good for my surgery", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
+
+
+def test_long_health_reply_keeps_appended_disclaimer(monkeypatch):
+    from app.llm import providers
+    from app.astro.constants import HEALTH_DISCLAIMER
+    h = register_and_profile()
+    _open_calibrated(h)
+    long_reply = "A long health reading. " + "x" * 2000
+    monkeypatch.setattr(providers, "generate", lambda *a, **k: (long_reply, "test"))
+    replies = send("how is my health looking", h)
+    assert any(HEALTH_DISCLAIMER in m["content"] for m in replies), replies
+
+
+def test_opening_prefers_strong_old_windows_over_recent(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    # All windows start after the minimum calibration ages; Venus/Mercury/Moon/
+    # Jupiter lords steer the lord-match pass so the ranking stays deterministic.
+    windows = [{"lords": ["Sun", "Venus"], "start": date(2012, 1, 1), "end": date(2012, 12, 31)},
+               {"lords": ["Sun", "Mercury"], "start": date(2016, 1, 1), "end": date(2016, 12, 31)},
+               {"lords": ["Sun", "Moon"], "start": date(2021, 1, 1), "end": date(2021, 12, 31)},
+               {"lords": ["Sun", "Jupiter"], "start": date(2025, 1, 1), "end": date(2025, 12, 31)}]
+    monkeypatch.setattr(C, "_past_ad_windows", lambda *args: windows)
+    def evaluate(facts, birth, domain, start, end):
+        score = 5 if start.year == 2012 else (3 if start.year == 2016 else 1)
+        return {"support_count": score, "conflict_count": 0, "traditional_rule_ids": [],
+                "pillars": {}, "convergence": "support"}
+    monkeypatch.setattr(C.pillars, "evaluate", evaluate)
+    # Neutralize birth-time sensitivity so the support ranking is exercised
+    # directly; the real opener weighs sensitivity first, support second.
+    statements = C.generate_statements(facts, birth, "fp", sensitivity_fn=lambda *a: 0.0)
+    real = [s for s in statements if not s["control"]]
+    # the strongest indication anywhere in life comes first — not the most recent
+    assert real[0]["predicted_window"]["start"].startswith("2012")
+    # a moderately strong 2016 window still beats weak recent ones
+    assert real[1]["predicted_window"]["start"].startswith("2016")
+
+
+def test_milestone_correction_replaces_rejected_date():
+    from app.db import UserMilestone
+    from app.chat import orchestrator
+    h = register_and_profile()
+    db, conv, prof = _db_profile_and_conv(h)
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "I started my first job in 2012"}]):
+        db.add(r)
+    db.commit()
+    assert [(m.year, m.month) for m in
+            db.query(UserMilestone).filter_by(profile_id=prof.id)] == [(2012, None)]
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "actually, I changed jobs in March 2018", "correction": True}]):
+        db.add(r)
+    db.commit()
+    assert [(m.year, m.month) for m in
+            db.query(UserMilestone).filter_by(profile_id=prof.id)] == [(2018, 3)]
+    # an uncorrected addition in another domain leaves the corrected row alone
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "relationship",
+             "quote": "I got married in 2020"}]):
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert got == [("career", 2018), ("relationship", 2020)]
+
+    # a correction replaces only the latest same-domain date, not every one
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "I was promoted in 2021"}]):
+        db.add(r)
+    db.commit()
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "actually the promotion was in 2022", "correction": True}]):
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert got == [("career", 2018), ("career", 2022), ("relationship", 2020)]
+
+    # a milestone and its correction in one message: the new row is still
+    # transient, so it must not be passed to db.delete
+    rows = orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "education",
+             "quote": "I graduated in 2015"},
+            {"kind": "milestone", "domain": "education",
+             "quote": "rather, 2016", "correction": True}])
+    for r in rows:
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert ("education", 2016) in got and ("education", 2015) not in got

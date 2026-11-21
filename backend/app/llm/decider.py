@@ -105,7 +105,7 @@ _FUTURE_CUE = re.compile(
     r"outlook|chances?)\b", re.I)
 _PAST_CUE = re.compile(
     r"\b(?:switched|changed|ago|last (?:year|month|decade)|in the past|past|previously|earlier|so far|"
-    r"used to)\b", re.I)
+    r"used to|way back|back in (?:19|20)\d\d)\b", re.I)
 _NATAL_CUE = re.compile(
     r"\b(?:suits? me|suited|suitable|nature|personality|strengths?|inclin\w+|aptitude|talents?|by nature|"
     r"what kind of (?:person|work|career)|what am i)\b", re.I)

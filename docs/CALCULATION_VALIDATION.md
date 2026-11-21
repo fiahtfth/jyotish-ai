@@ -102,6 +102,29 @@ JYOTISH_DATABASE_URL=... backend/.venv/bin/python backend/scripts/rule_backtest.
 
 **Display policy.** No percentages, lifts or hit rates are shown to users until a holdout validation passes; the report is owner-only. Outcomes are self-reported and subject to selection and recall bias; the backtest cannot establish predictive validity, only whether a rule beats randomly paired outcomes in this sample.
 
+### Career event protocol 2026-11-21.1
+
+The career rules use direct rulership or occupancy by an active antardasha or pratyantardasha lord. Promotion checks houses 10 and 11 from the natal ascendant. Employer change checks a work contact (house 6 or 10) and a transition contact (house 3 or 12). Job offer checks house 6 and an agreement or gain contact (house 7 or 11). Each rule requires a matching contact in the D10 chart. These are versioned interpretation choices. Predictive skill requires prospective validation.
+
+An issued forecast needs a prospective candidate with aligned dasha and micro-timing at the same calculation date and at least one further aligned method. A shared clock or transit factor is recorded once. The reply, saved record and success criterion carry the same selected interval. Chat follow-ups are opt-in. A reported hit under this protocol requires a date inside that interval.
+
+For a separate prospective evaluation, freeze one cohort row per person and event before the window opens. Include event-negative cases and cases where the engine abstains. Supply a private JSON array or an object with a `career_trials` array:
+
+| Field | Meaning |
+| --- | --- |
+| `profile_id`, `event_type`, `protocol` | Numeric study ID, `promotion`, `job_change` or `job_offer`, and `2026-11-21.1` |
+| `consented`, `registered_at`, `window_start`, `window_end` | Consent given before the study, registration on or after publication of the protocol, and a fixed horizon up to one year |
+| `birth_input`, `calibrated` | Frozen birth and calculation settings in the format of an exported prediction snapshot, plus birth-time check status as of registration |
+| `career_stage` | A stage reported before the horizon. Use `review_scheduled`, `no_review_scheduled` or `promotion_discussed` for promotion. Use `not_searching`, `applying` or `interviewing` for job searches. `offer_received` is available for employer changes. Leave unknown stages blank. |
+| `outcome`, `outcome_at`, `event_date` | `happened` or `did_not`, a follow-up date after the horizon, and the date of an event inside the horizon when it occurred |
+
+```sh
+backend/.venv/bin/python backend/scripts/evaluate_predictions.py private-career-trials.json \
+  --career-trials --cutoff 2027-01-01 --holdout-profiles 12 18 --shuffle-seed 4326
+```
+
+The tool reports exact-window hits, misses and abstentions for the real charts and a seeded shuffle that pairs each held-out person with someone else’s chart. It also compares the development base rate, chart alone, career stage alone, and career stage plus chart on the same held-out horizons. The Brier scores describe this offline comparison. A consented cohort with complete outcomes is still needed to establish predictive skill.
+
 ## Calibrated probabilities (not implemented)
 
 The software deliberately emits no probabilities. The convergence badge ("Traditional convergence: n/4 pillars indicate this window") counts agreement among techniques that share the same birth data; it is not a probability and carries a fixed disclaimer (Carlson 1985; Narlikar et al. 2009 found no better-than-chance performance in controlled studies). A calibrated-probability mode would require, in order:
@@ -113,7 +136,7 @@ The software deliberately emits no probabilities. The convergence badge ("Tradit
 5. A shuffled-chart null: the same rules run on charts paired with other people's outcomes, to show the real result beats chance.
 6. Publication of the method, data description and negative results.
 
-`backend/app/astro/validation.py::evaluate_dataset` already implements the cutoff / held-out-profile split and majority-event baseline for step 4; the shuffled null and per-rule Brier-style metrics are computed by the outcome backtest above (log loss is not).
+`backend/app/astro/validation.py::evaluate_dataset` implements the cutoff, held-out profile split and majority-event baseline, and reports Brier score and log loss when probability inputs were frozen in advance. The shuffled null and per-rule Brier-style metrics are computed by the outcome backtest above; the career cohort tool implements a seeded shuffled-chart comparison for the three supported career events.
 
 ## LLM output controls
 

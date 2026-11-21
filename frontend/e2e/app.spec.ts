@@ -23,11 +23,8 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByRole("button", { name: /^Chennai/ }).first().click();
   await page.locator("form").getByRole("button", { name: /continue/i }).click();
 
-  // Confirm the resolved historical offset before entering the chat.
-  await expect(page.getByText("UTC+05:30", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: /continue with this offset/i }).click();
-
-  // Chat: opening message + calibration
+  // A clean tzdb resolution skips the offset confirmation and goes straight
+  // to the chat.
   await page.waitForURL(/\/chat/);
   const no = page.getByRole("button", { name: "No, that didn't happen" });
   const continueReading = page.getByRole("button", { name: "Continue with the reading" });
