@@ -16,6 +16,10 @@ MIN_SCORED = 4            # fewer outcomes than this: weight stays 1.0
 W_MIN, W_MAX = 0.5, 1.5   # tempering band
 
 HIT = {"happened", "partly"}
+# "unsure" carries no failure signal — scoring it as a miss would weight every
+# rule down on pure uncertainty. "outside_window" is a confirmed timing miss:
+# the event happened, just not when the rules said, so it scores against them.
+SCORED_OUTCOMES = HIT | {"did_not", "outside_window"}
 
 
 def _snapshot_rules(rec) -> list:
@@ -32,7 +36,7 @@ def score_records(records) -> dict:
     """{rule_id: {"scored": n, "hits": n}} over records that have an outcome."""
     scored, hits = Counter(), Counter()
     for rec in records:
-        if not rec.outcome:
+        if rec.outcome not in SCORED_OUTCOMES:
             continue
         rules = set(_snapshot_rules(rec))
         for rid in rules:
@@ -63,11 +67,13 @@ def track_record(records, domain: str, intent_id: Optional[str]) -> Optional[dic
         rows = same or rows
     if not rows:
         return None
-    hits = sum(1 for r in rows if r.outcome in HIT)
-    misses = sum(1 for r in rows if r.outcome == "did_not")
-    return {"domain": domain, "intent_id": intent_id, "scored": len(rows),
-            "hits": hits, "misses": misses, "unsure": len(rows) - hits - misses,
-            "hit_rate": round(hits / len(rows), 3)}
+    scored_rows = [r for r in rows if r.outcome in SCORED_OUTCOMES]
+    hits = sum(1 for r in scored_rows if r.outcome in HIT)
+    misses = len(scored_rows) - hits
+    scored = len(scored_rows)
+    return {"domain": domain, "intent_id": intent_id, "scored": scored,
+            "hits": hits, "misses": misses, "unsure": len(rows) - scored,
+            "hit_rate": round(hits / scored, 3) if scored else None}
 
 
 def _intent_of(rec) -> Optional[str]:

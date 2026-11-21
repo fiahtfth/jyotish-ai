@@ -339,9 +339,16 @@ def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, 
     ylords = _yogini_lords(birth, mid)
     if ylords:
         yl = ylords[-1]
+        ylinked = False
         for e in links.links_to_E(yl, E, facts, refs):
+            ylinked = True
             evs.append(_tag(e, rule=R_YOG, extra=dasha_tag, mult=0.5,
                             text=f"Yogini cross-check (same Moon-nakshatra factor): Yogini lord {yl}: {e.text}"))
+        if not ylinked:
+            # the check ran and found no link — still "evaluated", so the
+            # availability flags don't report a missing method
+            evs.append(_note(R_YOG, 0, (),
+                             f"Yogini cross-check: lord {yl} has no link to the event factor"))
 
     value = _classify(bal["adverse_dominates"], item1, friction, item2, item4)
     interval = hull_iso(windows) if (item4 and windows) else (iso(ad_iv[0]), iso(ad_iv[1]))

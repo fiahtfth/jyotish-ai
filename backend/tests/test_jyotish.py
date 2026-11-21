@@ -2875,3 +2875,62 @@ def test_opening_prefers_strong_old_windows_over_recent(monkeypatch):
     assert "Sun–Mars" in statements[0]["predicted_event"]
     # a moderately strong 2000 window still beats weak recent ones
     assert statements[1]["predicted_window"]["start"].startswith("2000")
+
+
+def test_milestone_correction_replaces_rejected_date():
+    from app.db import UserMilestone
+    from app.chat import orchestrator
+    h = register_and_profile()
+    db, conv, prof = _db_profile_and_conv(h)
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "I started my first job in 2012"}]):
+        db.add(r)
+    db.commit()
+    assert [(m.year, m.month) for m in
+            db.query(UserMilestone).filter_by(profile_id=prof.id)] == [(2012, None)]
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "actually, I changed jobs in March 2018", "correction": True}]):
+        db.add(r)
+    db.commit()
+    assert [(m.year, m.month) for m in
+            db.query(UserMilestone).filter_by(profile_id=prof.id)] == [(2018, 3)]
+    # an uncorrected addition in another domain leaves the corrected row alone
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "relationship",
+             "quote": "I got married in 2020"}]):
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert got == [("career", 2018), ("relationship", 2020)]
+
+    # a correction replaces only the latest same-domain date, not every one
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "I was promoted in 2021"}]):
+        db.add(r)
+    db.commit()
+    for r in orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "career",
+             "quote": "actually the promotion was in 2022", "correction": True}]):
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert got == [("career", 2018), ("career", 2022), ("relationship", 2020)]
+
+    # a milestone and its correction in one message: the new row is still
+    # transient, so it must not be passed to db.delete
+    rows = orchestrator._milestones_from_entries(db, prof, [
+            {"kind": "milestone", "domain": "education",
+             "quote": "I graduated in 2015"},
+            {"kind": "milestone", "domain": "education",
+             "quote": "rather, 2016", "correction": True}])
+    for r in rows:
+        db.add(r)
+    db.commit()
+    got = sorted((m.domain, m.year) for m in
+                 db.query(UserMilestone).filter_by(profile_id=prof.id))
+    assert ("education", 2016) in got and ("education", 2015) not in got
