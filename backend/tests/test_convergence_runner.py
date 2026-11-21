@@ -43,9 +43,12 @@ def _res(value, pillar="P1", rid="R", direction=1, interval=None):
     return PillarResult(pillar, value, (ev,), interval)
 
 
-def _act(interval, value=S):
-    ev = Evidence("P1_ACTIVATION", "1.0", (), 1, 1.0, frozenset({"P1_F"}), interval, "AD links")
-    return PillarResult("P1", value, (ev,), interval)
+def _act(interval, value=S, double_transit=True):
+    evs = [Evidence("P1_ACTIVATION", "1.0", (), 1, 1.0, frozenset({"P1_F"}), interval, "AD links")]
+    if double_transit:
+        evs.append(Evidence("P1_DOUBLE_TRANSIT", "1.0", (), 1, 1.0, frozenset(), interval,
+                            "Jupiter+Saturn reach the house"))
+    return PillarResult("P1", value, tuple(evs), interval)
 
 
 BIRTH = MagicMock()
@@ -99,7 +102,7 @@ def test_no_dasha_link_stops_before_transit():
 
 def test_no_double_transit_stops_before_micro():
     f = make_facts()
-    p1_w = _act(("2027-01-01", "2027-05-01"), value=W)   # linked but transits do not back it
+    p1_w = _act(("2027-01-01", "2027-05-01"), value=W, double_transit=False)  # linked, no transit support
     with patch.object(runner, "promise_with_moon",
                       return_value=PromiseResult(PROMISE_STRONG, 4, (), (), ())), \
          patch.object(runner.timing_p1, "evaluate", return_value=[p1_w]), \

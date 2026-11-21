@@ -226,6 +226,9 @@ def timing_run(facts, birth, cfg: IntentConfig, start, end, *, reliability=None,
         moon_check = moon_stability(birth)
     unreliable = tuple(v for v in cfg.V if v != "D1" and reliability.get(v) != "stable")
     cfg_eff = replace(cfg, V=tuple(v for v in cfg.V if v == "D1" or reliability.get(v) == "stable"))
+    # when every divisional chart was dropped, the varga item must be NE —
+    # otherwise P1 quietly confirms on D1 while the gate reports a dropped check
+    divisionals_dropped = bool(unreliable) and not any(v != "D1" for v in cfg_eff.V)
     promise = promise_with_moon(facts, cfg_eff)
     timing_unstable = bool(moon_check and moon_check.get("status") == "cusp_sensitive")
 
@@ -252,7 +255,8 @@ def timing_run(facts, birth, cfg: IntentConfig, start, end, *, reliability=None,
         return TimingRun(cfg, wr, tuple(gates), (), "low", unreliable, timing_unstable)
 
     # Gate 2 — dasha activation ------------------------------------------------
-    p1s = timing_p1.evaluate(facts, birth, cfg_eff, start, end)
+    p1s = timing_p1.evaluate(facts, birth, cfg_eff, start, end,
+                             divisionals_dropped=divisionals_dropped)
     activated = [p for p in p1s if _activated(p)]
     if not activated:
         gates.append(Gate("dasha", "stopped",
@@ -264,7 +268,9 @@ def timing_run(facts, birth, cfg: IntentConfig, start, end, *, reliability=None,
                       f"{len(activated)} antardasha(s) link a period lord to the topic"))
 
     # Gate 3 — double transit --------------------------------------------------
-    supported = [p for p in p1s if p.value in (S, M)]
+    supported = [p for p in p1s if p.value in (S, M, W)
+                 and any(e.rule_id == "P1_DOUBLE_TRANSIT" and e.direction > 0
+                         for e in p.evidence)]
     if not supported:
         gates.append(Gate("transit", "stopped",
                           "the dasha lords link to the topic, but Jupiter and Saturn do not jointly "
@@ -312,10 +318,16 @@ def timing_run(facts, birth, cfg: IntentConfig, start, end, *, reliability=None,
 
 
 def _reweight(p: PillarResult, weights: dict) -> PillarResult:
-    """Scale evidence weight by the measured track record of each rule."""
-    evs = tuple(replace(e, weight=round(e.weight * weights.get(e.rule_id, 1.0), 4))
-                for e in p.evidence)
-    return replace(p, evidence=evs)
+    """Scale evidence weight by the measured track record of each rule; a pillar
+    whose support rests only on down-weighted rules demotes S/M -> W."""
+    evs, sup_w = [], 0.0
+    for e in p.evidence:
+        w = weights.get(e.rule_id, 1.0)
+        evs.append(replace(e, weight=round(e.weight * w, 4)))
+        if e.direction > 0:
+            sup_w += e.weight * w
+    value = W if (p.value in (S, M) and sup_w and sup_w < 0.75) else p.value
+    return replace(p, value=value, evidence=tuple(evs))
 
 
 # ------------------------------------------------------------------ look-back on past events
@@ -435,10 +447,15 @@ def analysis_from_run(run: TimingRun, domain: str, start, end, *, calibrated=Tru
     ne = len(wr.ne_pillars)
 
     offers_window = wr.result_type in (SUPPORTIVE_PERIOD, MIXED_PERIOD)
-    timing_windows = [{"start": wr.interval[0], "end": wr.interval[1]}] \
-        if wr.interval and offers_window else []
-    if run.narrowing and wr.result_type == SUPPORTIVE_PERIOD:
-        timing_windows = [{"start": run.narrowing[-1][1][0], "end": run.narrowing[-1][1][1]}]
+    # the published window is the converged intersection (every strong method
+    # agrees), tightened by the last narrowing stage — never a gap-spanning hull
+    ivs = []
+    if wr.interval and offers_window:
+        ivs = [wr.interval]
+        if run.narrowing and wr.result_type == SUPPORTIVE_PERIOD:
+            ivs = timing_p1.intersect(ivs, [run.narrowing[-1][1]])
+    timing_windows = [{"start": timing_p1.iso(timing_p1.to_date(a)),
+                       "end": timing_p1.iso(timing_p1.to_date(b))} for a, b in ivs]
     yogini_ev = any(e.rule_id == "P1_YOGINI_XCHECK" for p in wr.pillars for e in p.evidence)
     p3 = next((p for p in wr.pillars if p.pillar == "P3"), None)
     sud = "evaluated" if p3 and p3.value != NE else "unavailable"
@@ -452,6 +469,7 @@ def analysis_from_run(run: TimingRun, domain: str, start, end, *, calibrated=Tru
     rule_ids = sorted({e.rule_id for p in wr.pillars for e in p.evidence})
     evidence = [{"id": e.rule_id, "module": p.pillar, "direction": {1: "supportive", -1: "conflicting", 0: "neutral"}[e.direction],
                  "details": [e.text], "rule_id": e.rule_id, "rule_version": e.rule_version,
+                 "weight": e.weight,
                  "depends_on_factors": sorted(e.factors),
                  "uncertainty_flags": [e.ne_reason] if e.ne_reason else []}
                 for p in wr.pillars for e in p.evidence]
@@ -470,7 +488,8 @@ def analysis_from_run(run: TimingRun, domain: str, start, end, *, calibrated=Tru
         "calculation_evidence_ids": [f"{e.rule_id}: {e.text}" for p in wr.pillars for e in p.evidence if e.text][:15],
         "gates": gates,
         "confidence": run.confidence,
-        "narrowing": [{"stage": s, "start": iv[0], "end": iv[1]} for s, iv in run.narrowing],
+        "narrowing": [{"stage": s, "start": timing_p1.iso(timing_p1.to_date(iv[0])),
+                       "end": timing_p1.iso(timing_p1.to_date(iv[1]))} for s, iv in run.narrowing],
         "not_indicated": wr.result_type in (WEAK_INDICATION, INSUFFICIENT_DATA),
         "reliability": {"unreliable_vargas": list(run.unreliable_vargas),
                         "timing_unstable": run.timing_unstable},
