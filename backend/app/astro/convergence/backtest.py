@@ -16,9 +16,10 @@ MIN_SCORED = 4            # fewer outcomes than this: weight stays 1.0
 W_MIN, W_MAX = 0.5, 1.5   # tempering band
 
 HIT = {"happened", "partly"}
-# "unsure" and other unverifiable answers carry no failure signal — scoring
-# them as misses would weight every rule down on pure uncertainty
-SCORED_OUTCOMES = HIT | {"did_not"}
+# "unsure" carries no failure signal — scoring it as a miss would weight every
+# rule down on pure uncertainty. "outside_window" is a confirmed timing miss:
+# the event happened, just not when the rules said, so it scores against them.
+SCORED_OUTCOMES = HIT | {"did_not", "outside_window"}
 
 
 def _snapshot_rules(rec) -> list:
