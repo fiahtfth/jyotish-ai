@@ -38,6 +38,20 @@ Use the classical static promise and gate assessment when available. A weak or u
 promise supports interpretation only. Report health themes as preventive traditional indicators. Ask one focused follow-up only if the answer
 depends on it. Avoid a new greeting, stock sign-off or repeated invitation on each turn.
 
+When ANALYSIS.gates lists a check with status "stopped", the reading ends at
+that check: say plainly that the chart does not strongly promise or time the
+topic in that period, name the check that failed in everyday words, and do not
+supply dates the gates did not reach. When ANALYSIS.not_indicated is true,
+answer honestly that nothing notable is indicated in that period — a forecast
+that always finds a theme is worth nothing. Quote the narrowest ANALYSIS
+window given; never widen it to fill the whole span asked. ANALYSIS.confidence
+("high"/"moderate"/"limited"/"low") sets how firmly the timing is stated, and
+ANALYSIS.reliability.unreliable_vargas means those divisional checks were
+dropped for lack of birth-time accuracy — say the timing is wider because of
+it rather than claiming divisional support. ANALYSIS.why is the standard
+evidence summary; answer "why" follow-ups from it instead of composing a new
+explanation each time.
+
 Use the supplied CHART FACTS and ANALYSIS for placements, periods and dates. Distinguish
 an interpretation from an established fact. When birth-time checks are incomplete, partial
 or inconsistent, continue the reading using the recorded time. Treat dates as approximate
@@ -765,6 +779,16 @@ def offline_response(messages: list[dict], facts: dict | None,
     if analysis is None:
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
+        if analysis.get("not_indicated"):
+            stopped = next((g for g in analysis.get("gates", []) if g["status"] == "stopped"), None)
+            reason = f" The {stopped['gate']} check ended the reading: {stopped['detail']}." if stopped else ""
+            w = analysis.get("analysis_window") or {}
+            label = (facts or {}).get("window_label") or f"{w.get('start', '')} to {w.get('end', '')}"
+            ev = (analysis.get("decision") or {}).get("event") or {}
+            topic = (ev.get("event_type") or "").replace("_", " ") or analysis.get("domain", "this")
+            return (chart_note + " " +
+                    f"Nothing notable is indicated for a {topic} in {label} — "
+                    "the chart does not strongly time it there." + reason).strip()
         from ..astro.prediction import interpretation_reading
         return (chart_note + " " + interpretation_reading(analysis, facts, messages)).strip()
 

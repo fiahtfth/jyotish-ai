@@ -61,7 +61,7 @@ def date_to_jd(d: date) -> float:
 
 def merge(ivs: Iterable[tuple]) -> list:
     out = []
-    for a, b in sorted(ivs):
+    for a, b in sorted((to_date(a), to_date(b)) for a, b in ivs):
         if out and a <= out[-1][1] + timedelta(days=1):
             out[-1] = (out[-1][0], max(out[-1][1], b))
         else:
@@ -72,8 +72,9 @@ def merge(ivs: Iterable[tuple]) -> list:
 def intersect(xs: list, ys: list) -> list:
     out = []
     for a, b in xs:
+        a, b = to_date(a), to_date(b)
         for c, d in ys:
-            lo, hi = max(a, c), min(b, d)
+            lo, hi = max(a, to_date(c)), min(b, to_date(d))
             if lo <= hi:
                 out.append((lo, hi))
     return merge(out)

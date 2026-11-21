@@ -520,6 +520,20 @@
    "verified_by": null,
    "verified_on": null,
    "tests": []
+  },
+  {
+   "rule_id": "PROMISE_F7",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.3 + workflow gate: the same promise checked against the Moon chart (Chandra lagna)",
+   "conditions": "E-house counted from the Moon: +1 benefic occupation/aspect; -1 only malefic influence. Weight 0.5 (Moon frame halves it, as links.py REF_WEIGHT)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_promise_adds_moon_chart_factor"
+   ]
   }
  ]
 }

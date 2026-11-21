@@ -56,6 +56,9 @@ class Settings:
     OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
     OPENROUTER_MODEL: str = os.environ.get("JYOTISH_OPENROUTER_MODEL", "openrouter/free")
     DECIDER_ENABLED: bool = os.environ.get("JYOTISH_DECIDER_ENABLED", "false").lower() == "true"
+    # Single timing path: the gated convergence runner replaces the legacy
+    # four-method verdict for every intent it covers. Set to "false" to fall back.
+    CONVERGENCE_V2: bool = os.environ.get("JYOTISH_CONVERGENCE_V2", "true").lower() != "false"
     OLLAMA_URL: str = os.environ.get("JYOTISH_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.environ.get("JYOTISH_OLLAMA_MODEL", "llama3.1")
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")
