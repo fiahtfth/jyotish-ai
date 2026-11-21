@@ -113,6 +113,104 @@
     "backend/tests/test_convergence_p1p2.py::test_p1_friction_gives_mixed",
     "backend/tests/test_convergence_p1p2.py::test_p1_adverse_dominates"
    ]
+  },
+  {
+   "rule_id": "P4_TRIGGER_INGRESS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (K.N. Rao micro-timing)",
+   "conditions": "trigger planet ingress into an E-house sign or an E-lord sign within the surviving dasha+transit months; window = the sign-stay interval",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_BAV_THRESHOLDS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (Ashtakavarga, BPHS)",
+   "conditions": "Binnashtakavarga of the trigger planet in the reached sign: supportive >=4, strong >=5, adverse <=2; SAV of the E-house sign >=28 supports",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_SAV_WEIGHT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (SAV)",
+   "conditions": "Sarvashtakavarga weight applied to the trigger sign when the E-house sign itself is scored",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_KAKSHYA_NARROWING",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (kakshya)",
+   "conditions": "kakshya (8-fold) subdivision of the trigger sign stay narrows the supportive month to weeks",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_FAST_TRIGGERS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (fast triggers)",
+   "conditions": "fast trigger planets (Sun, Mars, Mercury, Venus, Moon) give month-level supportive windows inside the slow-trigger stay",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_TARABALA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (Tarabala)",
+   "conditions": "Tarabala: the transit nakshatra counted from the natal Moon adds supportive weight",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
+  },
+  {
+   "rule_id": "P4_RESULT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4 (range result)",
+   "conditions": "range-level P4 result when no micro-window is found inside the months",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_runner.py::test_full_path_runs_all_pillars_and_narrows"
+   ]
   }
  ]
 }

@@ -61,7 +61,7 @@ def date_to_jd(d: date) -> float:
 
 def merge(ivs: Iterable[tuple]) -> list:
     out = []
-    for a, b in sorted(ivs):
+    for a, b in sorted((to_date(a), to_date(b)) for a, b in ivs):
         if out and a <= out[-1][1] + timedelta(days=1):
             out[-1] = (out[-1][0], max(out[-1][1], b))
         else:
@@ -72,8 +72,9 @@ def merge(ivs: Iterable[tuple]) -> list:
 def intersect(xs: list, ys: list) -> list:
     out = []
     for a, b in xs:
+        a, b = to_date(a), to_date(b)
         for c, d in ys:
-            lo, hi = max(a, c), min(b, d)
+            lo, hi = max(a, to_date(c)), min(b, to_date(d))
             if lo <= hi:
                 out.append((lo, hi))
     return merge(out)
@@ -224,8 +225,11 @@ def _classify(adverse: bool, item1: bool, friction: bool, item2, item4: bool) ->
     return W
 
 
-def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
-    """P1 for every Antardasha overlapping [start, end] (dates). One PillarResult per AD."""
+def evaluate(facts: dict, birth, cfg: IntentConfig, start, end,
+             divisionals_dropped: bool = False) -> list:
+    """P1 for every Antardasha overlapping [start, end] (dates). One PillarResult per AD.
+    divisionals_dropped: every divisional chart was unstable at the stated birth-time
+    accuracy — the varga item becomes NE instead of quietly checking D1."""
     start, end = to_date(start), to_date(end)
     if not cfg.E and not cfg.E_adverse_explicit:
         return [PillarResult.not_evaluated("P1", "intent has no event houses")]
@@ -246,11 +250,13 @@ def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
         dt_err = None
     results = []
     for row in rows:
-        results.append(_eval_ad(facts, birth, cfg, E, row, pds, dts, dt_err, start, end, refs, mode_b))
+        results.append(_eval_ad(facts, birth, cfg, E, row, pds, dts, dt_err, start, end,
+                                refs, mode_b, divisionals_dropped))
     return results
 
 
-def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, mode_b) -> PillarResult:
+def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, mode_b,
+             divisionals_dropped=False) -> PillarResult:
     md, ad = row["lords"][0], row["lords"][1]
     ad_iv = (max(start, jd_to_date(row["start_jd"])), min(end, jd_to_date(row["end_jd"]) - timedelta(days=1)))
     if ad_iv[1] < ad_iv[0]:
@@ -293,8 +299,14 @@ def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, 
                      f"AD lord {ad} links to E={list(E)}: {bool(ad_e)}; MD lord links: {bool(md_e)}; "
                      f"PD lords linking: {[p[0] for p in pd_hits]}", [f"vimshottari.{md}.{ad}"]))
 
-    # item 2 varga
-    item2, vev = varga_check(facts, cfg, ad, mode_b)
+    # item 2 varga — NE when every divisional was dropped for instability
+    if divisionals_dropped:
+        item2 = None
+        vev = [_note(R_VARGA, 0, (),
+                     "divisional checks skipped — the divisional Lagna changes inside the "
+                     "stated birth-time uncertainty", ne_reason="varga lagna unstable")]
+    else:
+        item2, vev = varga_check(facts, cfg, ad, mode_b)
     evs += vev
 
     # item 3 MD-AD relationship

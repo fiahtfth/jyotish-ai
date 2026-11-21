@@ -1,6 +1,7 @@
 """Factor de-duplication (spec 1.2) and window convergence (spec 1.4)."""
 from __future__ import annotations
 
+import datetime as _dt
 from dataclasses import replace
 from typing import Optional, Sequence
 
@@ -43,10 +44,16 @@ def dedup_pillars(ordered: Sequence[PillarResult]) -> tuple:
     return tuple(out), n, tuple(dependent)
 
 
+def _bound(x):
+    if isinstance(x, (int, float, _dt.date)):
+        return x
+    return _dt.date.fromisoformat(str(x)[:10])
+
+
 def _intersect(a: Optional[tuple], b: Optional[tuple]) -> Optional[tuple]:
     if a is None or b is None:
         return None
-    lo, hi = max(a[0], b[0]), min(a[1], b[1])
+    lo, hi = max(_bound(a[0]), _bound(b[0])), min(_bound(a[1]), _bound(b[1]))
     return (lo, hi) if lo <= hi else None
 
 

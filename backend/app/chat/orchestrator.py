@@ -2,6 +2,7 @@
 
 Past-event checks and birth-time refinement are optional parts of a reading.
 """
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 import json
 import logging
@@ -26,6 +27,10 @@ from ..llm import decider, providers
 from . import career, language, memory, safety
 
 log = logging.getLogger(__name__)
+
+# Timing work runs alongside the topic-routing call when a domain+window guess
+# is already on the table.
+_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="jyotish-timing")
 
 RECTIFY_STATES = ("rectify", "rectify_collect", "rectify_domain", "rectify_confirm")
 
@@ -93,26 +98,31 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
     today = as_of or _today_at(birth)
     if start <= today <= end:
         start = min(end, today + timedelta(days=1))
-    natal = classical.promise(facts, domain)
-    prec = precision.evaluate(facts, birth, domain, start, end,
-                              calibrated=_calibrated(profile))
-    analysis = dict(prec["verdict"])
-    analysis["precision"] = {
-        "calibrated": prec["calibrated"],
-        "confirmation": prec["confirmation"]["label"],
-        "yogini": prec["confirmation"]["yogini"]["verdict"],
-        "sudarshana": prec["confirmation"]["sudarshana"]["verdict"],
-        "timing_windows": prec["timing"]["windows"],
-        "excluded_windows": prec["timing"]["excluded"],
-        "magnitude": prec["magnitude"]["label"],
-        "ithasala": prec["fast_triggers"]["ithasala"],
-        "eclipse_watch_months": prec["fast_triggers"]["watch_months"],
-        "layer_verdicts": prec["layer_verdicts"],
-    }
-    analysis["sensitivity"] = sensitivity.evaluate(facts, birth, domain, start, end, _calibrated(profile), base=prec)
-    if not analysis["sensitivity"]["timing_stable"]:
-        analysis["precision"]["timing_windows"] = []
-    classical.apply(analysis, facts, birth, domain, start, end, _calibrated(profile), prec, natal)
+    analysis, prec = None, None
+    if settings.CONVERGENCE_V2:
+        analysis = _convergence_analysis(facts, birth, domain, start, end, profile,
+                                         question, event)
+    if analysis is None:
+        natal = classical.promise(facts, domain)
+        prec = precision.evaluate(facts, birth, domain, start, end,
+                                  calibrated=_calibrated(profile))
+        analysis = dict(prec["verdict"])
+        analysis["precision"] = {
+            "calibrated": prec["calibrated"],
+            "confirmation": prec["confirmation"]["label"],
+            "yogini": prec["confirmation"]["yogini"]["verdict"],
+            "sudarshana": prec["confirmation"]["sudarshana"]["verdict"],
+            "timing_windows": prec["timing"]["windows"],
+            "excluded_windows": prec["timing"]["excluded"],
+            "magnitude": prec["magnitude"]["label"],
+            "ithasala": prec["fast_triggers"]["ithasala"],
+            "eclipse_watch_months": prec["fast_triggers"]["watch_months"],
+            "layer_verdicts": prec["layer_verdicts"],
+        }
+        analysis["sensitivity"] = sensitivity.evaluate(facts, birth, domain, start, end, _calibrated(profile), base=prec)
+        if not analysis["sensitivity"]["timing_stable"]:
+            analysis["precision"]["timing_windows"] = []
+        classical.apply(analysis, facts, birth, domain, start, end, _calibrated(profile), prec, natal)
     audit = analysis["classical"]
     spec = event or prediction.event_spec(question, domain) or {}
     event_type = spec.get("event_type")
@@ -136,6 +146,9 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
             audit["tables"].append(classical.table("Reported milestones used in the birth-time search",
                                                   ["Life area", "Reported period"], rows))
     analysis["decision"] = prediction.decide(question, analysis, event, as_of=today)
+    stopped = next((g for g in analysis.get("gates", []) if g["status"] == "stopped"), None)
+    if stopped and stopped["detail"] not in analysis["decision"].get("reasons", []):
+        analysis["decision"].setdefault("reasons", []).append(stopped["detail"])
     intent = registry.forecast_intent((analysis["decision"].get("event") or {}).get("event_type"))
     if intent:
         analysis["intent"] = {"id": intent["intent_id"], "version": intent["version"],
@@ -143,6 +156,50 @@ def _precision_analysis(facts, birth, domain, start, end, profile, question="", 
         for finding in analysis["evidence"]:
             finding["intent_id"] = intent["intent_id"]
     return analysis, prec
+
+
+def _convergence_analysis(facts, birth, domain, start, end, profile, question, event):
+    """The gated 61-topic timing engine (CONVERGENCE_V2). Returns None when the
+    question maps to no spec intent or the run fails — the legacy path then
+    takes over."""
+    from ..astro.convergence import backtest, runner, select
+    cfg = select.for_event((event or {}).get("event_type")) or select.for_domain(domain, question)
+    if cfg is None or cfg.template == "special":
+        return None
+    try:
+        if cfg.template == "N":
+            run = runner.natal_run(facts, birth, cfg)
+        else:
+            events = [{"year": m.year, "month": m.month, "label": m.description}
+                      for m in profile.milestones if m.domain == domain and m.year]
+            run = runner.timing_run(facts, birth, cfg, start, end,
+                                    rule_weights=backtest.rule_weights(profile.predictions),
+                                    lookback_events=events)
+            from dataclasses import replace as _replace
+            run = _replace(run, track_record=backtest.track_record(
+                profile.predictions, domain, cfg.intent_id))
+    except Exception:
+        log.exception("convergence v2 run failed for %s", cfg.intent_id)
+        return None
+    analysis = runner.analysis_from_run(run, domain, start, end,
+                                        calibrated=_calibrated(profile))
+    if cfg.template != "N":
+        # Finite birth-time perturbation check, kept identical to the legacy
+        # path; its stability verdicts are AND-ed with the varga reliability
+        # the V2 engine already computed.
+        try:
+            sens = sensitivity.evaluate(facts, birth, domain, start, end,
+                                        _calibrated(profile))
+            sens["verdict_stable"] = (sens["verdict_stable"]
+                                      and analysis["sensitivity"]["verdict_stable"])
+            sens["timing_stable"] = (sens["timing_stable"]
+                                     and analysis["sensitivity"]["timing_stable"])
+            if not sens["timing_stable"]:
+                analysis["precision"]["timing_windows"] = []
+            analysis["sensitivity"] = sens
+        except Exception:
+            log.exception("sensitivity check failed")
+    return analysis
 
 
 def _save_prediction(db, profile, question, analysis, reply):
@@ -742,6 +799,9 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
         entries.append(feedback)
     if entries:
         msg.meta_json = json.dumps({memory.KEY: entries}, ensure_ascii=False)
+        if conv.state == "open":
+            for milestone in _milestones_from_entries(db, profile, entries):
+                db.add(milestone)
     if _vimshottari_lookup(db, conv, profile, facts, birth, text):
         db.commit()
         return conv.messages[start_len:]
@@ -791,6 +851,48 @@ def _classify_answer(text: str) -> str | None:
         if re.search(rf"\b{re.escape(k)}\b", t):
             return ANSWER_MAP[k]
     return None
+
+
+_MILESTONE_YEAR = re.compile(r"\b(19[5-9]\d|20[0-4]\d)\b")
+_MONTH_WORDS = {m: i for i, m in enumerate(
+    ("january february march april may june july august september "
+     "october november december").split(), 1)}
+
+
+def _milestones_from_entries(db, profile, entries) -> list:
+    """Confirmed life events the user mentions become structured facts
+    (UserMilestone): they feed the look-back bundle and the birth-time check,
+    and are never re-asked."""
+    known = {(m.domain, m.year, m.month) for m in
+             db.query(UserMilestone).filter_by(profile_id=profile.id)}
+    out = []
+    for e in entries:
+        if e.get("kind") != "milestone" or not e.get("domain"):
+            continue
+        quote = e.get("quote") or ""
+        ym = _MILESTONE_YEAR.search(quote)
+        if not ym:
+            continue
+        month = next((n for name, n in _MONTH_WORDS.items() if name in quote.lower()), None)
+        key = (e["domain"], int(ym.group(1)), month)
+        if key in known or (e["domain"], key[1], None) in known:
+            continue
+        known.add(key)
+        out.append(UserMilestone(profile_id=profile.id, domain=e["domain"],
+                                 description=quote[:200], year=key[1], month=month))
+    return out
+
+
+def _reply_chunks(reply, size=140):
+    """Emit the verified reply in sentence-sized pieces so the stream reads live
+    without ever showing unchecked text."""
+    start = 0
+    for m in re.finditer(r"(?<=[.!?।])\s+|\n+", reply):
+        if m.end() - start >= size:
+            yield reply[start:m.end()]
+            start = m.end()
+    if start < len(reply):
+        yield reply[start:]
 
 
 def _calibration_turn(db, conv, profile, facts, text, on_delta):
@@ -1485,6 +1587,11 @@ def _open_turn(db, conv, profile, facts, birth, text, on_delta=None) -> list[Mes
                     continue
                 if "analysis" in meta:
                     a = meta["analysis"]
+                    if a.get("why") and not re.search(r"evidence|calculation|table|raw", t):
+                        _add_msg(db, conv, "assistant",
+                                 a["why"] + "\n\nAsk for the evidence to see the raw tables.",
+                                 kind="analysis", meta=a)
+                        return conv.messages[-2:]
                     if a.get("classical"):
                         _add_msg(db, conv, "assistant", classical.markdown(a["classical"]) +
                                  f"\n\nConfirmation: {a['precision']['confirmation']}.", kind="analysis",
@@ -1719,8 +1826,24 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
     correction = bool(settings.DECIDER_ENABLED and active_domain and language.topic_correction(t))
     reuse_period = None
     domain_only = False
+    pending = None
     if (unclear_topic or possible_event or correction) and not (varga or social or (factual and not correction)):
         routing_started = time.monotonic()
+        # When a domain guess and a window already exist, run the timing engine
+        # while the understanding call is on the wire; the result is used only
+        # if routing keeps that domain+window.
+        guess_domain = domain or active_domain
+        guess_window = period or (prior_window if selected_prior_window else None)
+        guess_event = event or active_event or None
+        if guess_domain and guess_window:
+            try:
+                profile.milestones; profile.predictions; profile.calibrations
+                pending = (guess_domain, guess_window, guess_event,
+                           _POOL.submit(_precision_analysis, facts, birth, guess_domain,
+                                        *guess_window, profile, question=focus,
+                                        event=guess_event))
+            except Exception:
+                pending = None
         route = providers.route_topic(history, allow_external=_external_ok(profile),
                                       prior_domain=active_domain, prior_event=active_event.get("event_type"),
                                       has_period=selected_prior_window, use_fallback=bool(unclear_topic or possible_event))
@@ -1790,7 +1913,15 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
         # An accepted domain-only correction must survive the engine's event
         # inference even if the original message names the rejected event.
         question = f"{domain} outlook" if domain_only else focus
-        analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=question, event=event)
+        if (pending is not None and domain == pending[0] and window == pending[1]
+                and (event or {}).get("event_type") == (pending[2] or {}).get("event_type")):
+            try:
+                analysis, _prec = pending[3].result()
+            except Exception:
+                log.exception("speculative analysis failed; recomputing")
+                analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=question, event=event)
+        else:
+            analysis, _prec = _precision_analysis(facts, birth, domain, *window, profile, question=question, event=event)
         analysis["period_requested"] = True
         career_event = (analysis["decision"].get("event") or {}).get("event_type")
         if career_event in career_events.RULES and not _is_other(profile):
@@ -1895,7 +2026,8 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta):
             reply = verify.repair_response(reply, check["issues"])
     reply = _apply_disclaimer(reply, domain)
     if on_delta and provider != "computed":
-        on_delta(reply)
+        for chunk in _reply_chunks(reply):
+            on_delta(chunk)
     if analysis:
         _save_prediction(db, profile, text, analysis, reply)
     _add_msg(db, conv, "assistant", reply,
