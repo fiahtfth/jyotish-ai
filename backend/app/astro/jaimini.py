@@ -332,3 +332,124 @@ def karakas(rasi, scheme="7_KNRao"):
     return {"scheme": scheme, "names": names, "uses_rahu": use_rahu,
             "karakas": {names[i]: K.PLANET_NAMES[p] for i, (p, _) in enumerate(ranked)},
             "ranking": ranked, "ties": ties}
+
+
+# ---------- depth: karakamsha, arudha lagna houses, raja yogas, Narayana ----------
+# Pure functions over locked facts (sign 0=Aries). IDs: JM.KARAKAMSHA,
+# JM.ISHTA_DEVATA (12th from karakamsha; verified=False), JM.AL_HOUSES,
+# JM.RAJA.AK_AMK / JM.RAJA.AK_L5 (Jaimini Upadesa Sutras, raja yoga; the
+# association test — conjunction, rasi drishti or exchange — follows common
+# teaching and is marked verified=False), JM.NARAYANA (PyJHora Narayana dasa).
+
+SRC_JAIMINI = "Jaimini Upadesa Sutras"
+
+
+def _occupants(chart: dict, sign: int) -> list[str]:
+    return sorted(n for n, r in chart.items() if n != "Lagna" and int(r["sign"]) == sign)
+
+
+def karakamsha(facts) -> dict | None:
+    ak = ((facts.get("jaimini") or {}).get("karakas") or {}).get("Atmakaraka")
+    d9 = (facts.get("vargas") or {}).get("D9") or {}
+    d1 = (facts.get("vargas") or {}).get("D1") or {}
+    if not ak or ak not in d9:
+        return None
+    ks = int(d9[ak]["sign"])
+    twelfth = (ks + 11) % 12
+    out = {"atmakaraka": ak, "sign": ks, "sign_name": K.SIGN_NAMES[ks],
+           "d9_occupants": _occupants(d9, ks), "d1_occupants": _occupants(d1, ks),
+           "house_from_d1_lagna": (ks - int(facts["lagna"]["sign"])) % 12 + 1,
+           "rule": "JM.KARAKAMSHA", "source": SRC_JAIMINI + " (karakamsha)", "verified": True,
+           "twelfth": {"sign": twelfth, "sign_name": K.SIGN_NAMES[twelfth],
+                       "d9_occupants": _occupants(d9, twelfth),
+                       "lord": K.PLANET_NAMES[K.SIGN_LORD[twelfth]],
+                       "rule": "JM.ISHTA_DEVATA", "verified": False,
+                       "note": "12th from karakamsha as ishta devata indicator — reading varies by school"}}
+    if "Lagna" in d9:
+        out["house_from_d9_lagna"] = (ks - int(d9["Lagna"]["sign"])) % 12 + 1
+    return out
+
+
+def al_houses(facts) -> dict | None:
+    jk = facts.get("jaimini") or {}
+    al = jk.get("arudha_lagna")
+    d1 = (facts.get("vargas") or {}).get("D1") or {}
+    if not al:
+        return None
+    s = int(al["sign"])
+    out = {"sign": s, "sign_name": K.SIGN_NAMES[s], "occupants": _occupants(d1, s),
+           "house_from_lagna": (s - int(facts["lagna"]["sign"])) % 12 + 1, "rule": "JM.AL_HOUSES"}
+    for h in (2, 7, 11, 12):
+        hs = (s + h - 1) % 12
+        out[f"h{h}"] = {"sign_name": K.SIGN_NAMES[hs], "occupants": _occupants(d1, hs),
+                        "lord": K.PLANET_NAMES[K.SIGN_LORD[hs]]}
+    return out
+
+
+def _association(pos_a: int, pos_b: int, a: int, b: int) -> list[str]:
+    kinds = []
+    if pos_a == pos_b:
+        kinds.append("conjunction")
+    elif _rashi_aspects(pos_a, pos_b):
+        kinds.append("rasi_drishti")
+    if K.SIGN_LORD[pos_a] == b and K.SIGN_LORD[pos_b] == a:
+        kinds.append("exchange")
+    return kinds
+
+
+def raja_yogas(facts) -> list[dict]:
+    kar = (facts.get("jaimini") or {}).get("karakas") or {}
+    p = facts["planets"]
+    pid = {v: k for k, v in K.PLANET_NAMES.items()}
+    ak, amk = kar.get("Atmakaraka"), kar.get("Amatyakaraka")
+    out = []
+    if not ak or ak not in p:
+        return out
+    hs = facts["houses"]
+    l5 = (hs[5] if 5 in hs else hs["5"])["lord"]
+    for other, rid, label in ((amk, "JM.RAJA.AK_AMK", "Atmakaraka–Amatyakaraka"),
+                              (l5, "JM.RAJA.AK_L5", "Atmakaraka–5th lord")):
+        if not other or other == ak or other not in p:
+            continue
+        kinds = _association(int(p[ak]["sign"]), int(p[other]["sign"]), pid[ak], pid[other])
+        if kinds:
+            out.append({"id": rid, "name": f"Jaimini Raja Yoga ({label}: {ak} and {other})",
+                        "participants": [ak, other], "links": kinds,
+                        "source": SRC_JAIMINI + " (raja yoga)", "verified": False})
+    return out
+
+
+def narayana_rows(rows) -> dict:
+    """Group PyJHora Narayana rows [((md, ad), (y, m, d, fh), years)] into MD periods."""
+    from datetime import date, timedelta
+
+    def iso(t):
+        return f"{int(t[0]):04d}-{int(t[1]):02d}-{int(t[2]):02d}"
+    mds = []
+    for lords, start, _years in rows:
+        md = int(lords[0])
+        if not mds or mds[-1]["sign"] != md:
+            mds.append({"sign": md, "sign_name": K.SIGN_NAMES[md], "start": iso(start), "ads": []})
+        if len(lords) > 1:
+            mds[-1]["ads"].append([int(lords[1]), iso(start)])
+    for a, b in zip(mds, mds[1:]):
+        a["end"] = b["start"]
+    if mds:
+        _, start, years = rows[-1]
+        end = date(int(start[0]), int(start[1]), int(start[2])) + timedelta(days=float(years) * 365.2425)
+        mds[-1]["end"] = end.isoformat()
+    return {"periods": mds, "source": "PyJHora Narayana dasa (rasi chart, default method)",
+            "rule": "JM.NARAYANA"}
+
+
+def running_narayana(narayana: dict | None, today_iso: str) -> dict | None:
+    for md in (narayana or {}).get("periods", []):
+        if md["start"] <= today_iso < md.get("end", "9999"):
+            ad = None
+            for i, (s, st) in enumerate(md["ads"]):
+                nxt = md["ads"][i + 1][1] if i + 1 < len(md["ads"]) else md.get("end", "9999")
+                if st <= today_iso < nxt:
+                    ad = {"sign": s, "sign_name": K.SIGN_NAMES[s], "start": st, "end": nxt}
+            return {"md": {"sign": md["sign"], "sign_name": md["sign_name"],
+                           "start": md["start"], "end": md.get("end")}, "ad": ad}
+    return None

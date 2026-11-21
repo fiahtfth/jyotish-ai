@@ -372,6 +372,41 @@ def _gandanta(sign: int, degree: float, span: float = K.GANDANTA_PADA_SPAN) -> b
     return False
 
 
+def _education_facts(facts) -> dict:
+    """Additive data a reader needs for study questions: houses 4/5/9, their lords,
+    Mercury/Jupiter dignity and the D24 Lagna with its lord's position."""
+    planets, houses, vargas = facts["planets"], facts["houses"], facts["vargas"]
+    lagna = facts["lagna"]["sign"]
+
+    def prec(name):
+        p = planets[name]
+        return {"sign": p["sign_name"], "house": p["house"], "dignity": list(p["dignity"]),
+                "combust": p["combust"], "retrograde": p["retrograde"], "vargottama": p["vargottama"]}
+
+    d24 = vargas.get("D24") or {}
+    d24_lagna = d24.get("Lagna", {}).get("sign")
+
+    def in_d24(name):
+        if d24_lagna is None or name not in d24:
+            return None
+        return {"sign": K.SIGN_NAMES[d24[name]["sign"]], "house": _house(d24[name]["sign"], d24_lagna)}
+
+    out = {"houses": {}, "mercury": prec("Mercury"), "jupiter": prec("Jupiter")}
+    for h in (4, 5, 9):
+        lord = houses[h]["lord"]
+        out["houses"][h] = {
+            "sign": houses[h]["sign_name"], "lord": lord, "lord_placement": prec(lord),
+            "occupants": sorted(n for n, p in planets.items() if p["house"] == h),
+            "lord_in_d24": in_d24(lord)}
+    if d24_lagna is not None:
+        d24_lord = K.PLANET_NAMES[K.SIGN_LORD[d24_lagna]]
+        out["d24"] = {"lagna": K.SIGN_NAMES[d24_lagna], "lagna_lord": d24_lord,
+                      "lagna_lord_in_d24": in_d24(d24_lord),
+                      "lagna_lord_in_d1": prec(d24_lord) if d24_lord in planets else None,
+                      "mercury": in_d24("Mercury"), "jupiter": in_d24("Jupiter")}
+    return out
+
+
 def _ashtakavarga_extras(bav, sav, h2p) -> dict:
     """Lagna BAV and shodhana as separate facts; SAV is labelled as excluding Lagna."""
     out = {"sav_includes_lagna": False,
@@ -432,6 +467,48 @@ def _convergence_facts(jd, place, rasi) -> dict:
         out["compound_dignity"] = cd
     except Exception:
         log.exception("compound_dignity unavailable")
+    return out
+
+
+def _depth_facts(facts, b, jd, place, dob, tob) -> dict:
+    """Additive depth facts (strength, dosha, varga discipline, bhava, special
+    points, Jaimini depth, Narayana). Each is best-effort: a failure leaves its
+    key absent rather than breaking the chart. Caller holds `calc_lock`."""
+    from . import bhava, dosha, special_points, varga_discipline
+    from . import strength as graha_strength
+    out = {}
+    steps = (
+        ("strength", lambda: graha_strength.compute(facts, jd, place)),
+        ("mangal_dosha", lambda: dosha.mangal_dosha(facts)),
+        ("varga_reliability", lambda: varga_discipline.reliability(b)),
+        ("special_points", lambda: special_points.compute(facts, jd, place, dob, tob)),
+    )
+    for key, fn in steps:
+        try:
+            out[key] = fn()
+            facts[key] = out[key]
+        except Exception:
+            log.exception("%s unavailable", key)
+    for key, fn in (("varga_analysis", lambda: varga_discipline.analysis(facts, out.get("varga_reliability"))),
+                    ("bhava_judgement", lambda: bhava.judge(facts))):
+        try:
+            out[key] = fn()
+        except Exception:
+            log.exception("%s unavailable", key)
+    jk = facts.get("jaimini")
+    if isinstance(jk, dict):
+        for key, fn in (("karakamsha", J.karakamsha), ("al_houses", J.al_houses),
+                        ("raja_yogas", J.raja_yogas)):
+            try:
+                jk[key] = fn(facts)
+            except Exception:
+                log.exception("jaimini %s unavailable", key)
+    try:
+        from jhora.horoscope.dhasa.raasi import narayana
+        rows = narayana.narayana_dhasa_for_rasi_chart(dob, tob, place, dhasa_level_index=2)
+        out["narayana"] = J.narayana_rows(rows)
+    except Exception:
+        log.exception("narayana dasha unavailable")
     return out
 
 
@@ -521,6 +598,7 @@ class ChartEngine:
         vargas["D1"] = d1
 
         planets = {}
+        cs_node = b.settings.node
         sun_long = d1["Sun"]["abs_longitude"]
         for pid in K.GRAHA_IDS:
             pname = K.PLANET_NAMES[pid]
@@ -541,7 +619,14 @@ class ChartEngine:
                 "sign_name": K.SIGN_NAMES[rec["sign"]],
                 "house": _house(rec["sign"], lagna_sign),
                 "nakshatra": nak,
-                "retrograde": pid in retro,
+                # mean nodes always move backward, so the node "retrograde" flag
+                # carries no meaning as an influence; nodes are never marked retrograde
+                "retrograde": pid in retro and pid not in (7, 8),
+                **({"mean_node": cs_node == "mean",
+                    "node_note": ("Mean node: apparent motion is always backward, so it is not "
+                                  "read as retrograde." if cs_node == "mean" else
+                                  "Rahu/Ketu are never read as retrograde as an influence.")}
+                   if pid in (7, 8) else {}),
                 "combust": comb,
                 "gandanta": _gandanta(rec["sign"], rec["degree"], b.settings.gandanta_arc),
                 "sandhi": (rec["degree"] < b.settings.sandhi_arc
@@ -681,6 +766,10 @@ class ChartEngine:
                 "source": K.FUNCTIONAL_SOURCE,
                 "maraka_lords": maraka,
                 "badhaka": {"house": badhaka_house, "lord": houses[badhaka_house]["lord"]},
+                "lagna_lord": K.PLANET_NAMES[lagna_lord],
+                # additive: dual roles per planet (a planet may be yogakaraka and badhaka, etc.)
+                "roles": K.functional_roles(lagna_sign),
+                "notes": list(func.get("notes", [])),
             },
             "vimshottari": {"periods": md, "birth_balance": {"lord": K.PLANET_NAMES[balance_lord], "years": balance_years},
                             "basis": "native fixed-year UT" if fixed_days else "PyJHora variable solar-year convention"},
@@ -695,6 +784,14 @@ class ChartEngine:
             "node_check": node_check,
         }
         facts.update(extra)
+        facts["education"] = _education_facts(facts)
+        try:
+            from . import yogas   # lazy: keeps engine import light
+            facts["yogas"] = yogas.detect(facts)
+        except Exception:
+            log.exception("yoga detection failed")
+            facts["yogas"] = []
+        facts.update(_depth_facts(facts, b, jd, place, dob, tob))
         return facts
 
     # ---------- jaimini ----------
@@ -801,8 +898,11 @@ class ChartEngine:
         return out
 
     def muntha_sign(self, lagna_sign: int, completed_years: int) -> int:
-        """Annual Muntha sign progression (documented simplification)."""
-        return ((lagna_sign + completed_years) % 12) + 1
+        """Annual Muntha sign progression (documented simplification).
+
+        Returns a 0-based sign index, consistent with every other sign value
+        in the engine (facts, varsha, classical all use 0-based)."""
+        return (lagna_sign + completed_years) % 12
 
 
 engine = ChartEngine()

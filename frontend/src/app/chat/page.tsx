@@ -142,10 +142,23 @@ export default function Chat() {
     } catch {}
   }
 
+  async function toggleAi() {
+    setMenu(false);
+    const off = me?.ai_processing_enabled === false;
+    if (!confirm(t(off ? "aiResumeConfirm" : "aiWithdrawConfirm"))) return;
+    try {
+      if (off) await api.resumeConsent(); else await api.withdrawConsent();
+      setMe(m => m ? { ...m, ai_processing_enabled: off } : m);
+    } catch (e) { setChatError(errMsg(e)); }
+  }
+
   async function deleteAccount() {
     setMenu(false);
     if (!confirm(t("confirmDelete"))) return;
-    try { await api.deleteMe(); } catch {}
+    try { await api.deleteMe(); } catch (e) {
+      alert(e instanceof Error && e.message ? e.message : "Could not delete the account. Please try again.");
+      return;
+    }
     clearToken(); router.replace("/login");
   }
 
@@ -185,10 +198,14 @@ export default function Chat() {
               <div className="absolute right-0 mt-2 w-56 bg-card border border-bord rounded-lg shadow-lg text-sm z-20">
                 <button onClick={() => router.push("/birth")} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("editBirth")}</button>
                 <a href="/dashboard" className="block px-3 py-2 hover:bg-bgsoft">{t("chartDashboard")}</a>
+                <a href="/predictions" className="block px-3 py-2 hover:bg-bgsoft">{t("pastPredictions")}</a>
                 <button onClick={openPreds} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("myPredictions")}</button>
                 <button onClick={() => { setLang(lang === "en" ? "hi" : "en"); setMenu(false); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("language")}</button>
                 <button onClick={() => { setMenu(false); reset(); }} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("restart")}</button>
                 <button onClick={downloadData} className="w-full text-left px-3 py-2 hover:bg-bgsoft">{t("download")}</button>
+                <button onClick={toggleAi} className="w-full text-left px-3 py-2 hover:bg-bgsoft">
+                  {me?.ai_processing_enabled === false ? t("aiResume") : t("aiWithdraw")}
+                </button>
                 <a href="/terms" className="block px-3 py-2 hover:bg-bgsoft">{t("termsLink")}</a>
                 <a href="/privacy" className="block px-3 py-2 hover:bg-bgsoft">{t("privacyPolicy")}</a>
                 <button onClick={deleteAccount} className="w-full text-left px-3 py-2 hover:bg-bgsoft text-red-500">{t("deleteAccount")}</button>
@@ -239,8 +256,18 @@ export default function Chat() {
             <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
               <div className={`chat-message max-w-[85%] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed whitespace-pre-wrap
                 ${mine ? "bg-accent text-white rounded-br-sm" : "bg-card border border-bord rounded-bl-sm"}`}>
-                {audit && <ClassicalEvidence audit={audit} expanded={!!(m.meta.expanded || m.meta.analysis?.decision?.event)} />}
-                {!(m.meta.expanded && audit) && m.content}
+                {/* calculations stay internal; shown only when the user explicitly asked for details */}
+                {audit && m.meta.expanded && <ClassicalEvidence audit={audit} expanded />}
+                {m.meta.notice && <div className="mb-2 text-xs text-muted">{m.meta.notice}</div>}
+                {m.content}
+                {i === msgs.length - 1 && !busy && !!m.meta.followup?.options?.length && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {m.meta.followup.options.map(o => (
+                      <button key={o} onClick={() => send(o)}
+                        className="border border-accent text-accent rounded-full px-3 py-1 text-sm hover:bg-accent hover:text-white transition">{o}</button>
+                    ))}
+                  </div>
+                )}
                 {m.meta.career_result?.roles && m.meta.career_result.roles.length > 0 && (
                   <details className="mt-2 text-sm whitespace-normal">
                     <summary className="cursor-pointer text-accent">Career comparison evidence</summary>
@@ -273,7 +300,7 @@ export default function Chat() {
                 ))}
                 {m.kind === "chart" && !!m.meta?.chart && (
                   <div className="mt-3 bg-bgsoft rounded-xl p-3">
-                    <NorthChart varga={vargaOf(m)} chart={chartOf(m.meta.chart)} />
+                    <NorthChart varga={vargaOf(m)} chart={chartOf(m.meta.chart)} moonChart={!!m.meta.chandra_lagna} />
                   </div>
                 )}
 

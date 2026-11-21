@@ -138,9 +138,12 @@ def test_broad_questions_keep_helpful_readings_and_hide_internal_scoring():
     reply='Your chart highlights professional responsibilities. What is happening in your current role?'
     assert Q.constrain_reply(reply,a) == reply
     b,f=make_facts()
-    fallback=Q.constrain_reply("The question needs one observable event before it can be scored.",a,f)
-    assert 'key part of this chart' in fallback
-    assert 'scored' not in fallback and 'reliable event forecast' not in fallback
+    # internal scoring wording is stripped sentence by sentence; no canned text replaces the reply
+    mixed=Q.constrain_reply("Your chart favours steady work. The question needs one observable event before it can be scored.",a,f)
+    assert mixed == "Your chart favours steady work."
+    assert Q.constrain_reply("The question needs one observable event before it can be scored.",a,f) == ""
+    # the reading helper itself no longer prints 4-decimal degrees
+    assert '°' not in Q.interpretation_reading(a,f)
 
 
 def test_modal_may_and_march_verb_do_not_trigger_month_filter():

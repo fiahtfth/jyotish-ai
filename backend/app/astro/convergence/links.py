@@ -40,10 +40,11 @@ def lord_of(facts: dict, house: int, ref: str = "lagna") -> str:
     return K.PLANET_NAMES[K.SIGN_LORD[house_sign(facts, house, ref)]]
 
 
-def adv(E: Iterable[int]) -> tuple:
-    """ADV = 12th from each house in E (computed, never hand-listed); E members are excluded."""
+def adv(E: Iterable[int], extra: Iterable[int] = ()) -> tuple:
+    """ADV = 12th from each house in E (computed, never hand-listed); E members are excluded.
+    `extra` adds an intent's explicit adverse houses (IntentConfig.E_adverse_explicit)."""
     e = set(E)
-    out = {((h - 2) % 12) + 1 for h in e}
+    out = {((h - 2) % 12) + 1 for h in e} | set(extra)
     return tuple(sorted(out - e))
 
 
@@ -113,18 +114,18 @@ def links_to_E(planet: str, E: Iterable[int], facts: dict, refs=("lagna", "moon"
     return links_to_houses(planet, E, facts, refs, +1)
 
 
-def links_to_ADV(planet: str, E: Iterable[int], facts: dict, refs=("lagna", "moon")) -> list:
-    """Adverse (-1) Evidence for links to ADV = 12th-from-each-E houses."""
-    return links_to_houses(planet, adv(E), facts, refs, -1)
+def links_to_ADV(planet: str, E: Iterable[int], facts: dict, refs=("lagna", "moon"), extra_adv=()) -> list:
+    """Adverse (-1) Evidence for links to ADV = 12th-from-each-E houses (+ explicit adverse houses)."""
+    return links_to_houses(planet, adv(E, extra_adv), facts, refs, -1)
 
 
 def weight(evs: Iterable[Evidence]) -> float:
     return round(sum(e.weight for e in evs), 4)
 
 
-def link_balance(planet: str, E: Iterable[int], facts: dict, refs=("lagna", "moon")) -> dict:
+def link_balance(planet: str, E: Iterable[int], facts: dict, refs=("lagna", "moon"), extra_adv=()) -> dict:
     """Weighted E-links vs ADV-links; `adverse_dominates` when ADV outweighs E (spec P1 item 5)."""
-    e_ev, a_ev = links_to_E(planet, E, facts, refs), links_to_ADV(planet, E, facts, refs)
+    e_ev, a_ev = links_to_E(planet, E, facts, refs), links_to_ADV(planet, E, facts, refs, extra_adv)
     ew, aw = weight(e_ev), weight(a_ev)
     return {"E": e_ev, "ADV": a_ev, "E_weight": ew, "ADV_weight": aw,
             "activates": ew > 0, "adverse_dominates": aw > ew}

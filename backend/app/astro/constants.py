@@ -56,26 +56,76 @@ MOOLATRIKONA = {0: [(4, 0.0, 20.0)], 1: [(1, 3.0, 30.0)], 2: [(0, 0.0, 12.0)],
 GANDANTA_JUNCTIONS = [(3, 4), (7, 8), (11, 0)]  # Cancer->Leo, Scorpio->Sag, Pisces->Aries
 GANDANTA_PADA_SPAN = 10.0 / 3.0  # one nakshatra pada = 3.33 deg
 
-# Functional benefics / malefics / yogakaraka per lagna sign (Parashari)
+# Functional benefics / malefics / yogakaraka per lagna sign (Parashari).
+# Role sets follow BPHS ch.34 (lordship-based). The Lagna lord is always a
+# benefic by role, so it is added to "benefics" and removed from "malefics"
+# below even where a lordship-only reading would call it malefic (e.g. Venus
+# for Taurus, who also owns the 6th). "notes" records where schools differ;
+# the default listed here is kept in those cases.
 FUNCTIONAL = {
-    0: {"benefics": {0, 1, 4}, "malefics": {3, 5, 6}, "yogakaraka": None},          # Aries (Jup also yogakaraka-ish via 9/12)
-    1: {"benefics": {3, 6}, "malefics": {4, 5, 1}, "yogakaraka": 6},                 # Taurus
-    2: {"benefics": {5}, "malefics": {2, 4, 6, 0}, "yogakaraka": None},              # Gemini
-    3: {"benefics": {2, 4}, "malefics": {5, 3, 6}, "yogakaraka": 2},                 # Cancer
-    4: {"benefics": {2, 0}, "malefics": {5, 3, 6, 1}, "yogakaraka": 2},              # Leo
-    5: {"benefics": {5}, "malefics": {2, 4, 1}, "yogakaraka": None},                 # Virgo
-    6: {"benefics": {6, 3}, "malefics": {0, 4, 2}, "yogakaraka": 6},                 # Libra
-    7: {"benefics": {4, 1, 0}, "malefics": {3, 5, 6}, "yogakaraka": None},           # Scorpio
-    8: {"benefics": {0, 2, 4}, "malefics": {5, 6, 3}, "yogakaraka": None},           # Sagittarius
-    9: {"benefics": {5, 3, 6}, "malefics": {2, 4, 1}, "yogakaraka": 5},              # Capricorn
-    10: {"benefics": {5, 0, 2}, "malefics": {4, 1, 3}, "yogakaraka": 5},             # Aquarius
-    11: {"benefics": {1, 2, 4}, "malefics": {0, 5, 6, 3}, "yogakaraka": None},       # Pisces
+    0: {"benefics": {0, 1, 4}, "malefics": {3, 5, 6}, "yogakaraka": None,           # Aries (Jup also yogakaraka-ish via 9/12)
+        "notes": ["Moon (4L) is treated as benefic by default; BPHS lists only Saturn, Mercury, Venus as malefic."]},
+    1: {"benefics": {0, 3, 6}, "malefics": {4, 5, 1}, "yogakaraka": 6,              # Taurus
+        "notes": ["BPHS ch.34 names Saturn and the Sun as auspicious; Mercury (2L/5L) is kept benefic as most schools do.",
+                  "Saturn is also the 9th lord, hence the badhaka for a fixed sign: yogakaraka and badhaka together."]},
+    2: {"benefics": {5}, "malefics": {2, 4, 6, 0}, "yogakaraka": None,              # Gemini
+        "notes": ["Saturn (8L/9L) is mixed; kept malefic by default although several schools treat it as benefic via the 9th."]},
+    3: {"benefics": {2, 4}, "malefics": {5, 3, 6}, "yogakaraka": 2,                  # Cancer
+        "notes": []},
+    4: {"benefics": {2, 0, 4}, "malefics": {5, 3, 6, 1}, "yogakaraka": 2,            # Leo
+        "notes": ["Jupiter (5L/8L) is added as benefic through its trikona lordship; the 8th lordship tempers it."]},
+    5: {"benefics": {3, 5}, "malefics": {2, 4, 1}, "yogakaraka": None,              # Virgo
+        "notes": ["Venus (2L/9L) is added as benefic through its 9th lordship."]},
+    6: {"benefics": {6, 3}, "malefics": {0, 4, 2}, "yogakaraka": 6,                  # Libra
+        "notes": []},
+    7: {"benefics": {4, 1, 0}, "malefics": {3, 5, 6}, "yogakaraka": None,            # Scorpio
+        "notes": []},
+    8: {"benefics": {0, 2, 4}, "malefics": {5, 6, 3}, "yogakaraka": None,            # Sagittarius
+        "notes": []},
+    9: {"benefics": {5, 3, 6}, "malefics": {2, 4, 1}, "yogakaraka": 5,               # Capricorn
+        "notes": []},
+    10: {"benefics": {5, 0, 2}, "malefics": {4, 1, 3}, "yogakaraka": 5,              # Aquarius
+         "notes": ["Sun/Mars/Mercury roles for Aquarius differ between schools; default retained, not verified here."]},
+    11: {"benefics": {1, 2, 4}, "malefics": {0, 5, 6, 3}, "yogakaraka": None,        # Pisces
+         "notes": ["Mars and Jupiter are sometimes read together as a yogakaraka pair; no single yogakaraka is set."]},
 }
 
 # Per-row source tag of the functional role table above.
 FUNCTIONAL_SOURCE = "BPHS ch.34"
-for _row in FUNCTIONAL.values():
+for _sign, _row in FUNCTIONAL.items():
     _row["source"] = FUNCTIONAL_SOURCE
+    _ll = SIGN_LORD[_sign]
+    _row["lordship_malefics"] = set(_row["malefics"])      # BPHS lordship reading, before the Lagna-lord override
+    _row["benefics"] = set(_row["benefics"]) | {_ll}
+    _row["malefics"] = set(_row["malefics"]) - {_ll}
+
+
+def functional_roles(lagna_sign: int) -> dict:
+    """Per-planet role tags for a Lagna, e.g. Taurus: Saturn -> yogakaraka + badhaka,
+    Venus -> lagna_lord + malefic_by_lordship (a planet can hold several roles)."""
+    row = FUNCTIONAL[lagna_sign]
+    sign_of_house = lambda h: (lagna_sign + h - 1) % 12
+    lord_of_house = lambda h: SIGN_LORD[sign_of_house(h)]
+    owned = {p: sorted(h for h in range(1, 13) if lord_of_house(h) == p) for p in range(7)}
+    badhaka = lord_of_house({"movable": 11, "fixed": 9, "dual": 7}[SIGN_MODALITY[lagna_sign]])
+    roles = {}
+    for pid in range(7):
+        r = []
+        if pid == SIGN_LORD[lagna_sign]:
+            r.append("lagna_lord")
+        if pid == row["yogakaraka"]:
+            r.append("yogakaraka")
+        if pid == badhaka:
+            r.append("badhaka")
+        if pid in (lord_of_house(2), lord_of_house(7)):
+            r.append("maraka")
+        if pid in row["benefics"] and pid != SIGN_LORD[lagna_sign]:
+            r.append("benefic_by_lordship")
+        if pid in row["lordship_malefics"]:
+            r.append("malefic_by_lordship")
+        roles[PLANET_NAMES[pid]] = r
+    return roles
+
 
 # Combustion orbs (degrees from Sun) — Surya Siddhanta defaults.
 COMBUST_ORB = {1: 12.0, 2: 17.0, 3: 14.0, 4: 11.0, 5: 10.0, 6: 15.0}
@@ -99,6 +149,46 @@ def combust_orb(pid, retro=False, table="surya_siddhanta"):
 
 # Natural enemies (BPHS ch.3), used for enemy-sign tests.
 NATURAL_ENEMIES = {0: {5, 6}, 1: set(), 2: {3}, 3: {1}, 4: {3, 5}, 5: {0, 1}, 6: {0, 1, 2}}
+# Natural friends (BPHS ch.3, Naisargika maitri); planets in neither set are neutral.
+NATURAL_FRIENDS = {0: {1, 2, 4}, 1: {0, 3}, 2: {0, 1, 4}, 3: {0, 5}, 4: {0, 1, 2},
+                   5: {3, 6}, 6: {3, 5}}
+
+
+def natural_relation(pid: int, other: int) -> str:
+    """'friend' | 'neutral' | 'enemy' (BPHS ch.3 natural relationship of pid towards other)."""
+    if other in NATURAL_FRIENDS.get(pid, set()):
+        return "friend"
+    if other in NATURAL_ENEMIES.get(pid, set()):
+        return "enemy"
+    return "neutral"
+
+
+# Graha drishti per BPHS ch.26: every graha aspects the 7th; Mars 4/8, Jupiter 5/9,
+# Saturn 3/10. Rahu/Ketu 5/9 (and 2/12 in some texts) are a school variant, kept
+# out of this table; `ASPECTS` above still carries the legacy node 5/9 entries.
+PARASHARI_ASPECTS = {"Mars": (4, 7, 8), "Jupiter": (5, 7, 9), "Saturn": (3, 7, 10)}
+NODE_ASPECT_VARIANT = (5, 7, 9)
+
+
+def parashari_reaches(name, sign, include_node_variant=False):
+    """Signs aspected (incl. occupied) by `name` from `sign`; nodes get only the 7th
+    unless include_node_variant (5/9) is requested."""
+    if name in ("Rahu", "Ketu") and include_node_variant:
+        houses = NODE_ASPECT_VARIANT
+    else:
+        houses = PARASHARI_ASPECTS.get(name, (7,))
+    return {sign, *((sign + h - 1) % 12 for h in houses)}
+
+
+KENDRA_HOUSES = {1, 4, 7, 10}
+TRIKONA_HOUSES = {1, 5, 9}
+DUSTHANA_HOUSES = {6, 8, 12}
+UPACHAYA_HOUSES = {3, 6, 10, 11}
+
+
+def house_from(sign: int, ref_sign: int) -> int:
+    """1-based house of `sign` counted from `ref_sign` (whole sign)."""
+    return (int(sign) - int(ref_sign)) % 12 + 1
 
 HEALTH_DISCLAIMER = ("This is a traditional astrological interpretation. "
                      "Please follow your clinician’s advice for health concerns.")
@@ -118,6 +208,15 @@ DOMAINS = {
     "health":     {"houses": [1, 6, 8, 12], "varga": "D6", "karaka": "Gnatikaraka", "arudhas": ["A6", "A8"], "label": "health or physical resilience", "disclaimer": HEALTH_DISCLAIMER},
 }
 MIN_CALIBRATION_AGE_FOR_DOMAIN = {"relationship": 21, "career": 16, "finance": 16}
+
+
+def min_age_for_domain(domain: str) -> int:
+    """Youngest age (years) at which a domain is read in calibration (0 = no floor)."""
+    return MIN_CALIBRATION_AGE_FOR_DOMAIN.get(domain, 0)
+
+
+# Secondary natal-promise houses read beside the primary house (DOMAINS[d]["houses"][0]).
+PROMISE_SECONDARY_HOUSES = {"finance": [11], "education": [5, 9]}
 
 VARGA_FUNCTIONS = {}  # filled lazily in engine to avoid importing jhora at module import time
 

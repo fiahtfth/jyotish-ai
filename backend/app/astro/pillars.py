@@ -13,6 +13,12 @@ from . import constants as K
 from .engine import BirthInput, engine
 
 
+def varsha_label(completed_years: int) -> str:
+    """One label for an annual chart everywhere: the year that begins at solar
+    return number `completed_years` (= completed years of age at that return)."""
+    return f"varsha year {completed_years}"
+
+
 def _to_date(s: str) -> date:
     return datetime.strptime(s, "%Y-%m-%d").date()
 
@@ -43,8 +49,26 @@ def _lord_of_house(facts, h):
 # ---------------------------------------------------------------- pillars
 
 # Minimum required shadbala strength (rupas) per Parashara
-_SHADBALA_MIN = {"Sun": 5.0, "Moon": 6.0, "Mars": 5.0, "Mercury": 7.0,
+_SHADBALA_MIN = {"Sun": 6.5,  # BPHS: 390 shashtiamsas "Moon": 6.0, "Mars": 5.0, "Mercury": 7.0,
                  "Jupiter": 6.5, "Venus": 5.5, "Saturn": 5.0}
+
+
+_NODES = ("Rahu", "Ketu")
+
+
+def _node_proxies(facts, node: str) -> list[tuple[str, str]]:
+    """Planets through which a node acts: dispositor, conjunct planets, nakshatra lord."""
+    p = facts["planets"]
+    rec = p[node]
+    out = [(K.PLANET_NAMES[K.SIGN_LORD[rec["sign"]]], "dispositor")]
+    out += [(n, "conjunct") for n, r in p.items() if n != node and r["sign"] == rec["sign"]]
+    out.append((rec["nakshatra"]["lord"], "nakshatra lord"))
+    seen, uniq = set(), []
+    for n, how in out:
+        if n not in seen and n not in _NODES:
+            seen.add(n)
+            uniq.append((n, how))
+    return uniq
 
 
 def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
@@ -58,6 +82,10 @@ def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: da
     shad = facts.get("shadbala") or []
     shad_rupas = shad[7] if len(shad) > 7 else None
 
+    # Collect the dasha lords seen at the three sample dates, then score each
+    # distinct lord ONCE per window (a lord that spans all samples is not
+    # counted three times).
+    lords: dict[str, list[str]] = {}
     for t in [start, _mid(start, end), end]:
         run = engine.running_vimshottari(birth, (t.year, t.month, t.day))
         if len(run) < 2:
@@ -65,53 +93,65 @@ def pillar_parashari(facts, birth: BirthInput, domain: str, start: date, end: da
         md_lord = run[0]["lords"][0]
         ad_lord = run[1]["lords"][1]
         rules.append(f"dasha@{t}: {md_lord}/{ad_lord}")
-
-        for lord in {md_lord, ad_lord}:
-            # lord owns a domain house?
-            owned = [h for h in range(1, 13) if facts["houses"][h]["lord"] == lord]
-            if any(h in houses for h in owned):
+        for lord in (md_lord, ad_lord):
+            lords.setdefault(lord, [])
+    # Rahu/Ketu own no signs: read them through their proxies (dispositor,
+    # conjunct planets, nakshatra lord); each proxy counts once for the window.
+    for node in [l for l in lords if l in _NODES]:
+        for proxy, how in _node_proxies(facts, node):
+            lords.setdefault(proxy, []).append(f"{how} of {node}")
+        rules.append(f"{node} scored through proxies "
+                     f"({', '.join(f'{pr} as {how}' for pr, how in _node_proxies(facts, node))}); "
+                     "nodes are not read as retrograde")
+    for lord in [l for l in lords if l not in _NODES]:
+        via = f" [via {'; '.join(lords[lord])}]" if lords[lord] else ""
+        # lord owns a domain house?
+        owned = [h for h in range(1, 13) if facts["houses"][h]["lord"] == lord]
+        if any(h in houses for h in owned):
+            weights += 1
+            hs = "/".join(str(h) for h in sorted(set(owned) & set(houses)))
+            evidence.append(f"{lord} rules house {hs} relevant to {domain}{via}")
+        # lord sits in a domain house?
+        if lord in facts["planets"] and facts["planets"][lord]["house"] in houses:
+            weights += 1
+            evidence.append(f"{lord} placed in house {facts['planets'][lord]['house']} relevant to {domain}{via}")
+        # dignity in the domain varga
+        varga = facts["vargas"].get(spec["varga"])
+        if varga and lord in varga:
+            vsign = varga[lord]["sign"]
+            d1sign = facts["planets"][lord]["sign"] if lord in facts["planets"] else None
+            if d1sign is not None and vsign == d1sign:
+                evidence.append(f"{lord} vargottama in {spec['varga']}{via}")
                 weights += 1
-                hs = "/".join(str(h) for h in sorted(set(owned) & set(houses)))
-                evidence.append(f"{lord} rules house {hs} relevant to {domain}")
-            # lord sits in a domain house?
-            if lord in facts["planets"] and facts["planets"][lord]["house"] in houses:
+        # a lord of a dusthana only (no kendra/trikona lordship) running the period
+        # delivers the dusthana's themes; the Lagna lord is exempt
+        dusthana = [h for h in owned if h in (6, 8, 12)]
+        if (dusthana and not set(owned) & {1, 4, 5, 7, 9, 10}):
+            conflicts += 1
+            evidence.append(f"{lord} lords dusthana house(s) {dusthana} only (no kendra/trikona) "
+                            f"and runs this period{via}")
+        if lord in facts["planets"] and "debilitated" in facts["planets"][lord]["dignity"]:
+            conflicts += 1
+            evidence.append(f"{lord} debilitated in D1{via}")
+        # bhava chalit: a planet that slips into/out of a domain house by
+        # cusp position changes its delivery
+        bh = bhava.get(lord)
+        if bh and lord in facts["planets"] and bh != facts["planets"][lord]["house"]:
+            if bh in houses:
                 weights += 1
-                evidence.append(f"{lord} placed in house {facts['planets'][lord]['house']} relevant to {domain}")
-            # dignity in the domain varga
-            varga = facts["vargas"].get(spec["varga"])
-            if varga and lord in varga:
-                vsign = varga[lord]["sign"]
-                d1sign = facts["planets"][lord]["sign"] if lord in facts["planets"] else None
-                if d1sign is not None and vsign == d1sign:
-                    evidence.append(f"{lord} vargottama in {spec['varga']}")
-                    weights += 1
-            # lord of difficult houses for the domain
-            dusthana = [h for h in owned if h in (6, 8, 12)]
-            if dusthana and lord in facts["functional"]["maraka_lords"]:
+                evidence.append(f"{lord} moves into house {bh} by bhava-chalit — supports {domain}")
+            elif bh in (6, 8, 12) and facts["planets"][lord]["house"] in houses:
                 conflicts += 1
-                evidence.append(f"{lord} is a maraka lord ({dusthana}) — friction in this domain")
-            if lord in facts["planets"] and "debilitated" in facts["planets"][lord]["dignity"]:
+                evidence.append(f"{lord} slips to dusthana {bh} in bhava-chalit — support is diluted")
+        # shadbala: dasha lords must be strong enough to deliver
+        pid = {v: k for k, v in K.PLANET_NAMES.items()}.get(lord)
+        if shad_rupas is not None and pid is not None and pid < len(shad_rupas):
+            req = _SHADBALA_MIN.get(lord, 6.0)
+            if shad_rupas[pid] >= req * 1.3:
+                evidence.append(f"{lord} strong in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas)")
+            elif shad_rupas[pid] < req:
                 conflicts += 1
-                evidence.append(f"{lord} debilitated in D1")
-            # bhava chalit: a planet that slips into/out of a domain house by
-            # cusp position changes its delivery
-            bh = bhava.get(lord)
-            if bh and lord in facts["planets"] and bh != facts["planets"][lord]["house"]:
-                if bh in houses:
-                    weights += 1
-                    evidence.append(f"{lord} moves into house {bh} by bhava-chalit — supports {domain}")
-                elif bh in (6, 8, 12) and facts["planets"][lord]["house"] in houses:
-                    conflicts += 1
-                    evidence.append(f"{lord} slips to dusthana {bh} in bhava-chalit — support is diluted")
-            # shadbala: dasha lords must be strong enough to deliver
-            pid = {v: k for k, v in K.PLANET_NAMES.items()}.get(lord)
-            if shad_rupas is not None and pid is not None and pid < len(shad_rupas):
-                req = _SHADBALA_MIN.get(lord, 6.0)
-                if shad_rupas[pid] >= req * 1.3:
-                    evidence.append(f"{lord} strong in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas)")
-                elif shad_rupas[pid] < req:
-                    conflicts += 1
-                    evidence.append(f"{lord} weak in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas) — delivers less than promised")
+                evidence.append(f"{lord} weak in shadbala ({shad_rupas[pid]:.1f} vs {req} rupas) — delivers less than promised")
 
     if weights >= 3:
         verdict = "support"
@@ -211,11 +251,11 @@ def pillar_tajika(facts, birth: BirthInput, domain: str, start: date, end: date)
             pvb = v.get("pancha_vargeeya_bala") or {}
             mudda = v.get("mudda") or {}
             mudda_lords = mudda.get("periods", [])
-            rules.append(f"varsha year {cy + 1} (return {v['return']['local'][:10]}): "
+            rules.append(f"{varsha_label(cy)} (return {v['return']['local'][:10]}): "
                          f"Varsha Lagna {vlagna}, Muntha {K.SIGN_NAMES[ms]} "
                          f"({house}th from varsha lagna), year lord {yl.get('planet', '?')}")
             if mudda_lords:
-                rules.append(f"mudda dasha year {cy + 1}: "
+                rules.append(f"mudda dasha, {varsha_label(cy)}: "
                              f"{'/'.join('-'.join(p['lords']) for p in mudda_lords[:9])}")
             if house in K.DOMAINS[domain]["houses"]:
                 supports += 1
@@ -259,7 +299,7 @@ def pillar_tajika(facts, birth: BirthInput, domain: str, start: date, end: date)
         except Exception as exc:
             method = ("annual chart unavailable — documented Muntha-only fallback "
                       "read from the natal lagna")
-            ms = engine.muntha_sign(lagna_sign, cy) - 1  # -> 0-based
+            ms = engine.muntha_sign(lagna_sign, cy)  # 0-based sign index
             house = _house_of(ms, lagna_sign)
             rules.append(f"muntha year {cy}: {K.SIGN_NAMES[ms]} (house {house}); "
                          f"annual chart error: {type(exc).__name__}: {exc}")
@@ -285,6 +325,26 @@ def pillar_tajika(facts, birth: BirthInput, domain: str, start: date, end: date)
             "method_note": method}
 
 
+_SATURN_FLAG_TEXT = {
+    "ashtama": "Saturn transiting 8th from natal Moon (ashtama Shani)",
+    "kantaka": "Saturn transiting 4th from natal Moon (kantaka Shani)",
+    "sade_sati": "Saturn transiting 12th/1st/2nd from natal Moon (sade sati)",
+}
+
+
+def saturn_moon_states(moon_sign: int, saturn_sign: int) -> list[str]:
+    """Flagged Saturn states against the natal Moon: ashtama (8th), kantaka (4th), sade sati (12/1/2)."""
+    h = _house_of(saturn_sign, moon_sign)
+    out = []
+    if h == 8:
+        out.append("ashtama")
+    if h == 4:
+        out.append("kantaka")
+    if h in (12, 1, 2):
+        out.append("sade_sati")
+    return out
+
+
 def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end: date) -> dict:
     """P4 — double transit + fast transits, SAV/BAV bindus, nakshatra sub-period."""
     lagna_sign = facts["lagna"]["sign"]
@@ -295,31 +355,45 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
     supports, conflicts = 0, 0
     months = _month_samples(start, end)
     ju_hits, sa_hits, fast_hits = set(), set(), set()
+    domain_signs = {facts["houses"][h]["sign"]: h for h in houses}
     target_sign = facts["houses"][houses[0]]["sign"]
     targets = {target_sign, facts["planets"][_lord_of_house(facts, houses[0])]["sign"]}
     simultaneous = False
+    moon_sign = facts["planets"]["Moon"]["sign"]
+    states: set = set()       # every transit state is recorded, and counted, once per window
     for t in months:
-        pos = engine.transit_positions((t.year, t.month, t.day), place)
+        pos = engine.transit_positions((t.year, t.month, t.day), place, birth.settings)
         if all(n in pos for n in ("Jupiter", "Saturn")):
             simultaneous |= bool(targets & K.reaches("Jupiter", pos["Jupiter"]["sign"]) & K.reaches("Saturn", pos["Saturn"]["sign"]))
         for name in ("Jupiter", "Saturn"):
             if name not in pos:
                 continue
-            h = _house_of(pos[name]["sign"], lagna_sign)
-            if h in houses:
-                (ju_hits if name == "Jupiter" else sa_hits).add((t.year, t.month))
-                rules.append(f"transit {name} in house {h} at {t}")
+            tsign = pos[name]["sign"]
+            h = _house_of(tsign, lagna_sign)
+            if h in houses and (name, "occupies", h) not in states:
+                states.add((name, "occupies", h))
+                (ju_hits if name == "Jupiter" else sa_hits).add(("occupy", h))
+                rules.append(f"transit {name} in house {h} (first seen {t})")
+            # graha drishti onto domain-house signs (sign occupancy is reported above)
+            for sign, dh in domain_signs.items():
+                if sign != tsign and sign in K.reaches(name, tsign) and (name, "aspects", dh) not in states:
+                    states.add((name, "aspects", dh))
+                    (ju_hits if name == "Jupiter" else sa_hits).add(("aspect", dh))
+                    rules.append(f"transit {name} aspects house {dh} (first seen {t})")
         for name in ("Sun", "Mars"):
             if name in pos:
                 h = _house_of(pos[name]["sign"], lagna_sign)
-                if h in houses:
+                if h in houses and (name, "occupies", h) not in states:
+                    states.add((name, "occupies", h))
                     fast_hits.add(name)
-                    rules.append(f"fast transit {name} in house {h} at {t}")
+                    rules.append(f"fast transit {name} in house {h} (first seen {t})")
         if "Saturn" in pos:
-            moon_house = _house_of(pos["Saturn"]["sign"], facts["planets"]["Moon"]["sign"])
-            if moon_house == 8:
+            for flag in saturn_moon_states(moon_sign, pos["Saturn"]["sign"]):
+                if ("Saturn", flag) in states:
+                    continue
+                states.add(("Saturn", flag))
                 conflicts += 1
-                evidence.append("Saturn transiting 8th from natal Moon (ashtama Shani)")
+                evidence.append(_SATURN_FLAG_TEXT[flag])
     sav = facts.get("sarvastakavarga")
     if simultaneous:
         supports += 2
@@ -327,7 +401,8 @@ def pillar_micro_timing(facts, birth: BirthInput, domain: str, start: date, end:
     elif ju_hits or sa_hits:
         supports += 1
         who = "Jupiter" if ju_hits else "Saturn"
-        evidence.append(f"{who} transited {domain}-relevant houses during the window")
+        kinds = sorted({{"occupy": "occupied", "aspect": "aspected"}[k] for k, _ in (ju_hits or sa_hits)})
+        evidence.append(f"{who} {' and '.join(kinds)} {domain}-relevant houses during the window")
     if fast_hits:
         evidence.append(f"fast transit trigger ({'/'.join(sorted(fast_hits))}) crossing {domain} houses")
         supports += 1
@@ -421,4 +496,7 @@ def evaluate(facts, birth: BirthInput, domain: str, start: date, end: date) -> d
         "calculation_evidence_ids": evidence_ids,
         "traditional_rule_ids": rule_ids,
         "limitations": limitations + [CONVERGENCE_DISCLAIMER],
+        # The skeptic disclaimer is audit metadata: the LLM/user-facing layer may omit it.
+        "audit": {"disclaimer": CONVERGENCE_DISCLAIMER, "llm_visible_limitations": limitations},
+        "audit_only": ["convergence_disclaimer", "audit"],   # plus the last entry of "limitations"
     }

@@ -12,6 +12,7 @@ from .. import constants as K
 from .. import jaimini as jaimini_mod
 from .. import yogas as yogas_mod
 from . import links
+from ._facts import varga_unusable
 from .dedup import badge_text, dedup_pillars
 from .promise import (DUSTHANA, GOOD_RELATIONS, BAD_RELATIONS, KENDRA_TRIKONA, _neecha_bhanga, _ratio,
                       _vhouse, _vimshopaka, promise_gate, resolve_karakas)
@@ -83,6 +84,9 @@ def _m2(facts, cfg):
     chart = (facts.get("vargas") or {}).get(v) if v else None
     if not v or not chart or "Lagna" not in chart:
         return PillarResult.not_evaluated("M2", f"varga {v or '(none configured)'} not available")
+    gated = varga_unusable(facts, v)
+    if gated:
+        return PillarResult.not_evaluated("M2", gated)
     evs = []
     h = cfg.E[0] if cfg.E else None
     targets = [(links.lord_of(facts, h), f"lord of {h}")] if h else []

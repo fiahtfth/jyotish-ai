@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, Response, StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session, object_session
 
-from . import geo, mailer
+from . import geo, mailer, moonmode
 from .auth import (
     consume_auth_token, create_token, current_user, hash_password, issue_auth_token,
     verify_password,
@@ -24,7 +24,7 @@ from .chat import memory, orchestrator
 from .config import settings
 from .policy import TERMS_VERSION
 from .db import (
-    BirthProfile, CalibrationEvent, Conversation, Message, MessageFeedback, PredictionRecord,
+    AuthToken, BirthProfile, CalibrationEvent, Conversation, Message, MessageFeedback, PredictionRecord,
     ProblemReport, SessionLocal, UserMilestone,
     User, get_db, init_db, new_token_nonce,
 )
@@ -131,7 +131,8 @@ def register(body: RegisterIn, request: Request, background: BackgroundTasks,
         raise HTTPException(409, "account already exists")
     u = User(email=body.email.lower(), password_hash=hash_password(body.password),
              display_name=body.display_name, llm_consent=True,
-             llm_consent_at=_now(), terms_version=TERMS_VERSION, terms_accepted_at=_now())
+             llm_consent_at=_now(), terms_version=TERMS_VERSION, terms_accepted_at=_now(),
+             age_confirmed_at=_now())
     db.add(u)
     db.flush()
     raw = issue_auth_token(db, u, "verify")
@@ -235,7 +236,33 @@ def me(user: User = Depends(current_user)):
             "llm_consent": bool(user.llm_consent),
             "ai_terms_required": user.terms_version != TERMS_VERSION,
             "terms_version": user.terms_version,
-            "email_verified": bool(user.email_verified)}
+            "email_verified": bool(user.email_verified),
+            "age_confirmed": bool(user.age_confirmed_at),
+            "ai_processing_enabled": user.ai_withdrawn_at is None}
+
+
+@app.post("/api/auth/me/withdraw-consent")
+def withdraw_ai_consent(user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Withdraw consent for AI processing without deleting the account: nothing is sent to
+    external AI providers any more and chat falls back to computed-only replies."""
+    if user.ai_withdrawn_at is None:
+        user.ai_withdrawn_at = _now()
+    user.llm_consent = False
+    db.commit()
+    return {"ai_processing_enabled": False, "ai_withdrawn_at": _iso(user.ai_withdrawn_at)}
+
+
+@app.post("/api/auth/me/resume-consent")
+def resume_ai_consent(body: TermsIn, user: User = Depends(current_user), db: Session = Depends(get_db)):
+    """Switch AI processing back on (requires accepting the current service terms again)."""
+    if user.terms_version != TERMS_VERSION:
+        user.terms_version = TERMS_VERSION
+        user.terms_accepted_at = _now()
+    user.ai_withdrawn_at = None
+    user.llm_consent = True
+    user.llm_consent_at = _now()
+    db.commit()
+    return {"ai_processing_enabled": True}
 
 
 @app.post("/api/auth/terms")
@@ -288,6 +315,8 @@ def export_me(user: User = Depends(current_user), db: Session = Depends(get_db))
                     "llm_consent_at": _iso(user.llm_consent_at),
                     "terms_version": user.terms_version,
                     "prediction_followups": bool(user.prediction_followups),
+                    "age_confirmed_at": _iso(user.age_confirmed_at),
+                    "ai_withdrawn_at": _iso(user.ai_withdrawn_at),
                     "terms_accepted_at": _iso(user.terms_accepted_at)},
         # legacy key: the active profile
         "birth_profile": ({**_profile_out(active), "rectified_from": active.rectified_from}
@@ -321,14 +350,29 @@ def export_me(user: User = Depends(current_user), db: Session = Depends(get_db))
 
 @app.delete("/api/auth/me")
 def delete_me(user: User = Depends(current_user), db: Session = Depends(get_db)):
-    db.query(MessageFeedback).filter(MessageFeedback.user_id == user.id).delete()
-    db.query(ProblemReport).filter(ProblemReport.user_id == user.id).delete()
-    for c in user.conversations:
-        db.delete(c)
-    for p in list(user.profiles):
-        db.delete(p)
-    db.delete(user)
-    db.commit()
+    try:
+        # feedback on this user's messages (from anyone) must go before the messages
+        mids = [m.id for c in user.conversations for m in c.messages]
+        if mids:
+            db.query(MessageFeedback).filter(MessageFeedback.message_id.in_(mids)).delete(
+                synchronize_session=False)
+        db.query(MessageFeedback).filter(MessageFeedback.user_id == user.id).delete(
+            synchronize_session=False)
+        db.query(ProblemReport).filter(ProblemReport.user_id == user.id).delete(
+            synchronize_session=False)
+        db.query(AuthToken).filter(AuthToken.user_id == user.id).delete(
+            synchronize_session=False)
+        for c in list(user.conversations):
+            db.delete(c)
+        for p in list(user.profiles):
+            db.delete(p)
+        db.flush()
+        db.delete(user)
+        db.commit()
+    except Exception:
+        db.rollback()
+        logging.getLogger(__name__).exception("account deletion failed")
+        raise HTTPException(500, "could not delete the account; please try again")
     return {"deleted": True}
 
 
@@ -360,6 +404,11 @@ def _profile_out(p: BirthProfile) -> dict:
         "dst_fold": p.dst_fold, "calc_preset": p.calc_preset or "default",
         "offset_source": p.offset_source or "",
         "tz_warnings": json.loads(p.tz_warnings or "[]"), "tzdb_version": p.tzdb_version or "",
+        "gender": p.gender, "residence_name": p.residence_name or "",
+        "residence_state": p.residence_state or "", "residence_country": p.residence_country or "",
+        "residence_latitude": p.residence_lat, "residence_longitude": p.residence_lon,
+        "residence_timezone_name": p.residence_timezone_name or "",
+        "is_minor": orchestrator.is_minor(p),
     }
 
 
@@ -492,6 +541,24 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
     p.offset_source = resolved["offset_source"]
     p.tz_warnings = json.dumps(resolved["tz_warnings"])
     p.tzdb_version = resolved["tzdb_version"]
+    fields = body.model_fields_set
+    if "gender" in fields:
+        p.gender = body.gender
+    if fields & {"residence_name", "residence_state", "residence_country",
+                 "residence_latitude", "residence_longitude"}:
+        if body.residence_name.strip():
+            try:
+                res = geo.resolve_place(body.residence_name.strip(), state=body.residence_state,
+                                        country=body.residence_country,
+                                        lat=body.residence_latitude, lon=body.residence_longitude)
+            except ValueError as exc:
+                raise HTTPException(422, detail={"code": "invalid_residence", "message": str(exc)})
+            p.residence_name, p.residence_state = res["name"], res["state"]
+            p.residence_country, p.residence_lat = res["country"], res["latitude"]
+            p.residence_lon, p.residence_timezone_name = res["longitude"], res["timezone_name"]
+        else:
+            p.residence_name = p.residence_state = p.residence_country = None
+            p.residence_lat = p.residence_lon = p.residence_timezone_name = None
 
     if material_change:
         _rate_limit(user.id, "profile", settings.PROFILE_RATE_LIMIT_PER_MIN,
@@ -614,9 +681,8 @@ def _msg_out(m: Message, rating: int = 0) -> dict:
     meta = json.loads(m.meta_json or "{}")
     content = m.content
     if m.role == "assistant":
+        # the health note is applied once per conversation when the reply is saved
         content = visible_reply(content)
-        if meta.get("analysis", {}).get("domain") == "health":
-            content = orchestrator._apply_disclaimer(content, "health")
     return {"id": m.id, "role": m.role, "content": content, "kind": m.kind,
             "meta": meta, "created_at": m.created_at.isoformat(),
             "rating": rating}
@@ -839,10 +905,13 @@ def chat_reset(user: User = Depends(current_user), db: Session = Depends(get_db)
 def get_chart(varga: str, user: User = Depends(current_user)):
     p = _require_profile(user)
     v = varga.upper()
-    facts = orchestrator.chart_facts(p)
+    facts = orchestrator.reading_facts(p)
     if v not in facts["vargas"]:
+        if moonmode.is_unknown(p):
+            raise HTTPException(404, f"{v} needs a birth time; only the Moon chart is available")
         raise HTTPException(404, f"{v} not computed")
-    return {"varga": v, "lagna": facts["lagna"], "chart": facts["vargas"][v],
+    return {"varga": v, "lagna": facts["lagna"], "chart": moonmode.merge_markers(facts, facts["vargas"][v], v),
+            "chandra_lagna": moonmode.is_unknown(p),
             "fingerprint": p.calc_fingerprint, "settings": {**facts["meta"], "tzdb_version": p.tzdb_version or ""}}
 
 
@@ -878,8 +947,11 @@ def chart_transits(start: date, end: date, planet: str = "Saturn", user: User = 
 @app.get("/api/kp")
 def kp_chart(user: User = Depends(current_user)):
     profile = _require_profile(user)
+    if moonmode.is_unknown(profile):
+        raise HTTPException(409, "KP needs the birth time; it is not available while the birth time is unknown.")
+    from .astro.convergence import kp as conv_kp
     try:
-        return kp.calculate(orchestrator.birth_input(profile))
+        return conv_kp.kp_chart(orchestrator.birth_input(profile))
     except ValueError as exc:
         raise HTTPException(422, str(exc))
 
@@ -1018,6 +1090,12 @@ def health():
     if revision := os.environ.get("RENDER_GIT_COMMIT"):
         status["revision"] = revision
     return status
+
+
+from . import api_extra  # noqa: E402
+app.include_router(api_extra.router)
+from . import api_outcomes  # noqa: E402
+app.include_router(api_outcomes.router)
 
 
 # ------------------------------------------------------------- frontend

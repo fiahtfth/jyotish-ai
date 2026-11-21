@@ -303,7 +303,12 @@ def test_timing_pattern_false_positives():
     assert not O.TIMING_PAT.search("which day is it today")
     assert O.TIMING_PAT.search("good day to invest")
     assert O.TIMING_PAT.search("which day is best for the exam")
-    assert O.TIMING_PAT.search("when should I travel")
+    assert O.TIMING_PAT.search("muhurat for griha pravesh")
+    assert O.TIMING_PAT.search("auspicious date for the wedding")
+    # life-timing questions get a reading, not a list of days
+    assert not O.TIMING_PAT.search("when should I travel")
+    assert not O.TIMING_PAT.search("when should I marry")
+    assert not O.TIMING_PAT.search("is it a good time to invest")
 
 
 # ---------- chat integration ----------
@@ -325,7 +330,7 @@ def _new_user():
     c = _client()
     email = f"pa_{uuid.uuid4().hex[:8]}@test.dev"
     tok = c.post("/api/auth/register",
-                 json={"terms_accepted": True, "email": email, "password": "password123"}).json()["access_token"]
+                 json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123"}).json()["access_token"]
     h = {"authorization": f"Bearer {tok}"}
     c.put("/api/profile", json=ARJUN, headers=h)
     return c, h
@@ -366,13 +371,12 @@ def test_timing_chat_before_and_after_checks():
     c.get("/api/chat/history", headers=h)
     # Asking for timing before the checks opens a qualified reading.
     r = c.post("/api/chat/send",
-               json={"text": "when should I buy a car?"}, headers=h)
-    body = " ".join(m["content"] for m in r.json()).lower()
-    assert "less accurate" in body and r.json()[-1]["kind"] == "timing"
+               json={"text": "which day should I buy a car?"}, headers=h)
+    assert "less accurate" in r.json()[-1]["meta"]["notice"] and r.json()[-1]["kind"] == "timing"
 
     c, h = _calibrated_client()
     r = c.post("/api/chat/send",
-               json={"text": "when should I buy a car?"}, headers=h)
+               json={"text": "best day to buy a car?"}, headers=h)
     assert r.status_code == 200
     m = next(m for m in reversed(r.json())
              if m.get("kind") == "timing")
@@ -403,10 +407,11 @@ def test_report_chat_with_unchecked_birth_time():
     c.get("/api/chat/history", headers=h)
     r = c.post("/api/chat/send",
                json={"text": "show me my report"}, headers=h)
+    # no period named: the report covers the coming twelve months
     body = " ".join(m["content"] for m in r.json()).lower()
-    assert "less accurate" in body and "what period" in body
-    assert all(m.get("kind") != "report" for m in r.json())
-    longer = c.post("/api/chat/send", json={"text": "next two years"}, headers=h)
+    assert "what period" not in body and r.json()[-1]["kind"] == "report"
+    assert "less accurate" in r.json()[-1]["meta"]["notice"]
+    longer = c.post("/api/chat/send", json={"text": "give me my report for the next two years"}, headers=h)
     assert longer.json()[-1]["meta"]["pending_report"]
     assert "up to one year" in longer.json()[-1]["content"]
     r = c.post("/api/chat/send", json={"text": "next month"}, headers=h)
@@ -417,6 +422,7 @@ def test_panchang_during_calibration_keeps_event_pending():
     """A factual lookup preserves the pending check without repeating it."""
     c, h = _new_user()
     c.get("/api/chat/history", headers=h)
+    c.post("/api/chat/send", json={"text": "Ask me a few questions instead"}, headers=h)
     r = c.post("/api/chat/send", json={"text": "what's today's panchang?"},
                headers=h)
     assert r.status_code == 200
@@ -455,7 +461,7 @@ def test_daily_reading_gate_free():
 
 def test_why_after_timing_shows_reasoning():
     c, h = _calibrated_client()
-    c.post("/api/chat/send", json={"text": "when should I buy a car?"},
+    c.post("/api/chat/send", json={"text": "best day to buy a car?"},
            headers=h)
     r = c.post("/api/chat/send", json={"text": "why"}, headers=h)
     body = " ".join(m["content"] for m in r.json()).lower()

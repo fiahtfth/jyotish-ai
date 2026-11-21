@@ -14,6 +14,7 @@ export default function Login() {
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
+  const [adult, setAdult] = useState(false);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -25,7 +26,7 @@ export default function Login() {
     try {
       const r = mode === "login"
         ? await api.login(email, password)
-        : await api.register(email, password, name, agreed);
+        : await api.register(email, password, name, agreed, adult);
       setToken(r.access_token);
       router.replace(mode === "login" ? "/chat" : "/birth");
     } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
@@ -62,8 +63,14 @@ export default function Login() {
           {mode === "register" && (
             <ServiceAgreement checked={agreed} onChange={setAgreed} />
           )}
+          {mode === "register" && (
+            <label className="flex gap-2 items-start text-sm text-muted">
+              <input type="checkbox" checked={adult} onChange={e => setAdult(e.target.checked)} required className="mt-1" />
+              <span>{t("ageConfirm")}</span>
+            </label>
+          )}
           {err && <div className="text-red-500 text-sm">{err}</div>}
-          <button disabled={busy || (mode === "register" && !agreed)}
+          <button disabled={busy || (mode === "register" && (!agreed || !adult))}
             className="w-full bg-accent text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
             {busy ? "…" : mode === "login" ? t("signIn") : t("createAccount")}
           </button>

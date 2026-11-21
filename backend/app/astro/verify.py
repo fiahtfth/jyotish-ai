@@ -43,6 +43,85 @@ def _claims_house(text: str):
     return out
 
 
+_KARAKA_TITLES = ("Atmakaraka", "Amatyakaraka", "Bhratrukaraka", "Matrukaraka", "Putrakaraka",
+                  "Gnatikaraka", "Darakaraka")
+_TITLE_PAT = "|".join(_KARAKA_TITLES)
+_PL7 = "Sun|Moon|Mars|Mercury|Jupiter|Venus|Saturn|Rahu|Ketu"
+_GAP = r"[^.;,:!?\n()]{0,30}?"
+_KARAKA_A = re.compile(rf"\b({_PL7})\b{_GAP}\b({_TITLE_PAT})\b", re.I)
+_KARAKA_B = re.compile(rf"\b({_TITLE_PAT})\b\s*(?:is|=|:|being|-|as)?\s*\(?(?:the |your |planet )?\b({_PL7})\b", re.I)
+
+
+def _claims_karaka(text: str):
+    """[(planet, title)] where a planet is called a Jaimini chara-karaka title."""
+    out = []
+    for m in _KARAKA_A.finditer(text):
+        out.append((m.group(1).title(), m.group(2).title()))
+    for m in _KARAKA_B.finditer(text):
+        out.append((m.group(2).title(), m.group(1).title()))
+    return out
+
+
+_RETRO_A = re.compile(r"\b(Rahu|Ketu)\b[^.;,:!?\n()]{0,40}?\b(?:retrograde|retro|vakri)\b", re.I)
+_RETRO_B = re.compile(r"\b(?:retrograde|retro|vakri)\s+(Rahu|Ketu)\b", re.I)
+_RETRO_OK = re.compile(r"\balways\b|\bnaturally\b|\bby nature\b|\bnot (?:meaningful|significant)\b|"
+                       r"\bno (?:significance|meaning)\b|\bnever\b", re.I)
+
+
+def _claims_node_retro(text: str):
+    """Rahu/Ketu called retrograde as if it mattered (they are always retrograde)."""
+    if _RETRO_OK.search(text):
+        return []
+    return [m.group(1).title() for rx in (_RETRO_A, _RETRO_B) for m in rx.finditer(text)]
+
+
+_NUMS = r"\d+(?:st|nd|rd|th)?(?:\s*(?:,|and|&)\s*\d+(?:st|nd|rd|th)?)*"
+_LORD_A = re.compile(rf"\b({_PL7})\b\s+(?:is\s+)?(?:the\s+)?(?:lord(?:s)? of|rules?|ruler of|owns?)\s+"
+                     rf"(?:your\s+|the\s+)?({_NUMS})\s*(?:house|bhava)", re.I)
+_LORD_B = re.compile(rf"\b(\d+)(?:st|nd|rd|th)?\s*(?:house\s+)?lord\s+(?:is|=|:)\s*({_PL7})\b", re.I)
+_LORD_SKIP = re.compile(r"from (?:the |your )?moon|moon chart|chandra|\bD\d+\b|navamsa|varga|"
+                        r"from (?:the |your )?(?:arudha|AL|UL)", re.I)
+
+
+def _claims_lordship(text: str):
+    """[(planet, house)] from 'X rules the Nth house' / 'Nth lord is X' (D1, from Lagna)."""
+    if _LORD_SKIP.search(text):
+        return []
+    out = []
+    for m in _LORD_A.finditer(text):
+        for n in re.findall(r"\d+", m.group(2)):
+            out.append((m.group(1).title(), int(n)))
+    for m in _LORD_B.finditer(text):
+        out.append((m.group(2).title(), int(m.group(1))))
+    return out
+
+
+def _house_lord(facts: dict, h: int):
+    houses = facts.get("houses") or {}
+    return (houses.get(h) or houses.get(str(h)) or {}).get("lord")
+
+
+def _structure_issues(text: str, facts: dict) -> list[str]:
+    issues = []
+    kar = (facts.get("jaimini") or {}).get("karakas") or {}
+    for seg, _ in split_sentences(text):
+        if kar:
+            for planet, title in _claims_karaka(seg):
+                if title in kar and kar[title] != planet:
+                    issues.append(f"claims {planet} is the {title}, chart has {kar[title]}")
+                elif title not in kar:
+                    issues.append(f"claims {planet} is the {title}, chart has no such karaka")
+        for node in _claims_node_retro(seg):
+            issues.append(f"calls {node} retrograde as an influence; the nodes are always retrograde "
+                          "and this carries no meaning")
+        for planet, h in _claims_lordship(seg):
+            actual = _house_lord(facts, h)
+            if actual and planet in K.PLANET_NAMES.values() and planet not in ("Rahu", "Ketu") \
+                    and actual != planet:
+                issues.append(f"claims {planet} rules the {h}th house, chart has {actual}")
+    return list(dict.fromkeys(issues))
+
+
 _MONTHS = ["January", "February", "March", "April", "May", "June", "July",
            "August", "September", "October", "November", "December"]
 _MONTH_PAT = "|".join(_MONTHS)
@@ -59,15 +138,43 @@ _PROBABILITY_RE = re.compile(
     r"|\blikel(?:y|ihood)\b[^.!?\n]{0,30}\d\s*%", re.I)
 
 
-def _grounding(facts: dict, context: dict) -> str:
-    """Everything the model was shown, as one string. Falls back to the facts."""
-    text = context.get("grounding_text")
-    if text:
-        return text
+def house_lines(facts: dict) -> str:
+    """The sign and lord of all 12 houses (empty houses included) and where
+    each house lord sits, so correct statements about them are never flagged."""
+    out = []
     try:
-        return json.dumps(facts, default=str)
-    except (TypeError, ValueError):
-        return ""
+        planets = facts.get("planets") or {}
+        for h, rec in sorted((facts.get("houses") or {}).items(), key=lambda kv: int(kv[0])):
+            lord = rec.get("lord")
+            where = planets.get(lord) or {}
+            out.append(f"House {h}: {rec.get('sign_name')}, lord {lord}"
+                       + (f" placed in {where.get('sign_name')} house {where.get('house')}" if where else ""))
+    except (TypeError, ValueError, AttributeError):
+        pass
+    return "\n".join(out)
+
+
+def _grounding(facts: dict, context: dict) -> str:
+    """Everything the model was shown, as one string. Falls back to the facts.
+    Always extended with all 12 house signs and anything the user said
+    (context["user_text"], str or list) or the app noted (context["context_note"],
+    context["memory"]) — the user's own dates and facts are not inventions."""
+    text = context.get("grounding_text")
+    if not text:
+        try:
+            text = json.dumps(facts, default=str)
+        except (TypeError, ValueError):
+            text = ""
+    extra = [house_lines(facts or {})]
+    for key in ("user_text", "context_note", "memory"):
+        val = context.get(key)
+        if isinstance(val, (list, tuple)):
+            val = "\n".join(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False, default=str)
+                            for v in val)
+        elif val is not None and not isinstance(val, str):
+            val = json.dumps(val, ensure_ascii=False, default=str)
+        extra.append(val or "")
+    return "\n".join([text] + [e for e in extra if e])
 
 
 def _degree_values(facts: dict, grounding: str) -> list[float]:
@@ -166,6 +273,8 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
 
     # 4. Unsupported numerical probabilities
     for m in _NUM_RANGE.finditer(text):
+        if re.fullmatch(r"(?:100|0)\s*%", m.group(0).strip()):
+            continue    # "100% worth it" is an idiom, not a probability
         warnings.append(f"unsupported numerical probability '{m.group(0)}'")
         issues.append(f"numerical probability '{m.group(0)}' is not permitted")
 
@@ -175,6 +284,9 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
         if not context.get("citations_provided"):
             issues.append("classical citation not backed by a retrieved source")
 
+    # 5b. Chara-karaka titles, Rahu/Ketu "retrograde", house-lordship claims
+    issues.extend(_structure_issues(text, facts))
+
     # 6. Degrees, signs, nakshatras, dates, durations and probability wording
     #    must all be present in what the model was given (context["grounding_text"],
     #    else the facts); a value it was never shown is invented.
@@ -183,29 +295,86 @@ def verify_response(text: str, facts: dict, context: dict) -> dict:
     return {"ok": not issues, "issues": issues, "warnings": warnings}
 
 
+_SENT_SPLIT = re.compile(r"((?<=[.!?])(?<!\b\d\.)(?<!\b\d\d\.)[ \t]+|\n+)")
+
+
+def split_sentences(text: str) -> list[list[str]]:
+    """[[segment, separator], ...]; joining every pair reproduces `text`.
+    Newlines (paragraphs, list items) and numbered-list markers are kept intact."""
+    parts = _SENT_SPLIT.split(text)
+    out = []
+    for i in range(0, len(parts), 2):
+        out.append([parts[i], parts[i + 1] if i + 1 < len(parts) else ""])
+    return out
+
+
+def strip_sentences(text: str, is_bad) -> str:
+    """Remove only the sentences for which is_bad(sentence) is true, keeping the
+    original paragraph breaks, list structure and spacing of everything else."""
+    out, prev_sep = [], "\n"
+    for seg, sep in split_sentences(text):
+        if seg.strip() and is_bad(seg):
+            at_line_start = "\n" in prev_sep
+            at_line_end = "\n" in sep or not sep
+            if at_line_start and at_line_end:
+                continue                      # whole line removed, with its newline
+            if "\n" in sep:
+                out.append(sep)               # keep the line break after a partial line
+                prev_sep = sep
+            continue                          # sentence and its trailing spaces
+        out.append(seg + sep)
+        prev_sep = sep
+    res = "".join(out)
+    res = re.sub(r"[ \t]+\n", "\n", res)
+    res = re.sub(r"\n{3,}", "\n\n", res)
+    return res.strip()
+
+
+def _issue_matcher(issue: str):
+    """A predicate selecting exactly the sentences an issue is about, or None."""
+    m = re.match(r"claims (\w+) in (\w+), chart has", issue)
+    if m:
+        planet, sign = m.group(1).lower(), m.group(2).lower()
+        return lambda s: any(p.lower() == planet and g.lower() == sign for p, g in _claims_planet_sign(s))
+    m = re.match(r"claims (\w+) in (\d+)th house", issue)
+    if m:
+        planet, house = m.group(1).lower(), int(m.group(2))
+        return lambda s: any(p.lower() == planet and h == house for p, h in _claims_house(s))
+    m = re.match(r"claims current dasha lord (\w+)", issue)
+    if m:
+        lord = m.group(1).lower()
+        return lambda s: any(p.lower() == lord for p in _claims_dasha(s))
+    m = re.match(r"claims (\w+) is the (\w+), chart has", issue)
+    if m:
+        planet, title = m.group(1).lower(), m.group(2).lower()
+        return lambda s: any(p.lower() == planet and t.lower() == title for p, t in _claims_karaka(s))
+    m = re.match(r"calls (\w+) retrograde", issue)
+    if m:
+        node = m.group(1).lower()
+        return lambda s: any(n.lower() == node for n in _claims_node_retro(s))
+    m = re.match(r"claims (\w+) rules the (\d+)th house, chart has", issue)
+    if m:
+        planet, house = m.group(1).lower(), int(m.group(2))
+        return lambda s: any(p.lower() == planet and h == house for p, h in _claims_lordship(s))
+    if issue.startswith("classical citation"):
+        pat = re.compile(r"(BPHS|Phaladeepika|Saravali|Jaimini Sutra)\s+(chapter\s+)?\d+[:.]\d+", re.I)
+        return lambda s: bool(pat.search(s))
+    q = re.search(r"'([^']+)'", issue)
+    if q:
+        needle = q.group(1).lower()
+        return lambda s: needle in s.lower()
+    return None
+
+
 def repair_response(text: str, issues: list[str]) -> str:
-    """Strip sentences that carry unverifiable/false astro claims."""
+    """Last-resort repair: drop only the sentence(s) each issue is about.
+    Unrelated sentences, paragraph breaks and list bullets are preserved.
+    Prefer asking the model to rewrite (providers.regenerate_with_issues)."""
     if not issues:
         return text
-    sentences = re.split(r"(?<=[.!?])\s+", text)
-    kept = []
-    for s in sentences:
-        bad = False
-        for it in issues:
-            quoted = re.search(r"'([^']+)'", it)
-            if quoted:
-                if quoted.group(1).lower() in s.lower():
-                    bad = True
-                    break
-                continue
-            # crude: if the sentence contains both nouns involved in the issue
-            words = [w for w in re.findall(r"[A-Za-z]+", it) if len(w) > 2]
-            if sum(1 for w in words if w.lower() in s.lower()) >= 2:
-                bad = True
-                break
-        if not bad and s.strip():
-            kept.append(s.strip())
-    if kept:
-        return " ".join(kept)
-    return ("I'd rather not state that — the calculated chart doesn't support "
-            "the claim as phrased. Let me answer from what the chart actually shows.")
+    matchers = [m for m in (_issue_matcher(i) for i in issues) if m]
+    if not matchers:
+        return text
+    result = strip_sentences(text, lambda s: any(m(s) for m in matchers))
+    return result or ("I can't state that precisely from the chart, so I'd rather not guess. "
+                      "Ask me again and I'll answer from what the chart actually shows.")

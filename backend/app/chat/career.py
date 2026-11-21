@@ -25,6 +25,9 @@ MATCH_REQUEST = re.compile(
 COMPARE = re.compile(r"\b(?:compar(?:e|ing)|choose(?: between)?|deciding between|versus|vs\.?|between)\b", re.I)
 TIMING = re.compile(r"\b(?:when|timing|forecast|outlook|will I (?:get|receive|land|start|be promoted))\b", re.I)
 CHART = re.compile(r"\b(?:chart|jyotish|astrolog\w*|kundli|d-?10)\b", re.I)
+FIT = re.compile(r"\b(?:suits?|suited|fits?|right for me|best for me|cut out for|meant (?:to|for))\b", re.I)
+PERIOD = re.compile(r"\b(?:19|20)\d\d\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b"
+                    r"|\b(?:next|this|last|coming) (?:year|month|week)\b|\b(?:years?|months?|weeks?)\b", re.I)
 STOP = {"skip", "none", "no preference", "no constraints", "not sure", "no shortlist", "suggest options"}
 WORK_MODES = {"remote": "remote", "work from home": "remote", "hybrid": "hybrid",
               "on-site": "on-site", "onsite": "on-site", "in office": "on-site"}
@@ -169,15 +172,22 @@ def _comparison(text):
                       r"[, ]+(?:based on|for me|for my|which (?:one|role|job)|what (?:fits|suits))\b",
                       match[1] if match else line, maxsplit=1, flags=re.I)[0]
     known = _known_roles(clause)
-    names = _items(clause)
+    # Years, months and durations are periods, never roles ("compare 2026 and 2028").
+    names = [n for n in _items(clause) if not PERIOD.search(n)]
     if len(names) >= 2 and all(1 <= len(n.split()) <= 8 for n in names):
         return [resolve(n) for n in names[:8]]
     return [resolve(n) for n in known[:8]] if len(known) >= 2 else []
 
 
+def fit_question(text):
+    """'Which career suits me' — a natal what-fits question answered by the
+    model from the 10th house and D10, not by the role matcher."""
+    return bool(MATCH_REQUEST.search(text) or FIT.search(text))
+
+
 def starts_match(text):
-    if MATCH_REQUEST.search(text) or re.search(
-            r"^\s*(?:options|option [\w-]+|offer [\w-]+|job title)\s*:", text, re.I | re.M):
+    """The matcher runs only when the user lists concrete roles or offers."""
+    if re.search(r"^\s*(?:options|option [\w-]+|offer [\w-]+|job title)\s*:", text, re.I | re.M):
         return True
     if not COMPARE.search(text):
         return False
@@ -193,7 +203,11 @@ def continues_match(text, state):
         return True
     if re.search(r"\b(?:cancel career|stop comparing|start (?:the )?career matching over)\b", text, re.I):
         return True
-    if FIELD.match(text) or ATTEST.search(text) or PREFERENCE.search(text) or AVOID.search(text):
+    if FIELD.match(text):
+        return True
+    # Experience or likes continue the comparison only while it is waiting
+    # for that answer; otherwise they are ordinary conversation.
+    if state.asked and state.options and (ATTEST.search(text) or PREFERENCE.search(text) or AVOID.search(text)):
         return True
     if re.search(r"\b(?:which (?:one|option|role) (?:should|would)|which one fits|why did you rank|why this role)\b", text, re.I):
         return True
@@ -403,6 +417,10 @@ def _rank(option, state):
     }
 
 
+def _join(names):
+    return ", ".join(names[:-1]) + (" and " if len(names) > 1 else "") + names[-1]
+
+
 def _chart_reading(facts, birth, calibrated):
     grade, table = classical.promise(facts, "career")
     ruler = facts["houses"][10]["lord"]
@@ -419,12 +437,39 @@ def _chart_reading(facts, birth, calibrated):
             f"{planet['sign_name']} in house {planet['house']}. A theme to reflect on is {themes[ruler]}.")
     if amk and amk != ruler:
         text += f" {amk}, the Amatyakaraka, adds a theme of {themes.get(amk, 'professional responsibilities')}."
-    if varga and ruler in varga:
-        sign = constants.SIGN_NAMES[varga[ruler]["sign"]]
-        text += f" In D10, the career divisional chart, {ruler} is in {sign}."
+    tenth = sorted(n for n, rec in facts["planets"].items() if rec["house"] == 10)
+    if tenth:
+        text += (f" {_join(tenth)} sit{'s' if len(tenth) == 1 else ''} in the 10th house itself"
+                 + (f", the Amatyakaraka {amk} among them" if amk in tenth else "") + ".")
+    moon_sign = facts["planets"]["Moon"]["sign"]
+    moon10 = (moon_sign + 9) % 12
+    moon10_lord = constants.PLANET_NAMES[constants.SIGN_LORD[moon10]]
+    ml = facts["planets"][moon10_lord]
+    text += (f" Counted from the Moon, the 10th is {constants.SIGN_NAMES[moon10]}, ruled by {moon10_lord}, "
+             f"which is in {ml['sign_name']} (house {ml['house']} from the Lagna)")
+    from_moon = sorted(n for n, rec in facts["planets"].items() if (rec["sign"] - moon10) % 12 == 0)
+    text += (f"; {_join(from_moon)} {'occupies' if len(from_moon) == 1 else 'occupy'} that sign." if from_moon else ".")
+    d10 = {}
+    if varga and "Lagna" in varga:
+        d10_lagna = varga["Lagna"]["sign"]
+        d10 = {"lagna": constants.SIGN_NAMES[d10_lagna]}
+        text += f" In D10, the career divisional chart, the Lagna is {d10['lagna']}."
+        if ruler in varga:
+            vsign = varga[ruler]["sign"]
+            d10["tenth_lord_sign"] = constants.SIGN_NAMES[vsign]
+            d10["tenth_lord_house"] = (vsign - d10_lagna) % 12 + 1
+            text += (f" The D1 10th-house ruler {ruler} is in {d10['tenth_lord_sign']} there, "
+                     f"the {d10['tenth_lord_house']}th house of D10.")
+    elif varga and ruler in varga:
+        text += f" In D10, the career divisional chart, {ruler} is in {constants.SIGN_NAMES[varga[ruler]['sign']]}."
     if not calibrated or flips.get("D10"):
         text += " The D10 details depend on the recorded birth time."
-    return text, {"tables": [table, cusp], "note": f"Traditional career indicators · {grade.lower()} support."}
+    return text, {"tables": [table, cusp], "note": f"Traditional career indicators · {grade.lower()} support.",
+                  "reading_facts": {"tenth_house_planets": tenth,
+                                    "tenth_from_moon": {"sign": constants.SIGN_NAMES[moon10], "lord": moon10_lord,
+                                                        "lord_sign": ml["sign_name"], "lord_house": ml["house"],
+                                                        "occupants": from_moon},
+                                    "d10": d10}}
 
 
 def turn(text, state, facts, birth, calibrated, remembered=()):

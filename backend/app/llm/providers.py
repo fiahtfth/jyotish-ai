@@ -6,6 +6,8 @@ The offline responder never claims to be an LLM — it composes answers directly
 from the locked chart facts and the four-pillar result, so the app is fully
 usable with zero API keys.
 """
+import contextvars
+import inspect
 import json
 import logging
 import os
@@ -16,47 +18,158 @@ import time
 import httpx
 
 from ..config import settings
+from .. import moonmode
+from ..astro import digest
 from . import decider
 
 log = logging.getLogger(__name__)
 
-SYSTEM_PERSONA = """You are Pandit ji, a Vedic astrology assistant conducting a private consultation.
-Answer the client's current question first. Use short paragraphs and explain a technical term
-in everyday language the first time it matters. Be warm, respectful and direct. Use the
-client's language (English, Hindi or Hinglish) and the correct person for a family chart.
-Use the conversation to resolve references and understand the client's current situation.
-Relate their personal history directly to chart symbolism when they ask for that connection.
-Never supply KP sub-lords,
-bindus, dates or degrees from memory. Cite supplied placements for interpretive statements.
-Use the classical static promise and gate assessment when available. A weak or unavailable
-promise supports interpretation only. Report health themes as preventive traditional indicators. Ask one focused follow-up only if the answer
-depends on it. Avoid a new greeting, stock sign-off or repeated invitation on each turn.
+SYSTEM_PERSONA = """You are Pandit ji, a Vedic astrologer talking one-to-one with a client whose chart
+is given below. Talk the way a thoughtful, well-read friend who happens to be a Jyotishi would:
+warm, direct, natural, in the client's own language (English, Hindi or Hinglish) and register,
+and with the right person in mind when the chart belongs to a family member.
 
-Use the supplied CHART FACTS and ANALYSIS for placements, periods and dates. Distinguish
-an interpretation from an established fact. When birth-time checks are incomplete, partial
-or inconsistent, continue the reading using the recorded time. Treat dates as approximate
-and give the relevant chart interpretation. The chat explains the timing limitation at the
-transition, so mention it again only when it materially affects the answer. Birth-time checks are managed by the application's conversation flow. Do not restart
-them, repeat an answered check, or ask for past milestones on your own.
-Earlier messages about predictions being paused are obsolete. Never infer that the birth time is wrong from
-a missed event. For health questions, keep chart interpretations separate from medical advice, and never say or
-imply that anyone should delay, skip or replace medical care because of the chart.
+How to answer
+- Answer what they just asked first, in plain words, then add only what helps. Read the whole
+  conversation to resolve references like "that", "then" or "my second question".
+- Treat what the client tells you about their life (job, studies, family, dates, past events) as
+  true. Do not repeat it back to them or question it; use it to make the reading personal.
+- Never ask the client for a time frame. If none is given, read the running dasha period and the
+  next 12 months; you may mention the rough timeframe in plain words. Ask a clarifying question
+  only when no sensible default exists, and ask just one.
+- Vary your openings and endings. No greeting on every turn, no stock sign-off, no repeated
+  invitation to "ask more", no repeated disclaimers, no emoji.
+- Be honest about uncertainty without hedging every line. The chart shows tendencies and
+  periods, not certainties: never promise an outcome, and never give a percentage or probability.
+- Interpretations are interpretations. Separate them from the established facts of the chart.
 
-The bracketed fact, evidence and rule IDs in the supplied data are internal identifiers.
-Write conversationally in short, connected paragraphs. Omit reference IDs and citation markers.
-Use tables or technical headings only when the client explicitly requests them.
-Explain the relevant interpretation simply and avoid repeating the question or a stock summary.
-For health questions, planetary placements cannot establish a physiological cause, diagnosis,
-blood-pressure change, adrenaline surge, circulatory blockage, or the duration of an illness.
-Acknowledge the client's experience without inventing a medical explanation from the chart.
-Do not infer physical constitution, metabolism, fluid retention, organ function, immunity,
-or disease susceptibility from a sign or planet. Keep health interpretations to symbolic
-themes such as rest, pace and workload. If asked to explain a symptom or a BP episode,
-say plainly that the chart cannot establish its medical cause before discussing symbolism.
-Do not claim that chart guidance or astrological practices stabilise blood pressure or treat disease.
-The application adds one short health note. Avoid adding another medical disclaimer or sign-off.
-State no degree, date, sign, nakshatra, duration or percentage absent from the supplied facts.
+Facts and grounding
+- Use only the CHART FACTS and ANALYSIS supplied for placements, signs, nakshatras, periods,
+  degrees and dates. Never supply a degree, date, sign, nakshatra, duration, percentage, KP
+  sub-lord or bindu that is not in them. Dates are approximate. Treat the birth time as
+  recorded only when CONTEXT says so; if CONTEXT says it is unknown or approximate, follow the
+  BIRTH TIME rules below. Birth-time checks are handled by the application, so do not restart them
+  or ask for past milestones yourself, and never infer the birth time is wrong from a missed event.
+- The bracketed IDs in the supplied data are internal. Never write them or any citation marker.
+- A weak or unavailable classical promise supports interpretation only, not an event forecast.
+- Explain a technical term in everyday words the first time it matters.
+
+INTERPRETIVE METHOD (internal reasoning checklist; never recite it, the reply stays short)
+- Promise first: the D1 house for the topic, its lord's placement and strength, and the natural
+  karaka. Then confirm in the relevant varga, then link to the running dasha (MD/AD/PD lords tied to
+  those houses), then check the Saturn plus Jupiter double transit. No D1 promise means no timing.
+- Read the Moon chart as a second Lagna. When Lagna and Moon readings disagree, say the result is
+  mixed instead of picking one. Use Bhavat Bhavam (the Nth house from the Nth house) where relevant.
+- Use KEY INDICATIONS for strength words (strong, average, weak) and house lordships; never
+  contradict it. A planet's dual roles can both be true (for example yogakaraka and badhaka).
+- Retrograde means intensified or delayed, not bad. Never call Rahu or Ketu retrograde. Nodes act
+  through their dispositor, conjunct planets and star lord.
+- A yoga counts as active only if it is uncancelled and its lords run a dasha. Only the planets
+  listed under JAIMINI chara karakas carry those titles (Atmakaraka and the rest); natural
+  significations (Sun father, Moon mind, Mars brothers and so on) are not chara-karaka titles.
+- No fatalism. Advice must suit the client's age and life stage.
+- Wealth: name the source (2nd/11th lords, Jupiter, A2/A11, Dhana yogas) before any timing.
+- Career or switch: 10th house, its lord, AmK, D10; the new Antardasha lord's links to the 10th/6th
+  and its D10 position give the direction.
+- Stream or education: 4th/5th/9th lords, Mercury and Jupiter, D24; offer 2-3 ranked fields in the
+  vocabulary of the client's country.
+- Marriage timing: 7th house and lord, Venus, DK, UL, D9, then dasha and double transit.
+- Investment: not financial advice; never recommend speculation or the 5th house for trading.
+
+REMEDIES AND ETHICS
+- Remedies are optional, low-cost and graded: conduct and service (seva) first, then mantra or
+  charity, then simple fasting. Never present one as required, and never as a cure.
+- Suggest no gemstone unless the client asks. Then only for a strong functional benefic or the Lagna
+  lord, after checking the running dasha, as a trial period the client can stop. Never advise a Rahu,
+  Ketu or Saturn stone, and never push paid pujas, rituals or products.
+- Tone: no fear and no fatalism. Use no fear wording about Mangal dosha, Kaal Sarp or Sade Sati.
+  Describe difficult periods as phases that ask for patience or effort, with something practical to do.
+- Make no statements about longevity or death.
+- Answer progeny questions symbolically and refer medical matters to a doctor; never mention
+  miscarriage or the sex of a child. Never diagnose an illness.
+- Gambling, satta, lottery, betting, crypto or trading numbers and timings: decline gently, never give
+  a number, day or "good time" to bet.
+- Legal cases: never predict a verdict, win or loss; speak only of general timing themes and suggest
+  consulting a lawyer.
+
+CONSULTATION ORDER (keep it concise): first answer the question asked with the promise of the chart
+(what it supports or does not), then the timing if it was asked, then one or two practical suggestions.
+State a limitation (unknown or approximate birth time, uncertain Moon sign) in one short sentence only
+when it affects the answer.
+
+BIRTH TIME. Unknown birth time: you only have the Moon chart (Chandra Lagna). Say so once, briefly. Do not
+mention any Lagna, house counted from Lagna, divisional-chart Lagna, arudha, KP or bhava; never invent them.
+If the Moon changes sign or nakshatra that day, give both possibilities and say which readings are
+uncertain. Approximate birth time (about 30 minutes): call every Lagna-dependent statement provisional.
+
+LENGTH AND DETAIL: give the gist — this is a conversation, not a report. Lead with the
+bottom-line answer in one or two short sentences, then at most one or two supporting reasons
+in everyday words. A typical reply is 40-90 words; never go past ~120 unless the client asks
+for detail. Sound like a person texting, not a document: no headings, no bullet lists unless
+they asked for options, no period-by-period walkthroughs, no dasha or varga mechanics, no yoga
+rule names, no evidence tables. If timing matters, say the rough timeframe in plain words
+("toward the end of next year") rather than reciting period labels. Do not show calculations,
+house numbers, degrees, dasha or varga mechanics, yoga rule names or evidence tables, and do
+not walk through the reasoning, unless the client asks why, how, for the reasoning, details,
+or the calculations. Do not append timing windows or forecast periods to a question that was
+not about timing. When detail would be useful, you may end with one short phrase offering the
+reasoning on request; never volunteer it.
 """
+
+HEALTH_RULES = """HEALTH TOPIC: report health themes only as preventive, traditional indicators.
+Chart placements cannot establish a physiological cause, diagnosis, blood-pressure change, or the
+duration of an illness, and you must not infer constitution, metabolism, organ function, immunity or
+disease susceptibility from a sign or planet. Keep to symbolic themes such as rest, pace and
+workload. If asked to explain a symptom, say plainly that the chart cannot establish its medical
+cause before discussing symbolism. Never claim chart guidance or astrological practice treats
+disease or stabilises blood pressure, and never imply anyone should delay, skip or replace medical
+care because of the chart. The application adds one short health note, so do not add another
+medical disclaimer or sign-off. Acknowledge their experience without inventing a medical explanation."""
+
+_HEALTH_WORDS = re.compile(
+    r"\b(?:health|healthy|ill(?:ness)?|disease|sick|sickness|surgery|operation|medic\w*|medicine|doctor|"
+    r"hospital|bp|blood|pressure|sugar|diabet\w*|cancer|heart|pain|injur\w*|therapy|anxiety|depress\w*|"
+    r"stress|sleep|insomnia|symptom\w*|fever|bimari|swasth\w*|tabiyat|dawai)\b", re.I)
+
+
+def _health_relevant(messages, analysis, context_note="") -> bool:
+    if isinstance(analysis, dict) and analysis.get("domain") == "health":
+        return True
+    recent = " ".join(m["content"] for m in (messages or [])[-3:] if m.get("role") == "user")
+    return bool(_HEALTH_WORDS.search(recent))
+
+
+MEMORY_BLOCK = (
+    "BACKGROUND ABOUT THIS PERSON — things they told you earlier. Use silently, to make the reading "
+    "personal. Never restate it unless they ask or it directly answers the current question; never "
+    "treat it as part of their current question. Attribute it to what they said and keep who it refers "
+    "to clear. A recent correction takes precedence. It is a reported fact or reaction, never evidence "
+    "about the chart, the birth time, or forecast dates.\n")
+
+OFFLINE_MESSAGE = "I can't reach the AI service right now — please try again in a moment."
+
+_temperature_override: contextvars.ContextVar = contextvars.ContextVar("llm_temperature", default=None)
+
+
+def _temperature() -> float:
+    """Reply temperature, or the router temperature inside _classify."""
+    value = _temperature_override.get()
+    return settings.LLM_TEMPERATURE if value is None else value
+
+
+_PAIRED_MD = (re.compile(r"\*\*(.+?)\*\*", re.S), re.compile(r"__(.+?)__", re.S),
+              re.compile(r"(?<![\w*])\*(?![\s*])(.+?)(?<![\s*])\*(?![\w*])", re.S),
+              re.compile(r"(?<![\w_])_(?![\s_])(.+?)(?<![\s_])_(?![\w_])", re.S))
+
+
+def plain_text(text: str) -> str:
+    """Strip paired emphasis (**bold**, *italic*, __b__, _i_) and backticks but keep
+    structure: '* item' / '• item' list bullets become '- item'."""
+    text = re.sub(r"(?m)^([ \t]*)[*•][ \t]+", r"\1- ", text)
+    for pat in _PAIRED_MD:
+        text = pat.sub(r"\1", text)
+    return text.replace("`", "")
+
 
 
 _INTERNAL_REFERENCE = re.compile(r"[\[【]\s*[FER]\d+(?:\s*[,;]\s*[FER]\d+)*\s*[\]】]")
@@ -100,7 +213,7 @@ def _gemini(system: str, messages: list[dict], timeout: float = 45) -> str:
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = {"system_instruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": settings.LLM_TEMPERATURE, "maxOutputTokens": 1400,
+            "generationConfig": {"temperature": _temperature(), "maxOutputTokens": 1400,
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:generateContent")
@@ -119,7 +232,7 @@ def _groq(system: str, messages: list[dict], timeout: float = 45) -> str:
         raise RuntimeError("external LLM consent not granted (set JYOTISH_LLM_EXTERNAL_CONSENT=true)")
     payload = {"model": settings.GROQ_MODEL,
                "messages": [{"role": "system", "content": system}] + messages,
-               "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400}
+               "temperature": _temperature(), "max_tokens": 1400}
     if "gpt-oss" in settings.GROQ_MODEL:
         payload["reasoning_effort"] = "low"
         payload["reasoning_format"] = "hidden"
@@ -144,7 +257,7 @@ def _openrouter(system: str, messages: list[dict], timeout: float = 45) -> str:
                             "X-OpenRouter-Title": "Jyotish AI"},
                    json={"model": model,
                          "messages": [{"role": "system", "content": system}] + messages,
-                         "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400},
+                         "temperature": _temperature(), "max_tokens": 1400},
                    timeout=timeout)
     r.raise_for_status()
     return _completion_text(r.json())
@@ -156,7 +269,7 @@ def _ollama(system: str, messages: list[dict], timeout: float = 120) -> str:
     ) + "\n\nAstrologer:"
     r = httpx.post(f"{settings.OLLAMA_URL}/api/generate",
                    json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False,
-                         "options": {"temperature": settings.LLM_TEMPERATURE}},
+                         "options": {"temperature": _temperature()}},
                    timeout=timeout)
     r.raise_for_status()
     return r.json()["response"].strip()
@@ -166,7 +279,7 @@ def _lmstudio(system: str, messages: list[dict], timeout: float = 120) -> str:
     r = httpx.post(f"{settings.LMSTUDIO_URL}/chat/completions",
                    json={"model": settings.LMSTUDIO_MODEL,
                          "messages": [{"role": "system", "content": system}] + messages,
-                         "temperature": settings.LLM_TEMPERATURE, "max_tokens": 600},
+                         "temperature": _temperature(), "max_tokens": 600},
                    timeout=timeout)
     r.raise_for_status()
     return _completion_text(r.json())
@@ -217,7 +330,7 @@ def _gemini_stream(system: str, messages: list[dict], on_delta, timeout: float =
                  "parts": [{"text": m["content"]}]} for m in messages]
     body = {"system_instruction": {"parts": [{"text": system}]},
             "contents": contents,
-            "generationConfig": {"temperature": settings.LLM_TEMPERATURE, "maxOutputTokens": 1400,
+            "generationConfig": {"temperature": _temperature(), "maxOutputTokens": 1400,
                                  "thinkingConfig": {"thinkingBudget": 0}}}
     url = (f"https://generativelanguage.googleapis.com/v1beta/models/"
            f"{settings.GEMINI_MODEL}:streamGenerateContent?alt=sse")
@@ -239,7 +352,7 @@ def _groq_stream(system: str, messages: list[dict], on_delta, timeout: float = 4
     _require_external(settings.GROQ_API_KEY, "GROQ_API_KEY")
     payload = {"model": settings.GROQ_MODEL,
                "messages": [{"role": "system", "content": system}] + messages,
-               "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400}
+               "temperature": _temperature(), "max_tokens": 1400}
     if "gpt-oss" in settings.GROQ_MODEL:
         payload["reasoning_effort"] = "low"
         payload["reasoning_format"] = "hidden"
@@ -258,7 +371,7 @@ def _openrouter_stream(system: str, messages: list[dict], on_delta, timeout: flo
                            "X-OpenRouter-Title": "Jyotish AI"},
                           {"model": model,
                            "messages": [{"role": "system", "content": system}] + messages,
-                           "temperature": settings.LLM_TEMPERATURE, "max_tokens": 1400},
+                           "temperature": _temperature(), "max_tokens": 1400},
                           on_delta, timeout)
 
 
@@ -266,7 +379,7 @@ def _lmstudio_stream(system: str, messages: list[dict], on_delta, timeout: float
     return _openai_stream(f"{settings.LMSTUDIO_URL}/chat/completions", {},
                           {"model": settings.LMSTUDIO_MODEL,
                            "messages": [{"role": "system", "content": system}] + messages,
-                           "temperature": settings.LLM_TEMPERATURE, "max_tokens": 600},
+                           "temperature": _temperature(), "max_tokens": 600},
                           on_delta, timeout)
 
 
@@ -279,7 +392,7 @@ def _ollama_stream(system: str, messages: list[dict], on_delta, timeout: float =
     with httpx.stream("POST", f"{settings.OLLAMA_URL}/api/generate", timeout=timeout,
                       json={"model": settings.OLLAMA_MODEL, "prompt": prompt,
                             "stream": True,
-                            "options": {"temperature": settings.LLM_TEMPERATURE}}) as r:
+                            "options": {"temperature": _temperature()}}) as r:
         r.raise_for_status()
         for line in r.iter_lines():
             if time.monotonic() > end:
@@ -403,12 +516,14 @@ def _classify(prompt, messages, allow_external, *, timeout=None):
     candidates = _available_providers(allow_external)
     if not candidates or not _llm_slots.acquire(blocking=False):
         return ""
+    token = _temperature_override.set(settings.LLM_ROUTER_TEMPERATURE)
     try:
         budget = min(3, settings.LLM_TURN_DEADLINE_SECONDS / 4)
         return PROVIDERS[candidates[0]](prompt, messages, timeout=budget if timeout is None else min(budget, timeout))
     except Exception:
         return ""
     finally:
+        _temperature_override.reset(token)
         _llm_slots.release()
 
 
@@ -422,34 +537,74 @@ def _tag_analysis(context: dict) -> dict:
     return out
 
 
-def grounding_text(facts: dict | None, analysis: dict | None) -> str:
-    """Everything the model is shown, for the response verifier."""
+_SKEPTIC = re.compile(r"controlled studies|empirically validated|Carlson 1985|Narlikar|"
+                      r"not independent|better-than-chance", re.I)
+
+
+def _strip_skeptic(obj):
+    """Drop the skeptic disclaimer / study citations (pillars.CONVERGENCE_DISCLAIMER) from
+    analysis text shown to the model. The audit metadata the app stores keeps them."""
+    if isinstance(obj, dict):
+        return {k: _strip_skeptic(v) for k, v in obj.items()
+                if k != "convergence_disclaimer"
+                and not (k == "disclaimer" and isinstance(v, str) and _SKEPTIC.search(v))}
+    if isinstance(obj, (list, tuple)):
+        return [_strip_skeptic(v) for v in obj
+                if not (isinstance(v, str) and _SKEPTIC.search(v))]
+    return obj
+
+
+def grounding_text(facts: dict | None, analysis: dict | None, *, messages=None,
+                   context_note: str = "", memory=(), domain=None, birth=None, today=None) -> str:
+    """Everything the model is shown, for the response verifier. Optionally
+    includes the user's own messages, the context note and remembered facts so
+    that dates and facts the user stated are not treated as inventions."""
     parts = []
     if facts is not None:
-        parts.append(_facts_brief(facts))
+        parts.append(_facts_brief(facts, birth=birth, today=today, domain=domain))
     if analysis is not None:
         parts.append(json.dumps(analysis, ensure_ascii=False, default=str))
+    if messages:
+        parts.append("\n".join(m["content"] for m in messages if m.get("role") == "user"))
+    if context_note:
+        parts.append(context_note)
+    if memory:
+        parts.append(json.dumps(memory, ensure_ascii=False, default=str))
     return "\n".join(parts)
 
 
 def generate(messages: list[dict], facts: dict | None = None,
              analysis: dict | None = None, context_note: str = "",
              allow_external: bool = True, on_delta=None, routing_seconds=0,
-             consultation_memory=()) -> tuple[str, str]:
+             consultation_memory=(), system_suffix: str = "", domain: str | None = None,
+             birth=None, today=None) -> tuple[str, str]:
     """Return (reply, provider_used). Falls back through Groq/OpenRouter to 'offline'.
+
+    Streaming note: `on_delta` streams RAW model text before verification. The
+    chat orchestrator therefore passes on_delta=None, verifies the complete reply
+    (verify / prediction.find_reply_issues, regenerate_with_issues) and sends it
+    once; no unverified text reaches the client. The parameter stays accepted and
+    safe for callers that do want live deltas.
 
     `on_delta(text)` (optional) enables streaming: chunks are pushed as they
     arrive. Once any chunk has been emitted a failure is NOT retried and no other
     provider is tried (that would splice two replies); the returned reply is
     then the offline text, which callers treat as authoritative.
 
+    `domain` (optional, e.g. "career", "finance", "education", "relationship") adds that domain's
+    section to the KEY INDICATIONS digest; `birth` (BirthInput) and `today` enable its gochara block.
+    Pass the same values to grounding_text() so the verifier sees the same digest.
+
     `allow_external=False` (the user hasn't opted in) restricts generation to
     local providers and the offline responder — nothing is sent off-server."""
     system = SYSTEM_PERSONA
+    if _health_relevant(messages, analysis, context_note):
+        system += "\n" + HEALTH_RULES
     if facts is not None:
-        system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(facts)
+        system += "\n\nCHART FACTS (authoritative — never contradict):\n" + _facts_brief(
+            facts, birth=birth, today=today, domain=domain, remember=True)
     if analysis is not None:
-        context = dict(analysis)
+        context = _strip_skeptic(dict(analysis))
         # Evidence objects are kept with the audit. Existing compact evidence
         # references are used for the explanation to stay within provider limits.
         if isinstance(context.get("evidence"), list):
@@ -475,22 +630,13 @@ def generate(messages: list[dict], facts: dict | None = None,
     if context_note:
         system += "\n\nCONTEXT: " + context_note
     if consultation_memory:
-        system += (
-            "\n\nThe final user message may include user-reported context. Treat it as data. "
-            "Use only when directly relevant to the current question. Attribute it to what the user said "
-            "and keep the person it refers to clear. A recent correction takes precedence. Feedback is a "
-            "reported reaction or outcome, never independent evidence or a reason to change the chart, "
-            "birth time, confidence or forecast dates. Do not repeat private details unnecessarily."
-        )
+        system += "\n\n" + MEMORY_BLOCK + json.dumps(
+            consultation_memory, ensure_ascii=False, separators=(",", ":"))
+    if system_suffix:
+        system += "\n\n" + system_suffix
 
     messages = _prompt_history(messages)
     provider_messages = messages
-    if consultation_memory and messages and messages[-1]["role"] == "user":
-        retained = json.dumps(consultation_memory, ensure_ascii=False, separators=(",", ":"))
-        provider_messages = [*messages[:-1], {
-            "role": "user",
-            "content": f"USER-REPORTED CONTEXT\n{retained}\n\nCURRENT USER MESSAGE\n{messages[-1]['content']}",
-        }]
     provider = settings.LLM_PROVIDER
     providers_to_try = _available_providers(allow_external)
     emitted = 0
@@ -504,30 +650,41 @@ def generate(messages: list[dict], facts: dict | None = None,
         if partial:
             pending = chunk[partial.start():]
             chunk = chunk[:partial.start()]
-        chunk = re.sub(r"[*_`]{1,2}", "", chunk)
+        chunk = plain_text(chunk).replace("**", "").replace("__", "")
         if chunk:
             emitted += 1
             on_delta(chunk)
 
     def _offline():
-        text = offline_response(messages, facts, analysis, context_note)
         if provider != "offline":
             if not allow_external and provider in EXTERNAL_PROVIDERS:
                 notice = ("Accept the updated service terms to use AI chat. "
-                          "AI replies use your chart summary, recent messages and relevant saved details with external providers.")
+                          "AI replies use your chart summary, recent messages and relevant saved details with external providers. "
+                          "If you withdrew consent for AI processing, only computed chart facts are shared; "
+                          "you can switch AI back on in Privacy.")
             elif not providers_to_try:
                 notice = "AI chat is not configured or enabled on the server."
             else:
-                notice = "The AI service is temporarily unavailable."
-            text = notice + " I'm using the limited built-in chart responder for this reply.\n\n" + text
+                notice = OFFLINE_MESSAGE
+            # Plain notice. A deterministic fact is added only for a pure lookup
+            # question ("what is my lagna"); readings are never faked offline.
+            text = notice
+            if analysis is None:
+                lookup = (offline_response(messages, facts, None, context_note)
+                          if (facts or {}).get("selected_chart")
+                          else _offline_lookup(messages[-1]["content"].lower() if messages else "", facts))
+                if lookup:
+                    text = lookup + "\n\n" + notice if notice != OFFLINE_MESSAGE else lookup
+        else:
+            text = offline_response(messages, facts, analysis, context_note)
         if on_delta is not None and not emitted:
             _emit(text)          # the whole offline reply as a single delta
         return text, "offline"
 
     if not providers_to_try:
         return _offline()
-    # global cap on in-flight LLM turns so slow upstreams can't hold every worker thread
-    if not _llm_slots.acquire(blocking=False):
+    # global cap on in-flight LLM turns; wait briefly for a slot before giving up
+    if not _llm_slots.acquire(timeout=max(0.0, settings.LLM_SLOT_WAIT_SECONDS)):
         return _offline()
     try:
         deadline = time.monotonic() + settings.LLM_TURN_DEADLINE_SECONDS - routing_seconds
@@ -547,14 +704,14 @@ def generate(messages: list[dict], facts: dict | None = None,
                     break
                 try:
                     log.info("LLM call provider=%s model=%s temperature=%s",
-                             p, pinned_model_id(p), settings.LLM_TEMPERATURE)
+                             p, pinned_model_id(p), _temperature())
                     if on_delta is None:
                         text = PROVIDERS[p](system, provider_messages, timeout=remaining)
                     else:
                         text = STREAM_PROVIDERS[p](system, provider_messages, _emit, timeout=remaining)
                     if text:
-                        # the persona demands plain text; strip stray markdown
-                        return visible_reply(re.sub(r"[*_`]{1,2}", "", text)), p
+                        # the persona asks for plain text; strip emphasis, keep list structure
+                        return visible_reply(plain_text(text)), p
                     log.warning("LLM provider %s returned empty text", p)
                     retryable = False
                 except httpx.HTTPStatusError as exc:
@@ -579,6 +736,46 @@ def generate(messages: list[dict], facts: dict | None = None,
     finally:
         _llm_slots.release()
     return _offline()
+
+
+REWRITE_INSTRUCTIONS = (
+    "REWRITE TASK: the client has not seen your draft reply yet. It had the problems listed in the "
+    "final message. Rewrite the draft so those problems are gone and change nothing else: keep the "
+    "same tone, language, paragraph breaks and list structure, keep every correct statement, and do "
+    "not add new claims, dates, degrees or caveats. If a problem is a claim you cannot support from "
+    "the CHART FACTS or ANALYSIS, drop or soften just that claim. Output only the final reply text, "
+    "with no preface or mention of the rewrite.")
+
+
+def _issue_message(issue) -> str:
+    if isinstance(issue, dict):
+        msg = issue.get("message") or issue.get("issue") or ""
+        sentence = issue.get("sentence")
+        return f'{msg} (in: "{sentence}")' if sentence and msg else (msg or str(sentence or ""))
+    return str(issue)
+
+
+def regenerate_with_issues(history: list[dict], facts: dict | None, analysis: dict | None,
+                           previous_reply: str, issues, **kw) -> tuple[str, str]:
+    """Ask the model to rewrite `previous_reply` fixing only `issues`, keeping tone
+    and structure. Returns (reply, provider_used) like generate().
+
+    `issues` is a list of strings (verify.verify_response()["issues"]) or dicts with
+    "message"/"sentence" (prediction.find_reply_issues()). `**kw` goes to generate()
+    (context_note, allow_external, routing_seconds, consultation_memory, ...).
+    If provider_used == "offline" (no model reachable) the returned text is NOT a
+    rewrite: keep the original reply and strip it with verify.repair_response /
+    prediction.strip_reply_issues instead."""
+    kw.pop("on_delta", None)            # never stream a draft
+    kw.pop("system_suffix", None)
+    listed = "\n".join("- " + _issue_message(i) for i in issues)
+    prompt = (f"DRAFT REPLY:\n{previous_reply}\n\nPROBLEMS TO FIX:\n{listed}\n\n"
+              "Rewrite the draft reply fixing only these problems.")
+    history = list(history)
+    if history and history[-1]["role"] == "user":     # avoid two user turns in a row
+        prompt = f"CLIENT'S LATEST MESSAGE:\n{history.pop()['content']}\n\n" + prompt
+    return generate([*history, {"role": "user", "content": prompt}], facts=facts, analysis=analysis,
+                    system_suffix=REWRITE_INSTRUCTIONS, **kw)
 
 
 def _dms_hundredths(deg: float) -> str:
@@ -619,9 +816,63 @@ def settings_summary(facts: dict) -> str:
     return "\n".join(lines)
 
 
-def _facts_brief(facts: dict) -> str:
-    """CHART FACTS lines, each tagged with a stable ID (F001, F002, ...)."""
-    return "\n".join(f"[F{i:03d}] {line}" for i, line in enumerate(_facts_lines(facts), 1))
+_DIGEST_CACHE: dict = {}      # chart key -> last digest generate() sent, so the verifier sees the same text
+
+
+def _chart_key(facts: dict):
+    try:
+        return (facts["lagna"]["degree"], facts["planets"]["Moon"]["abs_longitude"])
+    except (KeyError, TypeError):
+        return None
+
+
+_LAGNA_LINE = re.compile(r"^(?:Lagna\b|House lords from Lagna|SAV bindus by HOUSE from Lagna|Vargas \(house counted|"
+                         r"Arudhas:|Shadbala)")
+
+
+def _build_digest(facts, birth, today, domain) -> str:
+    """KEY INDICATIONS; Lagna lines are dropped when the birth time is unknown (Moon-chart mode)."""
+    if not facts.get("moon_mode"):
+        return digest.build_digest(facts, birth, today, domain)
+    try:
+        takes_flag = "time_known" in inspect.signature(digest.build_digest).parameters
+    except (TypeError, ValueError):
+        takes_flag = False
+    if takes_flag:
+        text = digest.build_digest(facts, birth, today, domain, time_known=False)
+    else:
+        text = digest.build_digest(facts, birth, today, domain)
+        text = "\n".join(ln for ln in text.split("\n") if not _LAGNA_LINE.match(ln.strip()))
+    # whatever Lagna wording remains refers to the Moon sign used as Lagna
+    return re.sub(r"(?<!Chandra )\bLagna\b", "Chandra Lagna", text)
+
+
+def _digest_for(facts: dict, birth=None, today=None, domain=None, remember=False) -> str:
+    """KEY INDICATIONS for the prompt; grounding calls (remember=False) reuse the text the
+    last generate() sent for this chart when the caller did not pass birth/today/domain."""
+    key = _chart_key(facts)
+    if not remember and birth is None and domain is None and key in _DIGEST_CACHE:
+        return _DIGEST_CACHE[key]
+    try:
+        text = _build_digest(facts, birth, today, domain)
+    except Exception as exc:
+        log.warning("digest unavailable: %s", type(exc).__name__)
+        return ""
+    if remember and key is not None:
+        if len(_DIGEST_CACHE) > 256:
+            _DIGEST_CACHE.clear()
+        _DIGEST_CACHE[key] = text
+    return text
+
+
+def _facts_brief(facts: dict, *, birth=None, today=None, domain=None, remember=False) -> str:
+    """CHART FACTS lines, each tagged with a stable ID (F001, F002, ...). The
+    KEY INDICATIONS digest lines are numbered after the base facts."""
+    lines = _facts_lines(facts)
+    text = _digest_for(facts, birth, today, domain, remember)
+    if text:
+        lines = lines + text.split("\n")
+    return "\n".join(f"[F{i:03d}] {line}" for i, line in enumerate(lines, 1))
 
 
 def _facts_lines(facts: dict) -> list[str]:
@@ -631,24 +882,29 @@ def _facts_lines(facts: dict) -> list[str]:
     banner = settings_summary(facts)
     if banner:
         lines.extend(banner.split("\n"))
-    lines += [f"Lagna: {lag['sign_name']} {lag['degree']:.4f}°, lord {lag['lord']}"]
+    moon_mode = bool(facts.get("moon_mode"))
+    if moon_mode:
+        lines.extend(moonmode.prompt_lines(facts))
+        lines += [f"Chandra Lagna (Moon sign): {lag['sign_name']}, lord {lag['lord']}"]
+    else:
+        lines += [f"Lagna: {lag['sign_name']} {lag['degree']:.4f}°, lord {lag['lord']}"]
     for name, rec in p.items():
         extra = []
-        if rec["retrograde"]:
+        if rec["retrograde"] and name not in ("Rahu", "Ketu"):   # nodes always move retrograde
             extra.append("retro")
         if rec["combust"]:
             extra.append("combust")
         if rec["dignity"]:
             extra.append("/".join(rec["dignity"]))
-        lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}, "
+        lines.append(f"{name}: {rec['sign_name']} {rec['degree']:.4f}° house {rec['house']}"
+                     f"{' from Moon' if moon_mode else ''}, "
                      f"nakshatra {rec['nakshatra']['name']} pada {rec['nakshatra']['pada']}"
                      + (f" [{', '.join(extra)}]" if extra else ""))
-    func = facts["functional"]
-    lines.append(f"Functional benefics: {', '.join(func['benefics'])}; "
-                 f"malefics: {', '.join(func['malefics'])}; "
-                 f"yogakaraka: {func['yogakaraka']}; maraka: {', '.join(func['maraka_lords'])}")
-    jk = facts["jaimini"]["karakas"]
-    lines.append("Chara karakas: " + ", ".join(f"{k}={v}" for k, v in jk.items()))
+    func = facts.get("functional") or {}
+    if func.get("benefics") or func.get("malefics"):
+        lines.append(f"Functional benefics: {', '.join(func['benefics'])}; "
+                     f"malefics: {', '.join(func['malefics'])}; "
+                     f"yogakaraka: {func.get('yogakaraka')}")
     for period in facts.get("current_vimshottari", []):
         lords = " → ".join(period["lords"])
         lines.append(f"Active Vimshottari {lords}: {period['start']} through {period['end']}")
@@ -684,7 +940,7 @@ def offline_response(messages: list[dict], facts: dict | None,
         return _offline_smalltalk(user_msg, facts)
     if analysis.get("decision", {}).get("disposition") == "abstain":
         from ..astro.prediction import interpretation_reading
-        return (chart_note + " " + interpretation_reading(analysis, facts, messages)).strip()
+        return (chart_note + " " + interpretation_reading(analysis, facts, messages, ask_followup=False)).strip()
 
     dom = analysis.get("domain", "that area")
     evidence = analysis.get("calculation_evidence_ids", [])
@@ -718,33 +974,40 @@ def offline_response(messages: list[dict], facts: dict | None,
     return (chart_note + " " + lead + bridge + extras).strip()
 
 
+def _offline_lookup(user_msg: str, facts: dict | None) -> str:
+    """Deterministic one-line chart lookups (no interpretation, no follow-up question)."""
+    if facts is None:
+        return ""
+    if "lagna" in user_msg or "ascendant" in user_msg or "rising" in user_msg:
+        lag = facts["lagna"]
+        if facts.get("moon_mode"):
+            return ("Your birth time is unknown, so there is no Lagna. I read from the Moon sign instead "
+                    f"(Chandra Lagna): {lag['sign_name']}, ruled by {lag['lord']}.")
+        return (f"Your lagna is {lag['sign_name']}, ruled by "
+                f"{lag['lord']}. It's a {lag['nakshatra']['name']} rising nakshatra.")
+    if "moon" in user_msg or "rashi" in user_msg:
+        m = facts["planets"]["Moon"]
+        return (f"Your Moon is in {m['sign_name']} — {m['nakshatra']['name']} nakshatra, "
+                f"pada {m['nakshatra']['pada']}, in the {m['house']}th house.")
+    planet = next((name for name in facts["planets"] if re.search(r"\b" + name + r"\b", user_msg, re.I)), None)
+    if planet:
+        placement = facts["planets"][planet]
+        return f"{planet} is in {placement['sign_name']} in house {placement['house']} of the birth chart."
+    return ""
+
+
 def _offline_smalltalk(user_msg: str, facts: dict | None) -> str:
     if re.fullmatch(r"\s*(hi|hello|hey|namaste)[!. ]*", user_msg):
         return "Namaste. I'm listening — what's on your mind?"
     if re.fullmatch(r"\s*(thanks|thank you)( so much)?[!. ]*", user_msg):
         return "Always happy to. What else shall we look at?"
-    if facts is not None and ("lagna" in user_msg or "ascendant" in user_msg
-                              or "rising" in user_msg):
-        lag = facts["lagna"]
-        return (f"Your lagna is {lag['sign_name']}, ruled by "
-                f"{lag['lord']}. It's a {lag['nakshatra']['name']} rising nakshatra. "
-                "What would you like to look at next?")
-    if facts is not None and ("moon" in user_msg or "rashi" in user_msg):
-        m = facts["planets"]["Moon"]
-        return (f"Your Moon is in {m['sign_name']} — {m['nakshatra']['name']} nakshatra, "
-                f"pada {m['nakshatra']['pada']}, in the {m['house']}th house.")
-    if facts:
-        planet = next((name for name in facts["planets"] if re.search(r"\b" + name + r"\b", user_msg, re.I)), None)
-        if planet:
-            placement = facts["planets"][planet]
-            return f"{planet} is in {placement['sign_name']} in house {placement['house']} of the birth chart."
-    if facts is not None and "dasha" in user_msg:
-        return ("Dasha timing is the backbone of what I read — ask me about a specific "
-                "area (career, marriage, studies) and I'll walk you through what the "
-                "periods show.")
+    lookup = _offline_lookup(user_msg, facts)
+    if lookup:
+        return lookup
     if facts is not None and ("chart" in user_msg or "kundli" in user_msg):
         lag = facts["lagna"]
-        return (f"Your chart is a {lag['sign_name']} lagna chart — the moon sits in "
-                f"{facts['planets']['Moon']['sign_name']}. What would you like to explore?")
-    return ("Which part of life would you like to explore? For example, if this is about work, "
-            "tell me whether you have a new role, a promotion, or something else in mind.")
+        if facts.get("moon_mode"):
+            return f"Your chart is read from the Moon sign ({lag['sign_name']}) because the birth time is unknown."
+        return (f"Your chart is a {lag['sign_name']} lagna chart, with the Moon in "
+                f"{facts['planets']['Moon']['sign_name']}.")
+    return OFFLINE_MESSAGE

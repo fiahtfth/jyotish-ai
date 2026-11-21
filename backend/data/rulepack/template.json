@@ -1,0 +1,48 @@
+{
+ "pack": "template",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "T_SEGMENTATION",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 (convergence output per window)",
+   "conditions": "the range is split at every P1 (AD and double-transit), P2 (Chara AD) and P3 (solar year) boundary; each segment is converged once; adjacent segments with identical outcome are merged",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_template.py::test_template_t_segments_and_converge"
+   ]
+  },
+  {
+   "rule_id": "T_P4_AGGREGATE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4",
+   "conditions": "P4 inside a segment: S if any micro-window is S (interval = hull of S micro-windows), A only if every trigger result is A, else W; all-NE -> NE",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_template.py::test_p4_aggregate"
+   ]
+  },
+  {
+   "rule_id": "T_ADVERSE_FRAMING",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC Part 3 (#8, #23, #49)",
+   "conditions": "T_adverse intents: E lists the pressure houses; output is framed as 'elevated pressure' windows and needs n >= min_n_for_label; no promise gate",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_template.py::test_template_t_adverse_framing"
+   ]
+  }
+ ]
+}

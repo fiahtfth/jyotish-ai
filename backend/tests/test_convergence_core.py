@@ -293,4 +293,7 @@ def test_engine_adds_convergence_facts():
     assert len(facts["bhava_bala"]["ratio"]) == 12 and facts["vimshopaka"]["Venus"] > 0
     assert facts["compound_dignity"]["Saturn"]["relation"] == "own"
     res = promise_gate(facts, intents.get(9))
-    assert res.level in ("STRONG", "MODERATE", "WEAK") and not res.unavailable
+    assert res.level in ("STRONG", "MODERATE", "WEAK")
+    # a cusp-sensitive/unusable varga is reported unavailable (never used), everything else computes
+    gated = {"F4_varga"} if facts["varga_reliability"].get("D9") in ("cusp_sensitive", "unusable") else set()
+    assert set(res.unavailable) == gated

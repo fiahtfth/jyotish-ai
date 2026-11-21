@@ -24,6 +24,7 @@ from .. import transits
 from .. import vimshottari as vim
 from ..engine import apply, calc_lock
 from . import links, rulepack
+from ._facts import unknown_time, varga_unusable
 from .types import A, M, NE, S, W, Evidence, IntentConfig, PillarResult
 
 log = logging.getLogger(__name__)
@@ -111,12 +112,18 @@ def _namespaced(e: Evidence, varga: str, rule: str, text: str) -> Evidence:
 
 
 def varga_check(facts: dict, cfg: IntentConfig, planet: str, mode_b: bool = False):
-    """Item 2. Returns (met True/False/None(NE), [Evidence])."""
+    """Item 2. Returns (met True/False/None(NE), [Evidence]). A varga the engine marks
+    cusp-sensitive/unusable (facts['varga_reliability']) is NE, never used."""
     if mode_b:
         return None, [_note(R_VARGA, 0, (), "varga check needs the birth time (Mode B)", ne_reason="birth time unknown")]
     vs = [v for v in cfg.V if v != "D1"] or ["D1"]
     evs, met, missing = [], False, []
     for v in vs:
+        gated = varga_unusable(facts, v)
+        if gated:
+            evs.append(_note(R_VARGA, 0, (), f"{v} not used: {gated}", ne_reason=gated))
+            missing.append(None)
+            continue
         vf = _vfacts(facts, v)
         if vf is None or planet not in vf["planets"]:
             missing.append(v)
@@ -130,7 +137,8 @@ def varga_check(facts: dict, cfg: IntentConfig, planet: str, mode_b: bool = Fals
             met = True
             evs.append(_namespaced(e, v, R_VARGA, f"{e.text} (in {v})"))
     for v in missing:
-        evs.append(_note(R_VARGA, 0, (), f"{v} not available", ne_reason=f"{v} not available"))
+        if v is not None:
+            evs.append(_note(R_VARGA, 0, (), f"{v} not available", ne_reason=f"{v} not available"))
     if met:
         return True, evs
     return (None if missing else False), evs
@@ -224,16 +232,32 @@ def _classify(adverse: bool, item1: bool, friction: bool, item2, item4: bool) ->
     return W
 
 
+def ad_rows(facts: dict, start, end) -> list:
+    """Vimshottari AD rows overlapping [start, end] (inclusive dates), in time order."""
+    start, end = to_date(start), to_date(end)
+    sj, ej = date_to_jd(start), date_to_jd(end + timedelta(days=1))
+    return [r for r in facts["vimshottari"]["periods"] if r["end_jd"] > sj and r["start_jd"] < ej]
+
+
+def ad_interval(row: dict, start, end) -> tuple:
+    """The AD's (start, end) dates clipped to [start, end]."""
+    start, end = to_date(start), to_date(end)
+    a = max(start, jd_to_date(row["start_jd"]))
+    b = min(end, jd_to_date(row["end_jd"]) - timedelta(days=1))
+    return (a, max(a, b))
+
+
 def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
-    """P1 for every Antardasha overlapping [start, end] (dates). One PillarResult per AD."""
+    """P1 for every Antardasha overlapping [start, end] (dates). One PillarResult per AD,
+    in the order of ad_rows(facts, start, end)."""
     start, end = to_date(start), to_date(end)
     if not cfg.E and not cfg.E_adverse_explicit:
         return [PillarResult.not_evaluated("P1", "intent has no event houses")]
     E = cfg.E or cfg.E_adverse_explicit
-    mode_b = (facts.get("meta") or {}).get("birth_time_precision") == "unknown"
+    mode_b = unknown_time(facts, birth)
     refs = ("moon",) if mode_b else ("lagna", "moon")
     sj, ej = date_to_jd(start), date_to_jd(end + timedelta(days=1))
-    rows = [r for r in facts["vimshottari"]["periods"] if r["end_jd"] > sj and r["start_jd"] < ej]
+    rows = ad_rows(facts, start, end)
     if not rows:
         return [PillarResult.not_evaluated("P1", "no Vimshottari antardasha in the requested range")]
     pds = vim.pd_periods(rows, sj, ej)
@@ -252,11 +276,10 @@ def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
 
 def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, mode_b) -> PillarResult:
     md, ad = row["lords"][0], row["lords"][1]
-    ad_iv = (max(start, jd_to_date(row["start_jd"])), min(end, jd_to_date(row["end_jd"]) - timedelta(days=1)))
-    if ad_iv[1] < ad_iv[0]:
-        ad_iv = (ad_iv[0], ad_iv[0])
+    ad_iv = ad_interval(row, start, end)
     dasha_tag = (MOON_NAK,)
-    bal = links.link_balance(ad, E, facts, refs)
+    extra_adv = cfg.E_adverse_explicit if cfg.E else ()
+    bal = links.link_balance(ad, E, facts, refs, extra_adv)
     ad_e = [_tag(e, extra=dasha_tag, text=f"AD lord: {e.text}") for e in bal["E"]]
     md_e = [_tag(e, extra=dasha_tag, text=f"MD lord: {e.text}") for e in links.links_to_E(md, E, facts, refs)]
     evs = []
@@ -332,7 +355,8 @@ def _eval_ad(facts, birth, cfg, E, row, all_pds, dts, dt_err, start, end, refs, 
                             text=f"Yogini cross-check (same Moon-nakshatra factor): Yogini lord {yl}: {e.text}"))
 
     value = _classify(bal["adverse_dominates"], item1, friction, item2, item4)
-    interval = hull_iso(windows) if (item4 and windows) else (iso(ad_iv[0]), iso(ad_iv[1]))
+    # S/M/W narrow to PD ∩ double-transit; an adverse AD applies to the whole AD
+    interval = hull_iso(windows) if (item4 and windows and value != A) else (iso(ad_iv[0]), iso(ad_iv[1]))
     evs.append(_note(R_RES, 0, (), f"items: 1={item1} 2={item2} 3={'friction' if friction else 'clean'} "
                      f"4={item4} 5={bal['adverse_dominates']} -> {value}"))
     return PillarResult("P1", value, tuple(evs), interval)

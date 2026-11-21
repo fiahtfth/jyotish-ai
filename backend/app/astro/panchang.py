@@ -220,8 +220,10 @@ def daily_panchang(when: date, place, facts=None) -> dict:
     # before-sunrise comparison on ~half of all days — noon is unambiguous
     vaara = drik.vaara(jd, place)
 
-    moon_abs = drik.sidereal_longitude(sr_jd, const._MOON) % 360
-    sat_sign = int(drik.sidereal_longitude(sr_jd, const._SATURN) // 30)
+    # sidereal_longitude requires a UTC JD; sr_jd is local-style, so shift by tz
+    jd_utc_sr = sr_jd - place.timezone / 24.0
+    moon_abs = drik.sidereal_longitude(jd_utc_sr, const._MOON) % 360
+    sat_sign = int(drik.sidereal_longitude(jd_utc_sr, const._SATURN) // 30)
 
     out = {
         "date": when.isoformat(),

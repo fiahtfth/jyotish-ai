@@ -23,6 +23,7 @@ from .. import constants as K
 from .. import precision, transits
 from ..engine import apply, calc_lock
 from . import _ivl, links, rulepack
+from ._facts import unknown_time
 from .promise import resolve_karakas
 from .timing_p3 import NO_BIRTH_TIME, event_houses
 from .types import A, S, W, Evidence, IntentConfig, PillarResult
@@ -214,7 +215,7 @@ def _tarabala(facts, birth, cfg, planet, tr, start, jd_start) -> list:
 def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
     start, end = _ivl.to_date(start), _ivl.to_date(end)
     rng = (start, end)
-    if getattr(birth, "birth_time_precision", "exact") == "unknown" or not facts.get("lagna"):
+    if unknown_time(facts, birth) or not facts.get("lagna"):
         return [PillarResult.not_evaluated(PILLAR, NO_BIRTH_TIME.replace("P3", "P4"), rng)]
     if not event_houses(cfg):
         return [PillarResult.not_evaluated(PILLAR, "intent has no event houses", rng)]

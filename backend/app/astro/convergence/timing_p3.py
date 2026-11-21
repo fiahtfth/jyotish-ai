@@ -20,6 +20,7 @@ from jhora import utils
 from .. import constants as K
 from .. import precision, varsha
 from . import _ivl, links, rulepack
+from ._facts import unknown_time
 from .promise import resolve_karakas
 from .types import A, M, NE, S, W, Evidence, IntentConfig, PillarResult
 
@@ -218,7 +219,9 @@ def _year_result(facts, birth, cfg, cy: int) -> PillarResult:
     # item 4 -------------------------------------------------------------
     item4 = False
     if yl:
-        lev = _link_evs(yl, houses, af, f"Varsheshwara {yl}")
+        lev = [Evidence(RULE_VARSHESHWARA, rulepack.version(RULE_VARSHESHWARA), e.fact_ids, e.direction, e.weight,
+                        e.factors, e.interval, f"{e.text} [{e.rule_id}]")
+               for e in _link_evs(yl, houses, af, f"Varsheshwara {yl}")]
         item4 = bool(lev)
         evs += lev
     else:
@@ -237,11 +240,12 @@ def _year_result(facts, birth, cfg, cy: int) -> PillarResult:
     met[5] = item5
 
     # item 6 -------------------------------------------------------------
-    sud = 0
+    sud, sud_ok = 0, True
     try:
         sud, sev = sudarshana_score(facts, birth, cfg, year[0] + timedelta(days=182))
         evs += sev
     except Exception as exc:           # degrade to unavailable, never guess
+        sud_ok = False
         unavailable.append(f"Sudarshana unavailable ({type(exc).__name__})")
     met[6] = sud >= 1
 
@@ -261,13 +265,20 @@ def _year_result(facts, birth, cfg, cy: int) -> PillarResult:
         evs.append(_ev(RULE_RESULT, 0, 0.0, set(), f"not evaluated: {u}", ne_reason=u))
     evs.append(_ev(RULE_RESULT, 0, 0.0, set(),
                    f"Sudarshana score {sud}/3; items met {sorted(k for k, x in met.items() if x)}"))
+    # A year with zero evaluable inputs is NE, not W: W would count as an
+    # evaluated neutral pillar and inflate k_evaluated / weaken the n gate.
+    evaluable = (pvb is not None or bool(cfg.TAJ["muntha_supportive"])
+                 or yl is not None or v.get("mudda") is not None or sud_ok)
+    if not evaluable:
+        return PillarResult(PILLAR, NE, tuple(evs), year,
+                            "no Tajika inputs available for this year")
     return PillarResult(PILLAR, value, tuple(evs), year)
 
 
 def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
     """One PillarResult per solar-return year overlapping [start, end] (dates)."""
     start, end = _ivl.to_date(start), _ivl.to_date(end)
-    if getattr(birth, "birth_time_precision", "exact") == "unknown" or not facts.get("lagna"):
+    if unknown_time(facts, birth) or not facts.get("lagna"):
         return [PillarResult.not_evaluated(PILLAR, NO_BIRTH_TIME, (start, end))]
     if not event_houses(cfg):
         return [PillarResult.not_evaluated(PILLAR, "intent has no event houses", (start, end))]

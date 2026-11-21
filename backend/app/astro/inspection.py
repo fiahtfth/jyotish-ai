@@ -1,11 +1,13 @@
 """Read-only chart inspection results shared by the dashboard and chat."""
 from jhora.horoscope.dhasa.graha import yogini
 
+from .. import moonmode
 from . import constants as K, precision, stability, yogas
 from .engine import engine
 
-_EXTRA_ASPECTS = {"Mars": (4, 8), "Jupiter": (5, 9), "Saturn": (3, 10),
-                  "Rahu": (5, 9), "Ketu": (5, 9)}
+# Parashari special aspects. Rahu/Ketu 5/9 aspects are a minority school
+# view, so nodes get only the common 7th aspect here.
+_EXTRA_ASPECTS = {"Mars": (4, 8), "Jupiter": (5, 9), "Saturn": (3, 10)}
 
 
 def active_dashas(birth, when):
@@ -33,13 +35,30 @@ def vimshottari_mahadashas(facts):
 
 
 def chart_details(facts, birth, when, tzdb_version):
+    if birth.birth_time_precision == "unknown":
+        return _moon_chart_details(facts, birth, when, tzdb_version)
     aspects = [{"from": name, "to": K.SIGN_NAMES[(p["sign"] + distance - 1) % 12], "distance": distance}
                for name, p in facts["planets"].items() for distance in (7, *_EXTRA_ASPECTS.get(name, ()))]
     return {"settings": {**facts["meta"], "tzdb_version": tzdb_version},
-            "vargas": facts["vargas"], "planets": facts["planets"], "lagna": facts["lagna"],
+            # retrograde/combust flags travel with each varga so the chart can mark them
+            "vargas": moonmode.merged_vargas(facts), "planets": facts["planets"], "lagna": facts["lagna"],
             "houses": facts["houses"], "aspects": aspects, "yogas": yogas.detect(facts),
             "ashtakavarga": {"signs": K.SIGN_NAMES, "planets": list(K.PLANET_NAMES.values())[:7],
                             "sav": facts["sarvastakavarga"], "bav": facts["binnashtakavarga"],
                             "details": facts.get("ashtakavarga")},
             "sensitivity": stability.lagna_windows(birth), "moon_pada": stability.moon_pada_window(birth),
             "dashas": active_dashas(birth, when)}
+
+
+def _moon_chart_details(facts, birth, when, tzdb_version):
+    """Birth time unknown: the Moon chart only; no Lagna, Lagna houses, divisional Lagnas or sensitivity."""
+    cf = moonmode.chandra_facts(facts, birth, when)
+    aspects = [{"from": name, "to": K.SIGN_NAMES[(p["sign"] + distance - 1) % 12], "distance": distance}
+               for name, p in cf["planets"].items() for distance in (7, *_EXTRA_ASPECTS.get(name, ()))]
+    return {"settings": {**cf["meta"], "tzdb_version": tzdb_version}, "time_known": False,
+            "chandra_lagna": True, "moon_mode": cf["moon_mode"],
+            "vargas": cf["vargas"], "planets": cf["planets"], "lagna": cf["lagna"],
+            "houses": cf["houses"], "aspects": aspects, "yogas": [],
+            "ashtakavarga": {"signs": K.SIGN_NAMES, "planets": list(K.PLANET_NAMES.values())[:7],
+                            "sav": cf["sarvastakavarga"], "bav": cf["binnashtakavarga"], "details": None},
+            "sensitivity": {}, "moon_pada": None, "dashas": active_dashas(birth, when)}

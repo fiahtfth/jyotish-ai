@@ -96,7 +96,7 @@ def test_pada_and_high_varga_intervals_include_boundary_alternatives():
 def _client():
     c = TestClient(app)
     email = f"modeb-{uuid.uuid4().hex[:8]}@example.com"
-    r = c.post("/api/auth/register", json={"terms_accepted": True, "email": email,
+    r = c.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True, "email": email,
                                          "password": "password123"})
     return c, {"Authorization": f"Bearer {r.json()['access_token']}"}
 

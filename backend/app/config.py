@@ -61,9 +61,14 @@ class Settings:
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")
     LMSTUDIO_MODEL: str = os.environ.get("JYOTISH_LMSTUDIO_MODEL", "local-model")
 
-    # Sampling temperature for every provider call. Low by default so repeated
-    # questions about the same locked facts give near-identical answers.
-    LLM_TEMPERATURE: float = float(os.environ.get("JYOTISH_LLM_TEMPERATURE", "0.2"))
+    # Sampling temperature for reply generation. Moderate so wording stays
+    # natural and varied; facts are locked in the prompt and verified afterwards.
+    LLM_TEMPERATURE: float = float(os.environ.get("JYOTISH_LLM_TEMPERATURE", "0.6"))
+    # Classifiers/routers/extractors must be deterministic.
+    LLM_ROUTER_TEMPERATURE: float = float(os.environ.get("JYOTISH_LLM_ROUTER_TEMPERATURE", "0"))
+    # How long a turn may wait for a free LLM slot before the "can't reach the
+    # AI service" message is used.
+    LLM_SLOT_WAIT_SECONDS: float = float(os.environ.get("JYOTISH_LLM_SLOT_WAIT", "8"))
 
     # Consent gate: whether chart data may be sent to a third-party LLM.
     LLM_EXTERNAL_CONSENT: bool = os.environ.get("JYOTISH_LLM_EXTERNAL_CONSENT", "false").lower() == "true"
@@ -96,7 +101,15 @@ class Settings:
         e.strip().lower() for e in os.environ.get("JYOTISH_ADMIN_EMAILS", "").split(",")
         if e.strip())
 
+    # Apply backtest-derived per-rule multipliers (astro/backtest.py::rule_weights). Off: outcome data
+    # is far too thin to tune scoring; see docs/CALCULATION_VALIDATION.md.
+    USE_BACKTEST_WEIGHTS: bool = os.environ.get("JYOTISH_USE_BACKTEST_WEIGHTS", "false").lower() == "true"
+
     FRONTEND_ORIGIN: str = os.environ.get("JYOTISH_FRONTEND_ORIGIN", "http://localhost:3000")
+
+    # Multi-method convergence engine v2 (docs/INTENT_CONVERGENCE_SPEC.md). Off by default:
+    # the orchestrator keeps the legacy pillars until this is switched on.
+    CONVERGENCE_V2: bool = os.environ.get("JYOTISH_CONVERGENCE_V2", "false").lower() == "true"
 
 
 settings = Settings()

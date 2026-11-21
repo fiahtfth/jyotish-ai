@@ -157,6 +157,21 @@ def promise(facts, domain):
         votes.append(support)
         rows.append([ref, f"H{h} {K.SIGN_NAMES[target]}", f"{ruler} · {position(rec)} · H{placed}",
                      ", ".join(links) or "None", "Support" if support else "Limited"])
+    # Secondary houses (e.g. wealth: the 11th beside the 2nd) are read from the Lagna;
+    # the primary house keeps its three-frame weighting above.
+    secondary = []
+    for sh in K.PROMISE_SECONDARY_HOUSES.get(domain, []):
+        starget = facts["houses"][sh]["sign"]
+        sruler = facts["houses"][sh]["lord"]
+        srec = planets[sruler]
+        slinks = [p for p in dict.fromkeys(karakas) if p and starget in K.reaches(p, planets[p]["sign"])]
+        splaced = srec["house"]
+        sok = ("debilitated" not in srec["dignity"] and
+               (bool(STRONG.intersection(srec["dignity"])) or bool(slinks) or splaced in (1, 4, 5, 7, 9, 10)))
+        secondary.append(sok)
+        rows.append(["Lagna", f"H{sh} {K.SIGN_NAMES[starget]} (secondary)",
+                     f"{sruler} · {position(srec)} · H{splaced}", ", ".join(slinks) or "None",
+                     "Support" if sok else "Limited"])
     d1lord = facts["houses"][h]["lord"]
     confirmed = False
     if d1lord in chart and "Lagna" in chart:
@@ -166,8 +181,10 @@ def promise(facts, domain):
         confirmed = "debilitated" not in dignity and (vh in (1, 4, 5, 7, 9, 10) or bool(STRONG.intersection(dignity)))
         rows.append([spec["varga"], f"D1 H{h} lord", f"{d1lord} · {position(rec)} · H{vh}", "—",
                      "Support" if confirmed else "Limited"])
-    grade = ("Unavailable" if not chart or not all(karakas) else "Strong" if sum(votes) >= 2 and confirmed
-             else "Moderate" if any(votes) or confirmed else "Weak")
+    secondary_ok = not secondary or any(secondary)
+    grade = ("Unavailable" if not chart or not all(karakas)
+             else "Strong" if sum(votes) >= 2 and confirmed and secondary_ok
+             else "Moderate" if any(votes) or confirmed or any(secondary) else "Weak")
     return grade, table(f"Static promise · {grade}", ["Frame", "Target", "Lord", "Karaka contacts", "Reading"], rows)
 
 
@@ -178,7 +195,7 @@ def window_audit(facts, birth, domain, when, calibrated):
     ruler = lord(target)
     targets = {target, planets[ruler]["sign"]}
     stamp = (when.year, when.month, when.day)
-    transits = engine.transit_positions(stamp, precision._place(birth))
+    transits = engine.transit_positions(stamp, precision._place(birth), birth.settings)
     vim = engine.running_vimshottari(birth, stamp)
     chara = engine.running_chara(birth, stamp)
     try:

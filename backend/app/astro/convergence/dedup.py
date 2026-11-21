@@ -120,3 +120,13 @@ def kp_label(kp: Optional[PillarResult]) -> str:
     if kp is None or kp.value == NE:
         return "KP: not evaluated"
     return "KP: supportive" if kp.value == S else "KP: not supportive"
+
+
+def rule_ids(window_result: WindowResult) -> dict:
+    """{pillar: sorted rule_ids used by its evidence} for P1..P4 (and "KP" when present).
+
+    For pre-registration: freezes which rule-pack rules produced a window's verdict."""
+    out = {p.pillar: sorted({e.rule_id for e in p.evidence}) for p in window_result.pillars}
+    if window_result.kp is not None:
+        out["KP"] = sorted({e.rule_id for e in window_result.kp.evidence})
+    return out

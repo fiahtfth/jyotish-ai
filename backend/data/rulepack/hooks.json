@@ -1,0 +1,132 @@
+{
+ "pack": "hooks",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "HOOK_SADE_SATI",
+   "version": "1.0",
+   "source": "Phaladeepika ch.26 (Gochara); traditional Sade Sati (Saturn 12th/1st/2nd from natal Moon)",
+   "conditions": "phases = transiting Saturn sidereal sign 12th, 1st, 2nd from the natal Moon sign, retrograde re-entries kept",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_sade_sati_phases"
+   ]
+  },
+  {
+   "rule_id": "HOOK_DHAIYA",
+   "version": "1.0",
+   "source": "Phaladeepika ch.26 (Kantaka/Ashtama Shani)",
+   "conditions": "Saturn 4th (Kantaka) or 8th (Ashtama) from the natal Moon sign; reported when requested",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_sade_sati_phases"
+   ]
+  },
+  {
+   "rule_id": "HOOK_CURRENT_DASHA",
+   "version": "1.0",
+   "source": "BPHS Vimshottari chapters; INTENT_CONVERGENCE_SPEC #61",
+   "conditions": "per running MD/AD/PD lord: houses ruled/occupied, dignity, strength, D9/D10 placement, nakshatra lord; Yogini cross-check; Chara MD/AD signs",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_current_dasha_shape"
+   ]
+  },
+  {
+   "rule_id": "HOOK_MUHURTA_FACTORS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #58; Muhurta Chintamani (via astro/muhurta.py rules)",
+   "conditions": "badge 'Muhurta factors satisfied: k/4' over Panchanga shuddhi, Tarabala/Chandrabala, Lagna shuddhi, avoid-periods",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_muhurta_badge"
+   ]
+  },
+  {
+   "rule_id": "HOOK_COMPATIBILITY",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #12; Ashtakoota and Kuja dosha via astro/matching.py",
+   "conditions": "M1 Ashtakoota, M2 Mangal dosha, M3 cross-chart links, M4 dasha alignment; consent required; badge 'Compatibility methods agreeing: n/4'",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_compatibility_requires_consent_and_badge"
+   ]
+  },
+  {
+   "rule_id": "HOOK_PAST_EVENT_FREEZE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #59",
+   "conditions": "rules frozen (rule-pack hash recorded) before feedback; record is immutable and content-hashed",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_past_event_record_frozen"
+   ]
+  },
+  {
+   "rule_id": "HOOK_RECTIFY_CLEAR_LEAD",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #60",
+   "conditions": "candidates = one time per distinct (D1,D9,D10,Moon pada); score = sum of n over >=3 events; top must beat runner-up on >= clear_lead events else 'cannot distinguish'",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_rectify_clear_lead_rule"
+   ]
+  },
+  {
+   "rule_id": "HOOK_ANNUAL_RANK",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #56",
+   "conditions": "domains ranked by the best de-duplicated n over the solar-return year; top 3 + 1 caution theme",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_annual_rank"
+   ]
+  },
+  {
+   "rule_id": "HOOK_TRANSITION_MARKERS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC #57",
+   "conditions": "count of independent structural markers (MD change, Chara MD change, Saturn/Jupiter/node returns, Sade Sati start/end, Sudarshana angular year) in the same 12-month span",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_hooks.py::test_transition_marker_count"
+   ]
+  }
+ ]
+}

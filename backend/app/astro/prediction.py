@@ -20,7 +20,22 @@ EVENTS = [
 ]
 
 
+# Questions about WHICH field/stream/subject suits someone are natal (what-fits)
+# questions, not "when will X happen" events, even if they mention graduation.
+_FIELD_QUESTION = re.compile(
+    r"\b(?:stream|streams|field|fields|subject|subjects|branch|branches|major|specializ\w+|"
+    r"course|courses|degree|discipline)\b", re.I)
+_WHEN_WORDS = re.compile(r"\b(?:when|will i|date|month|year|time|timing|soon)\b", re.I)
+
+
+def is_field_question(question):
+    """'Which stream/field/subject suits me' — a natal what-fits question, not a timing one."""
+    return bool(_FIELD_QUESTION.search(question) and not _WHEN_WORDS.search(question))
+
+
 def event_spec(question, domain):
+    if domain == "education" and is_field_question(question):
+        return None
     for dom, pattern, event, definition in EVENTS:
         if dom == domain and re.search(pattern, question, re.I):
             return {"event_type": event, "definition": definition}
@@ -133,7 +148,7 @@ def reading_subject(analysis):
     return f"For {subject} in {period}"
 
 
-def interpretation_reading(analysis, facts=None, messages=None):
+def interpretation_reading(analysis, facts=None, messages=None, ask_followup=True):
     """A useful computed-chart answer when no event forecast is being issued."""
     from .constants import DOMAINS
     domain = analysis.get("domain", "direction")
@@ -184,8 +199,8 @@ def interpretation_reading(analysis, facts=None, messages=None):
             h = DOMAINS[domain]["houses"][0]
             n = facts["houses"][h]["lord"]
             rec = facts["planets"][n]
-            detail = (f"The ruler of house {h}, {n}, is at {rec['degree']:.4f}° "
-                      f"in {rec['sign_name']}, in house {rec['house']}")
+            detail = (f"The ruler of house {h}, {n}, is in {rec['sign_name']}, "
+                      f"in house {rec['house']}")
         if detail:
             reading += " " + detail[0].upper() + detail[1:] + "."
         return f"{subject}, {reading[0].lower()}{reading[1:]}"
@@ -196,43 +211,134 @@ def interpretation_reading(analysis, facts=None, messages=None):
             question = "What role are you in now, and what change are you hoping for?"
         elif "change" in user_text or "switch" in user_text:
             question = "What is prompting the job change, and what kind of role are you considering?"
-    lines.append(question)
+    if ask_followup:
+        lines.append(question)
     return " ".join(lines)
 
 
-def constrain_reply(reply, analysis, facts=None, messages=None):
-    """Preserve helpful readings while rejecting unsupported event promises."""
-    decision = analysis["decision"]
-    abstained = decision["disposition"] == "abstain"
-    audit = analysis.get("classical")
-    if audit and (re.search(r"\b(?:KP sub[- ]?lord|sub[- ]?lord|bindus?)\b|\d\s*%", reply, re.I)
-                  or (decision.get("event") and audit["promise"] in ("Weak", "Unavailable"))):
-        return interpretation_reading(analysis, facts, messages)
-    allowed = set() if abstained else {decision["window"]["start"], decision["window"]["end"]}
-    if not abstained:
-        for w in analysis.get("precision", {}).get("timing_windows", []):
-            allowed.update((w["start"], w["end"]))
-    dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", reply))
-    certainty = re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", reply, re.I)
-    prose_date = re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d{2})?|20\d{2})\b", reply, re.I)
-    internal = re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", reply, re.I)
-    if dates - allowed or certainty or prose_date or internal:
-        # Remove only the offending sentences. A single unsupported claim
-        # must not erase the rest of an otherwise useful answer.
-        sentences = re.split(r"(?<=[.!?])\s+|\n\n", reply)
-        if len(sentences) > 1:
-            kept = []
-            for sentence in sentences:
-                bad_dates = set(re.findall(r"\b20\d\d-\d{2}-\d{2}\b", sentence)) - allowed
-                if bad_dates or re.search(r"\b(guaranteed|definitely|certainly|confirmed|will\s+(?:get|receive|marry|move|happen|occur|be promoted))\b", sentence, re.I):
-                    continue
-                if re.search(r"\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d", sentence, re.I):
-                    continue
-                if re.search(r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|rule agreement|disposition|abstention|success criteria", sentence, re.I):
-                    continue
-                if sentence.strip():
-                    kept.append(sentence.strip())
-            if kept:
-                return " ".join(kept)
-        return interpretation_reading(analysis, facts, messages)
-    return reply
+_MONTHS = ("January", "February", "March", "April", "May", "June", "July",
+           "August", "September", "October", "November", "December")
+_ISO = re.compile(r"\b(20\d\d)-(\d{2})-(\d{2})\b")
+# capitalised month only, so modal "may" / verb "march" never match
+_PROSE_DATE = re.compile(
+    r"\b(" + "|".join(_MONTHS) + r")\b(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?(?:,?\s+(20\d\d))?(?!\d)")
+_NEG = r"(?<!not )(?<!never )(?<!n't )(?<!no )"
+# A definitive outcome promise: "guaranteed", "will definitely ...", "will get the promotion",
+# "your promotion is confirmed". "you confirmed ..." and ordinary "definitely" stay.
+_CERTAINTY = re.compile(
+    _NEG + r"\b(?:guaranteed|assured\s+(?:of|to)|for\s+sure|without\s+(?:a\s+)?doubt)\b"
+    r"|\bwill\s+(?:definitely|certainly|surely|absolutely)\b"
+    r"|\b(?:definitely|certainly|surely)\s+will\b"
+    r"|\b(?:is|are|been|be)\s+(?:definitely\s+)?confirmed\b"
+    r"|\bwill\s+(?:get|receive)\s+(?:the|a|an|your)?\s*(?:promotion|job|offer|visa|admission|raise|hike|transfer)\b"
+    r"|\bwill\s+(?:marry|be\s+promoted|relocate|move\s+abroad)\b"
+    r"|\bwill\s+(?:happen|occur)\s+(?:on|in|by)\b", re.I)
+_PROBABILITY = re.compile(
+    r"\b\d{1,3}\s*(?:-|to)\s*\d{1,3}\s*%|\b(?:chances?|probabilit\w*|odds|likel\w+)\b[^.!?\n]{0,40}\d\s*%"
+    r"|\d\s*%[^.!?\n]{0,25}\b(?:chances?|probabilit\w*|likel\w+)\b", re.I)
+_INTERNAL = re.compile(
+    r"observable event|before it can be scored|reliable event forecast|chart methods can still|\b[0-4]/4\b|"
+    r"rule agreement|disposition|abstention|success criteria", re.I)
+_KP = re.compile(r"\b(?:KP sub[- ]?lord|sub[- ]?lord|bindus?)\b", re.I)
+
+
+def _window_range(analysis):
+    spans = []
+    for w in [analysis.get("analysis_window"), (analysis.get("decision") or {}).get("window"),
+              *((analysis.get("precision") or {}).get("timing_windows") or [])]:
+        try:
+            spans.append((date.fromisoformat(w["start"]), date.fromisoformat(w["end"])))
+        except (TypeError, KeyError, ValueError):
+            continue
+    return spans
+
+
+def _reply_context(analysis, facts, messages):
+    user_text = "\n".join(m["content"] for m in (messages or []) if m.get("role") == "user")
+    try:
+        import json
+        blob = json.dumps(analysis, default=str)
+    except (TypeError, ValueError):
+        blob = ""
+    return {"spans": _window_range(analysis), "user": user_text, "blob": blob}
+
+
+def _in_spans(y, m, d, spans):
+    """True if the date (day optional) falls inside any analysis window."""
+    for start, end in spans:
+        if d:
+            try:
+                if start <= date(y, m, d) <= end:
+                    return True
+            except ValueError:
+                pass
+        elif (start.year, start.month) <= (y, m) <= (end.year, end.month):
+            return True
+    return False
+
+
+def _sentence_issues(sentence, ctx):
+    issues = []
+    for m in _ISO.finditer(sentence):
+        y, mo, d = (int(g) for g in m.groups())
+        if m.group(0) in ctx["user"] or m.group(0) in ctx["blob"] or _in_spans(y, mo, d, ctx["spans"]):
+            continue
+        issues.append(f"the date {m.group(0)} is outside the analysis window and was not supplied")
+    for m in _PROSE_DATE.finditer(sentence):
+        month = _MONTHS.index(m.group(1)) + 1
+        day = int(m.group(2)) if m.group(2) else None
+        year = int(m.group(3)) if m.group(3) else None
+        if day is None and year is None:
+            continue                                  # bare month name: not a date claim
+        if year is None and day is not None and not (1 <= day <= 31):
+            continue
+        if m.group(0).lower() in ctx["user"].lower():
+            continue                                  # the user wrote it themselves
+        if year is None:
+            # month/day without a year: fine when any window covers that month
+            if any(_in_spans(s.year + k, month, None, [(s, e)]) for s, e in ctx["spans"] for k in (0, 1)):
+                continue
+        elif _in_spans(year, month, day, ctx["spans"]) or f"{year}-{month:02d}" in ctx["blob"]:
+            continue
+        issues.append(f"the date '{m.group(0)}' is outside the analysis window and was not supplied")
+    if _CERTAINTY.search(sentence):
+        issues.append("states a definite outcome as certain; the chart only shows indications")
+    if _PROBABILITY.search(sentence):
+        issues.append("gives a numerical probability, which the chart cannot support")
+    if _INTERNAL.search(sentence):
+        issues.append("exposes internal scoring or protocol wording")
+    if _KP.search(sentence) and not re.search(r"sub_?lord|bindu", ctx["blob"], re.I):
+        issues.append("mentions KP sub-lords or bindus that were not supplied")
+    return issues
+
+
+def find_reply_issues(reply, analysis, facts=None, messages=None):
+    """Structured problems in a model reply: [{"sentence", "message"}].
+    Empty list means the reply may be shown as it is. The caller should
+    regenerate once (providers.regenerate_with_issues) with these messages
+    and only then fall back to strip_reply_issues."""
+    ctx = _reply_context(analysis, facts, messages)
+    from .verify import split_sentences
+    found = []
+    for seg, _ in split_sentences(reply):
+        if seg.strip():
+            found += [{"sentence": seg.strip(), "message": m} for m in _sentence_issues(seg, ctx)]
+    return found
+
+
+def strip_reply_issues(reply, analysis, facts=None, messages=None):
+    """Remove only the offending sentences; paragraphs and lists are preserved."""
+    from .verify import strip_sentences
+    ctx = _reply_context(analysis, facts, messages)
+    return strip_sentences(reply, lambda s: bool(_sentence_issues(s, ctx)))
+
+
+def constrain_reply(reply, analysis, facts=None, messages=None, return_issues=False):
+    """Reject unsupported event promises without damaging the rest of the reply.
+
+    Default: returns the reply with only offending sentences removed (never a
+    canned replacement). With return_issues=True returns (stripped_reply, issues)
+    so the caller can regenerate once with the issues listed instead."""
+    issues = find_reply_issues(reply, analysis, facts, messages)
+    stripped = strip_reply_issues(reply, analysis, facts, messages) if issues else reply
+    return (stripped, issues) if return_issues else stripped

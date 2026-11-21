@@ -6,8 +6,8 @@ import { useI18n } from "@/lib/i18n";
 
 export default function Birth() {
   const router = useRouter();
-  const { t } = useI18n();
-  const [f, setF] = useState<ProfileIn>({ display_name: "", year: 1990, month: 1, day: 1, hour: 6, minute: 0, second: 0, birth_time_precision: "exact",
+  const { t, lang } = useI18n();
+  const [f, setF] = useState<ProfileIn>({ display_name: "", year: 0, month: 0, day: 0, hour: 0, minute: 0, second: 0, birth_time_precision: "exact",
     place_name: "", place_state: "", place_country: "", latitude: 0, longitude: 0,
     time_basis: "zone", utc_offset_manual: null, dst_fold: null, calc_preset: "default" });
   const [q, setQ] = useState("");
@@ -21,6 +21,18 @@ export default function Birth() {
   const [created, setCreated] = useState(false);
   const [manualCoords, setManualCoords] = useState(false);
   const deb = useRef<ReturnType<typeof setTimeout>>(null);
+  // Date and time start empty (no prefilled guess); the 12-hour clock has an explicit AM/PM choice.
+  const [dayS, setDayS] = useState("");
+  const [monthS, setMonthS] = useState("");
+  const [yearS, setYearS] = useState("");
+  const [hourS, setHourS] = useState("");
+  const [minS, setMinS] = useState("");
+  const [ampm, setAmpm] = useState<"" | "AM" | "PM">("");
+  const [rq, setRq] = useState("");
+  const [rPlaces, setRPlaces] = useState<Place[]>([]);
+  const [rPlace, setRPlace] = useState<Place | null>(null);
+  const rdeb = useRef<ReturnType<typeof setTimeout>>(null);
+  const unknownTime = f.birth_time_precision === "unknown";
 
   useEffect(() => {
     if (!token()) { router.replace("/login"); return; }
@@ -30,6 +42,14 @@ export default function Birth() {
     }
     api.getProfile().then(p => {
       setF(f => ({ ...f, ...p }));
+      setDayS(String(p.day)); setMonthS(String(p.month)); setYearS(String(p.year));
+      setHourS(String(p.hour % 12 === 0 ? 12 : p.hour % 12)); setMinS(String(p.minute));
+      setAmpm(p.hour >= 12 ? "PM" : "AM");
+      if (p.residence_name) {
+        setRq([p.residence_name, p.residence_state, p.residence_country].filter(Boolean).join(", "));
+        setRPlace({ name: p.residence_name, state: p.residence_state ?? "", country: p.residence_country ?? "",
+                    latitude: p.residence_latitude ?? 0, longitude: p.residence_longitude ?? 0 });
+      }
       if (p.place_name) {
         setQ(`${p.place_name}, ${p.place_country}`);
         // normalize profile shape -> geo-search shape used by submit()
@@ -47,9 +67,35 @@ export default function Birth() {
     deb.current = setTimeout(() => api.geoSearch(v.trim()).then(setPlaces).catch(() => {}), 300);
   }
 
+  function searchResidence(v: string) {
+    setRq(v); setRPlace(null);
+    if (rdeb.current) clearTimeout(rdeb.current);
+    if (v.trim().length < 2) { setRPlaces([]); return; }
+    rdeb.current = setTimeout(() => api.geoSearch(v.trim()).then(setRPlaces).catch(() => {}), 300);
+  }
+
+  const dd = parseInt(dayS, 10), mm = parseInt(monthS, 10), yy = parseInt(yearS, 10);
+  const h12 = parseInt(hourS, 10), mi = parseInt(minS, 10);
+  const dateOk = Number.isInteger(dd) && Number.isInteger(mm) && Number.isInteger(yy) && yy >= 1900 && yy <= 2030
+    && new Date(Date.UTC(yy, mm - 1, dd)).getUTCDate() === dd && new Date(Date.UTC(yy, mm - 1, dd)).getUTCMonth() === mm - 1;
+  const timeOk = unknownTime || (h12 >= 1 && h12 <= 12 && mi >= 0 && mi <= 59 && ampm !== "");
+  const hour24 = unknownTime ? 12 : (h12 % 12) + (ampm === "PM" ? 12 : 0);
+  const placeLine = (manualCoords ? [q.trim(), f.place_state, f.place_country] : place ? [place.name, place.state, place.country] : [])
+    .filter(Boolean).join(", ");
+  let readBack = "";
+  if (dateOk && timeOk && placeLine) {
+    const loc = lang === "hi" ? "hi-IN" : "en-GB";
+    const dt = new Date(Date.UTC(yy, mm - 1, dd));
+    const weekday = new Intl.DateTimeFormat(loc, { weekday: "long", timeZone: "UTC" }).format(dt);
+    const month = new Intl.DateTimeFormat(loc, { month: "long", timeZone: "UTC" }).format(dt);
+    const when = `${weekday}, ${dd} ${month} ${yy}` + (unknownTime ? "" : `, ${h12}:${String(mi).padStart(2, "0")} ${ampm === "PM" ? t("pm") : t("am")}`);
+    readBack = t(unknownTime ? "readBackUnknownTime" : "readBack", { when, place: placeLine });
+  }
+
   async function submit(e: React.FormEvent, fold?: 0 | 1) {
     e.preventDefault();
     setErr("");
+    if (!dateOk || !timeOk) { setErr(t("fillDateTime")); return; }
     const location = manualCoords ? {
       name: q.trim() || t("manualCoords"), state: f.place_state, country: f.place_country,
       latitude: f.latitude, longitude: f.longitude,
@@ -60,6 +106,10 @@ export default function Birth() {
       const save = adding && !created ? api.createProfile : api.putProfile;
       const p = await save({
         ...f,
+        day: dd, month: mm, year: yy, hour: hour24, minute: unknownTime ? 0 : mi,
+        second: unknownTime ? 0 : f.second,
+        residence_name: rPlace?.name ?? "", residence_state: rPlace?.state ?? "", residence_country: rPlace?.country ?? "",
+        residence_latitude: rPlace?.latitude ?? null, residence_longitude: rPlace?.longitude ?? null,
         dst_fold: fold ?? f.dst_fold,
         place_name: location.name, place_state: location.state, place_country: location.country,
         latitude: location.latitude, longitude: location.longitude,
@@ -67,7 +117,9 @@ export default function Birth() {
       setAmbig(null);
       if (adding) setCreated(true);
       // Show the resolved offset + any time-zone warnings before continuing.
-      setResolved(p);
+      // Only interrupt when the time zone was not simply taken from the place, or there are warnings.
+      if ((p.offset_source && p.offset_source !== "tzdb") || (p.tz_warnings?.length ?? 0) > 0) setResolved(p);
+      else router.replace("/chat");
     } catch (x) {
       if (x instanceof TzError) {
         if (x.detail.code === "ambiguous_time") setAmbig(x.detail);
@@ -125,24 +177,35 @@ export default function Birth() {
         <input value={f.display_name} onChange={e => setF({ ...f, display_name: e.target.value })}
           placeholder={t("callYou")} className={inp} />
         <div className="grid grid-cols-3 gap-2">
-          <input type="number" value={f.day} min={1} max={31} onChange={e => setF({ ...f, day: +e.target.value })} className={inp} placeholder={t("day")} />
-          <select value={f.month} onChange={e => setF({ ...f, month: +e.target.value })} className={inp}>
+          <label className="text-xs text-muted col-span-3 -mb-2">{t("birthDate")}</label>
+          <input type="number" required value={dayS} min={1} max={31} onChange={e => setDayS(e.target.value)} className={inp} placeholder={t("day")} />
+          <select required value={monthS} onChange={e => setMonthS(e.target.value)} className={inp}>
+            <option value="" disabled>{t("month")}</option>
             {t("months").split("|").map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
           </select>
-          <input type="number" value={f.year} min={1850} max={2030} onChange={e => setF({ ...f, year: +e.target.value })} className={inp} placeholder={t("year")} />
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          <label className="text-xs text-muted col-span-3 -mb-2">{t("timeOfBirth")}</label>
-          <input type="number" value={f.hour} min={0} max={23} onChange={e => setF({ ...f, hour: +e.target.value })} className={inp} placeholder={t("hour")} />
-          <input type="number" value={f.minute} min={0} max={59} onChange={e => setF({ ...f, minute: +e.target.value })} className={inp} placeholder={t("minute")} />
-          <input type="number" value={f.second} min={0} max={59} onChange={e => setF({ ...f, second: +e.target.value })}
-            className={inp} aria-label={t("second")} placeholder={t("second")} />
+          <input type="number" required value={yearS} min={1900} max={2030} onChange={e => setYearS(e.target.value)} className={inp} placeholder={t("year")} />
         </div>
         <select value={f.birth_time_precision} onChange={e => setF({ ...f, birth_time_precision: e.target.value as ProfileIn["birth_time_precision"] })} className={inp}>
           <option value="exact">{t("precExact")}</option>
           <option value="approximate">{t("precApprox")}</option>
           <option value="unknown">{t("precUnknown")}</option>
         </select>
+        {unknownTime ? <p className="text-sm border border-bord rounded-lg p-3 text-muted">{t("unknownTimeNote")}</p> : (
+          <div className="grid grid-cols-3 gap-2">
+            <label className="text-xs text-muted col-span-3 -mb-2">{t("timeOfBirth")}</label>
+            <input type="number" required value={hourS} min={1} max={12} onChange={e => setHourS(e.target.value)} className={inp} placeholder={t("hour12")} aria-label={t("hour12")} />
+            <input type="number" required value={minS} min={0} max={59} onChange={e => setMinS(e.target.value)} className={inp} placeholder={t("minute12")} aria-label={t("minute12")} />
+            <div className="flex rounded-lg overflow-hidden border border-bord text-sm" role="radiogroup" aria-label="AM or PM">
+              {(["AM", "PM"] as const).map(v => (
+                <button key={v} type="button" role="radio" aria-checked={ampm === v} onClick={() => setAmpm(v)}
+                  className={`flex-1 ${ampm === v ? "bg-accent text-white" : "text-muted"}`}>{v === "AM" ? t("am") : t("pm")}</button>
+              ))}
+            </div>
+          </div>
+        )}
+        <details className="text-sm border border-bord rounded-lg p-3">
+          <summary className="cursor-pointer text-muted">{t("advancedOptions")}</summary>
+          <div className="space-y-3 mt-3">
         <div>
           <label className="text-xs text-muted">{t("timeBasis")}</label>
           <select value={f.time_basis} onChange={e => setF({ ...f, time_basis: e.target.value as ProfileIn["time_basis"], dst_fold: null })} className={inp}>
@@ -167,6 +230,8 @@ export default function Birth() {
             <option value="iae">{t("presetIae")}</option>
           </select>
         </div>
+          </div>
+        </details>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={manualCoords} onChange={e => setManualCoords(e.target.checked)} /> {t("manualCoords")}
         </label>
@@ -195,6 +260,32 @@ export default function Birth() {
           )}
           {place && <div className="text-xs text-muted mt-1">{place.latitude.toFixed(2)}° / {place.longitude.toFixed(2)}° · {place.timezone_name}</div>}
         </div>}
+        <div className="relative">
+          <label className="text-xs text-muted">{t("residenceLabel")}</label>
+          <input value={rq} onChange={e => searchResidence(e.target.value)} placeholder={t("residencePh")} className={inp} />
+          {rPlaces.length > 0 && !rPlace && (
+            <div className="absolute z-10 mt-1 w-full bg-card border border-bord rounded-lg shadow-lg max-h-56 overflow-auto">
+              {rPlaces.map((p, i) => (
+                <button key={i} type="button"
+                  onClick={() => { setRPlace(p); setRq(`${p.name}${p.state ? `, ${p.state}` : ""}, ${p.country}`); setRPlaces([]); }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-bgsoft">
+                  {p.name}{p.state ? `, ${p.state}` : ""}, {p.country}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div>
+          <label className="text-xs text-muted">{t("genderLabel")}</label>
+          <select value={f.gender ?? ""} onChange={e => setF({ ...f, gender: (e.target.value || null) as ProfileIn["gender"] })} className={inp}>
+            <option value="">{t("genderNone")}</option>
+            <option value="female">{t("genderFemale")}</option>
+            <option value="male">{t("genderMale")}</option>
+            <option value="other">{t("genderOther")}</option>
+            <option value="prefer_not_to_say">{t("genderPreferNot")}</option>
+          </select>
+          <div className="text-xs text-muted mt-1">{t("genderHint")}</div>
+        </div>
         {ambig && (
           <div className="text-sm border border-bord rounded-lg p-3 space-y-2">
             <div>{t("dstChoose")}</div>
@@ -206,6 +297,10 @@ export default function Birth() {
             ))}
           </div>
         )}
+        {readBack && <div className="text-sm border border-bord rounded-lg p-3" role="status">
+          <strong>{readBack}</strong>
+          <div className="text-xs text-muted mt-1">{t("readBackCheck")}</div>
+        </div>}
         {err && <div className="text-red-500 text-sm">{err}</div>}
         <button disabled={busy} className="w-full bg-accent text-white rounded-lg py-2.5 font-medium disabled:opacity-50">
           {busy ? t("computing") : t("continue")}

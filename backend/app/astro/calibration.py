@@ -1,10 +1,12 @@
-"""Three-event past calibration.
+"""Opening birth-time calibration.
 
-Generates three testable retrospective statements from the *already
-computed* chart — each in a different life domain, each bounded to a past
-window derived from real dasha periods. Predictions are locked before
-feedback; matching rules are objective and partial matches never count
-as full confirmations.
+The strongest check is the client's own dated major events (see the
+orchestrator's milestone search). When they have none, this module generates
+up to three single-event retrospective questions from the *already computed*
+chart plus one negative-control question about a window the chart does not
+indicate. Questions are ranked by how much plausible birth-time variants
+disagree about the window (pillar support is only a filter), predictions are
+locked before feedback and partial matches never count as confirmations.
 """
 from datetime import date, datetime, timedelta
 import re
@@ -15,25 +17,34 @@ from . import pillars
 from .engine import BirthInput
 
 _id_counter = itertools.count(1)
-OPENING_EVENT_PREFIX = "recent_calibration_v3_"
+OPENING_EVENT_PREFIX = "recent_calibration_v5_"
+CONTROL_EVENT_ID = OPENING_EVENT_PREFIX + "ctl"
 
-# Presentation templates per domain (no Barnum wording; window is real).
-# {poss}/{subj}/{were}/{memory} adapt to the person: "you" for the account
-# owner, otherwise the family member's name (see subject_words).
+# One definite, memorable event per question - never "A or B". The event is
+# chosen from the Antardasha lord's house links (see lord_event_domain).
+# {poss}/{subj}/{obj} adapt to the person: "you" for the account owner,
+# otherwise the family member's name (see subject_words).
 _STATEMENTS = {
-    "career": "Between {start} and {end}, {poss} work responsibilities or professional direction "
-              "appear to have changed. Does that fit {memory}?",
-    "education": "Between {start} and {end}, education or learning appears to have been an important "
-                 "focus for {obj}. Does that fit {memory}?",
-    "relationship": "Between {start} and {end}, a close relationship or family commitment "
-                    "appears to have become an important focus for {obj}. Does that fit {memory}?",
-    "relocation": "Between {start} and {end}, {poss} living situation appears to have changed. "
-                  "Does that fit {memory}?",
-    "finance": "Between {start} and {end}, {poss} financial responsibilities appear to have changed. "
-               "Does that fit {memory}?",
-    "direction": "Between {start} and {end}, {poss} personal goals appear to have changed. "
-                 "Does that fit {memory}?",
+    "career": "Between {start} and {end}, did {subj} start a new job?",
+    "education": "Between {start} and {end}, did {subj} begin a new course of study, such as a degree?",
+    "relationship": "Between {start} and {end}, did {subj} get married?",
+    "relocation": "Between {start} and {end}, did {subj} move to live in a different city?",
 }
+# houses that make an Antardasha lord point to each event type
+_EVENT_HOUSES = {"relationship": (7,), "career": (10, 6), "relocation": (4, 12), "education": (4, 5, 9)}
+_TIE_ORDER = ["relationship", "career", "relocation", "education"]
+_DEFAULT_MIN_AGES = {"career": 16, "education": 15, "relationship": 21, "relocation": 10}
+_SENSITIVITY_SHORTLIST = 4      # per domain, before the (costly) variant comparison
+
+
+def min_ages() -> dict:
+    """Minimum age at the start of an opening window; shared constants win."""
+    return {**_DEFAULT_MIN_AGES, **{d: a for d, a in K.MIN_CALIBRATION_AGE_FOR_DOMAIN.items()
+                                    if d in _DEFAULT_MIN_AGES}}
+
+
+def is_control(event_id: str | None) -> bool:
+    return bool(event_id) and event_id == CONTROL_EVENT_ID
 
 
 def subject_words(name: str | None = None) -> dict:
@@ -46,17 +57,17 @@ def subject_words(name: str | None = None) -> dict:
     return {"subj": name, "obj": name, "poss": poss, "were": "was",
             "memory": f"what you know of {poss} life"}
 
-_DOMAIN_ORDER = ["career", "education", "relocation", "relationship", "finance", "direction"]
+_DOMAIN_ORDER = ["career", "education", "relocation", "relationship"]  # opening domains only
 
 
-def _age_today(birth: BirthInput) -> float:
-    today = date.today()
+def _age_today(birth: BirthInput, today: date | None = None) -> float:
+    today = today or date.today()
     return (today - date(birth.year, birth.month, birth.day)).days / 365.25
 
 
-def _past_ad_windows(facts, birth: BirthInput) -> list[dict]:
+def _past_ad_windows(facts, birth: BirthInput, today: date | None = None) -> list[dict]:
     """Past windows across the person's life, bounded to dates after birth."""
-    today = date.today()
+    today = today or date.today()
     earliest = date(birth.year, birth.month, birth.day)
     latest = today - timedelta(days=45)
     out = []
@@ -88,61 +99,201 @@ def _fmt_range(s: date, e: date) -> str:
 
 
 def pick_domains(age: float) -> list[str]:
-    ok = [d for d in _DOMAIN_ORDER
-          if age >= K.MIN_CALIBRATION_AGE_FOR_DOMAIN.get(d, 0)]
-    return ok
+    ages = min_ages()
+    return [d for d in _DOMAIN_ORDER if age >= ages.get(d, 0)]
+
+
+def _lord_link_score(facts, lord, domain) -> int:
+    houses = _EVENT_HOUSES[domain]
+    owned = {h for h in range(1, 13) if facts["houses"][h]["lord"] == lord}
+    placed = (facts["planets"].get(lord) or {}).get("house")
+    return 2 * len(owned & set(houses)) + (1 if placed in houses else 0)
+
+
+def lord_event_domain(facts, lord) -> str | None:
+    """The event type an Antardasha lord most points to: marriage (7th),
+    job start (10th/6th), relocation (4th/12th) or education (4th/5th/9th);
+    None when the lord has no such link."""
+    best, best_score = None, 0
+    for domain in _TIE_ORDER:
+        score = _lord_link_score(facts, lord, domain)
+        if score > best_score:
+            best, best_score = domain, score
+    return best
+
+
+# (min support, min net) tiers: strict first, relaxed only to reach three.
+_THRESHOLD_TIERS = [(2, 1), (1, 0)]
+
+
+def _shifted(birth: BirthInput, minutes: int) -> BirthInput:
+    from dataclasses import replace
+    t = datetime(birth.year, birth.month, birth.day, birth.hour, birth.minute,
+                 birth.second) + timedelta(minutes=minutes)
+    return replace(birth, year=t.year, month=t.month, day=t.day,
+                   hour=t.hour, minute=t.minute, second=t.second)
+
+
+def _ad_at(facts, day: date):
+    for p in facts["vimshottari"]["periods"]:
+        if len(p["lords"]) == 2 and _to(p["start"]) <= day <= _to(p["end"]):
+            return p
+    return None
+
+
+def variant_sensitivity(facts, birth: BirthInput):
+    """Build sensitivity(domain, window, evidence) -> float: how much the
+    chart read at the edges of the birth-time uncertainty disagrees with the
+    stated-time chart about a window (verdicts, the Antardasha running in it,
+    and the D1/D9/domain-varga Lagna). Lagna-insensitive windows score 0."""
+    from . import stability
+    from .engine import engine
+    unc = max(2, min(120, int(stability.uncertainty_for(birth) // 60)))
+    variants = []
+    for minutes in (-unc, unc):
+        try:
+            vb = _shifted(birth, minutes)
+            variants.append((vb, engine.compute(vb)))
+        except Exception:
+            continue
+
+    def lagna_signs(f, varga):
+        return ((f.get("vargas", {}).get(varga) or {}).get("Lagna") or {}).get("sign")
+
+    def sensitivity(domain, window, evidence):
+        mid = window["start"] + (window["end"] - window["start"]) / 2
+        base_ad = _ad_at(facts, mid)
+        base_net = evidence["support_count"] - evidence["conflict_count"]
+        total = 0.0
+        for vb, vf in variants:
+            try:
+                r = pillars.evaluate(vf, vb, domain, window["start"], window["end"])
+            except Exception:
+                continue
+            total += abs(r["support_count"] - r["conflict_count"] - base_net)
+            total += sum(1 for k, v in evidence["pillars"].items() if r["pillars"].get(k) != v)
+            ad = _ad_at(vf, mid)
+            if base_ad and ad:
+                if ad["lords"] != base_ad["lords"]:
+                    total += 2
+                elif abs((_to(ad["start"]) - _to(base_ad["start"])).days) > 30:
+                    total += 1
+            for varga in ("D1", "D9", K.DOMAINS[domain]["varga"]):
+                if lagna_signs(vf, varga) != lagna_signs(facts, varga):
+                    total += 1
+        return total
+
+    return sensitivity
 
 
 def generate_statements(facts, birth: BirthInput, fingerprint: str,
-                        subject: str | None = None) -> list[dict]:
-    """Rank past domain windows, select up to three broad indications, and lock
-    three falsifiable statements. Everything needed to evaluate a claim is
-    stored *before* any feedback arrives."""
+                        subject: str | None = None, today: date | None = None,
+                        sensitivity_fn=None) -> list[dict]:
+    """Select up to three single-event questions plus one negative control.
+
+    Pillar support/conflict is only a filter; windows are ranked by how much
+    birth-time variants disagree about them (`sensitivity_fn(domain, window,
+    evidence)`, default `variant_sensitivity`). Each question asks the one
+    event type the window's Antardasha lord most points to. The control is a
+    window the chart does not indicate (no pillar support, conflicting
+    pillars) and is flagged `control`. Everything needed to evaluate a claim
+    is stored before any feedback arrives. May return fewer than three real
+    questions when evidence is thin."""
+    today = today or date.today()
     words = subject_words(subject)
-    age = _age_today(birth)
-    domains = pick_domains(age)
-    windows = _past_ad_windows(facts, birth)
-    statements = []
-    candidates = []
-    minimum_ages = {"career": 16, "education": 8, "relationship": 18,
-                    "relocation": 10, "finance": 18, "direction": 12}
+    born = date(birth.year, birth.month, birth.day)
+    domains = pick_domains(_age_today(birth, today))
+    windows = _past_ad_windows(facts, birth, today)
+    ages = min_ages()
+    candidates, pool = [], []
     for domain in domains:
         for window in windows:
-            age_at_start = (window["start"] - date(birth.year, birth.month, birth.day)).days / 365.25
-            if age_at_start < minimum_ages[domain]:
+            if (window["start"] - born).days / 365.25 < ages[domain]:
                 continue
             evidence = pillars.evaluate(facts, birth, domain, window["start"], window["end"])
-            score = evidence["support_count"] - evidence["conflict_count"]
-            candidates.append((score, window["end"], domain, window, evidence))
-    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
-    used_domains, used_spans = set(), []
-    for score, _, domain, w, ev in candidates:
-        if domain in used_domains or any(
-                w["start"] <= end and start <= w["end"] for start, end in used_spans):
-            continue
-        used_domains.add(domain)
-        used_spans.append((w["start"], w["end"]))
-        i = len(statements)
+            support, conflict = evidence["support_count"], evidence["conflict_count"]
+            pool.append((domain, window, evidence))
+            if conflict > support:
+                continue
+            activates = 1 if (evidence.get("pillars") or {}).get("parashari") == "support" else 0
+            span = (window["end"] - window["start"]).days
+            lord_match = lord_event_domain(facts, window["lords"][1]) == domain
+            base_key = (support - conflict, activates, -span, window["end"])
+            candidates.append({"base": base_key, "support": support, "domain": domain,
+                               "window": window, "evidence": evidence, "lord_match": lord_match})
+    # rank by Lagna/AD sensitivity; support only filters and breaks ties
+    if sensitivity_fn is None:
+        shortlist = []
+        for domain in domains:
+            own = sorted((c for c in candidates if c["domain"] == domain),
+                         key=lambda c: c["base"], reverse=True)
+            shortlist += own[:_SENSITIVITY_SHORTLIST]
+        candidates = shortlist
+        try:
+            sensitivity_fn = variant_sensitivity(facts, birth) if candidates else None
+        except Exception:
+            sensitivity_fn = None
+    for c in candidates:
+        c["sensitivity"] = float(sensitivity_fn(c["domain"], c["window"], c["evidence"])) if sensitivity_fn else 0.0
+        c["key"] = (c["sensitivity"], *c["base"])
+    candidates.sort(key=lambda c: c["key"], reverse=True)
+
+    chosen, used_domains, used_spans = [], set(), []
+    passes = [(tier, True) for tier in _THRESHOLD_TIERS] + [(tier, False) for tier in _THRESHOLD_TIERS]
+    for (min_support, min_net), need_lord in passes:
+        for c in candidates:
+            if len(chosen) == 3:
+                break
+            w = c["window"]
+            if c["support"] < min_support or c["base"][0] < min_net or (need_lord and not c["lord_match"]):
+                continue
+            if c["domain"] in used_domains or any(
+                    w["start"] <= end and start <= w["end"] for start, end in used_spans):
+                continue
+            used_domains.add(c["domain"])
+            used_spans.append((w["start"], w["end"]))
+            chosen.append(c)
+
+    def record(c, event_id, control=False):
+        w, ev = c["window"], c["evidence"]
         sm, em = _fmt_range(w["start"], w["end"])
-        weak = score <= 0
-        text = _STATEMENTS[domain].format(start=sm, end=em, **words)
-        if weak:
-            text = ("The timing indicators here are weaker, so treat this one as tentative. " + text)
-        statements.append({
-            "event_id": f"{OPENING_EVENT_PREFIX}{i+1:03d}",
-            "domain": domain,
-            "predicted_event": _STATEMENTS[domain].format(start=sm, end=em, **words),
-            "chat_text": text,
+        text = _STATEMENTS[c["domain"]].format(start=sm, end=em, **words)
+        return {
+            "event_id": event_id, "domain": c["domain"],
+            "predicted_event": text, "chat_text": text, "control": control,
             "predicted_window": {"start": f"{w['start'].year:04d}-{w['start'].month:02d}",
                                  "end": f"{w['end'].year:04d}-{w['end'].month:02d}"},
             "user_feedback": None, "actual_date": None, "matched": False,
             "rules_evaluated": ev["traditional_rule_ids"],
             "pillars": ev["pillars"], "convergence": ev["convergence"],
             "calculation_fingerprint": fingerprint,
-        })
-        if len(statements) == 3:
-            break
+            "sensitivity": c.get("sensitivity", 0.0),
+        }
+
+    statements = [record(c, f"{OPENING_EVENT_PREFIX}{i+1:03d}") for i, c in enumerate(chosen)]
+    if len(statements) >= 2:
+        control = _pick_control(pool, used_spans, facts)
+        if control:
+            statements.insert(1, record(control, CONTROL_EVENT_ID, control=True))
     return statements
+
+
+def _pick_control(pool, used_spans, facts):
+    """A window in which the chart does not indicate the asked event: neither
+    the Mahadasha nor the Antardasha lord links to that event's houses and
+    pillar support is low. Away from the real questions: a 'yes' here
+    suggests acquiescence, not recall."""
+    best = None
+    for domain, w, ev in pool:
+        if ev["support_count"] > 1 or any(w["start"] <= end and start <= w["end"] for start, end in used_spans):
+            continue
+        linked = any(_lord_link_score(facts, lord, domain) for lord in w["lords"])
+        if linked and ev["support_count"]:
+            continue
+        key = (not linked, -ev["support_count"], ev["conflict_count"], w["end"])
+        if best is None or key > best[0]:
+            best = (key, {"domain": domain, "window": w, "evidence": ev})
+    return best[1] if best else None
 
 
 def evaluate_feedback(statement: dict, feedback: str, actual_date: str | None = None) -> dict:
@@ -160,21 +311,33 @@ def evaluate_feedback(statement: dict, feedback: str, actual_date: str | None = 
 
 
 def calibration_outcome(statements: list[dict]) -> dict:
-    """Record the strength of the past-event match for the reading."""
-    confirmed = sum(1 for s in statements if s.get("user_feedback") == "confirmed")
-    partial = sum(1 for s in statements if s.get("user_feedback") == "partial")
-    unknown = sum(1 for s in statements if s.get("user_feedback") == "unknown")
-    if len(statements) >= 2 and confirmed == len(statements):
+    """Record the strength of the past-event match for the reading.
+
+    The negative control (if asked) is not a specific confirmation: a 'yes'
+    to it means the user says yes to anything, so it cancels one real
+    confirmation and blocks the 'calibrated' state."""
+    real = [s for s in statements if not is_control(s.get("event_id"))]
+    control = [s for s in statements if is_control(s.get("event_id"))]
+    confirmed = sum(1 for s in real if s.get("user_feedback") == "confirmed")
+    partial = sum(1 for s in real if s.get("user_feedback") == "partial")
+    unknown = sum(1 for s in real if s.get("user_feedback") == "unknown")
+    control_confirmed = any(s.get("user_feedback") == "confirmed" for s in control)
+    total = len(real)
+    effective = confirmed - (1 if control_confirmed else 0)
+    # Calibrated needs at least two specific confirmations, all asked
+    # questions confirmed and the control not confirmed; two of three (or
+    # a confirmed control) is partial; a lone confirmation is only partial.
+    if total >= 2 and confirmed == total and not control_confirmed:
         state = "calibrated"
         label = "These indications fit the events you remember."
-    elif confirmed == 2:
+    elif effective == 2 or (total == 1 and effective == 1):
         state = "partial"
         label = "Some indications fit the events you remember. I'll treat dates in the reading as approximate."
     else:
         state = "uncalibrated"
         label = "The past-event checks didn't establish a consistent match."
     return {"state": state, "label": label, "confirmed": confirmed,
-            "partial": partial, "unknown": unknown,
+            "partial": partial, "unknown": unknown, "control_confirmed": control_confirmed,
             "predictions_allowed": True}
 
 
@@ -195,6 +358,8 @@ def _score_candidate(birth: BirthInput, facts: dict, events: list) -> float:
     confirmed should gain pillar support; rejected ones should not."""
     total = 0.0
     for e in events:
+        if is_control(getattr(e, "event_id", None)):
+            continue
         fb = e.user_feedback
         if fb not in ("confirmed", "rejected", "partial"):
             continue

@@ -54,46 +54,50 @@ def scan(birth, start, end, planet):
         body = BODIES[planet]
         if planet in ("Rahu", "Ketu") and birth.settings.node == "true":
             body = swe.TRUE_NODE
-        if birth.settings.center == "topocentric":
+        topo = birth.settings.center == "topocentric"
+        if topo:
             swe.set_topo(birth.lon, birth.lat, 0)
+        try:
+            def at(jd):
+                if jd not in samples:
+                    values, flags = swe.calc_ut(jd, body, drik.PLANET_FLAGS | swe.FLG_SPEED)
+                    flags_seen.add(flags)
+                    log.debug("Transit %s jd_ut=%.8f Swiss flags=%s", planet, jd, flags)
+                    samples[jd] = (values[0] + _KETU_OFFSET.get(planet, 0.0)) % 360, values[3]
+                return samples[jd]
 
-        def at(jd):
-            if jd not in samples:
-                values, flags = swe.calc_ut(jd, body, drik.PLANET_FLAGS | swe.FLG_SPEED)
-                flags_seen.add(flags)
-                log.debug("Transit %s jd_ut=%.8f Swiss flags=%s", planet, jd, flags)
-                samples[jd] = (values[0] + _KETU_OFFSET.get(planet, 0.0)) % 360, values[3]
-            return samples[jd]
+            def sign(jd):
+                return int(at(jd)[0] // 30)
 
-        def sign(jd):
-            return int(at(jd)[0] // 30)
+            def nakshatra(jd):
+                return nakshatra_pada(at(jd)[0]) // 4
 
-        def nakshatra(jd):
-            return nakshatra_pada(at(jd)[0]) // 4
+            def retrograde(jd):
+                return at(jd)[1] < 0
 
-        def retrograde(jd):
-            return at(jd)[1] < 0
+            def kakshya(jd):
+                return int(at(jd)[0] * 8 // 30)
 
-        def kakshya(jd):
-            return int(at(jd)[0] * 8 // 30)
-
-        stations = list(_changes(retrograde, a, b))
-        # Split at stations so even a short retrograde re-entry near an
-        # extremum can be found on both sides of the station.
-        limits = [a, *(jd for jd, _, _ in stations), b]
-        events = []
-        for kind, read, names in (("sign_ingress", sign, SIGN_NAMES),
-                                  ("nakshatra_ingress", nakshatra, NAKSHATRAS)):
-            for left, right in zip(limits, limits[1:]):
-                events.extend({"kind": kind, "at": _timestamp(jd), "sign_index": after if kind == "sign_ingress" else None,
-                               "from": names[before], "to": names[after]}
-                              for jd, before, after in _changes(read, left, right))
-        crossings = [row for left, right in zip(limits, limits[1:]) for row in _changes(kakshya, left, right)]
-        divisions = [_timestamp(a), *(_timestamp(jd) for jd, _, _ in crossings), _timestamp(b)]
-        kakshya_changes = [kakshya(a), *(value for _, _, value in crossings)]
-        events.extend({"kind": "station", "at": _timestamp(jd), "to": "retrograde" if after else "direct"}
-                      for jd, _, after in stations)
-        initial_sign = sign(a)
+            stations = list(_changes(retrograde, a, b))
+            # Split at stations so even a short retrograde re-entry near an
+            # extremum can be found on both sides of the station.
+            limits = [a, *(jd for jd, _, _ in stations), b]
+            events = []
+            for kind, read, names in (("sign_ingress", sign, SIGN_NAMES),
+                                      ("nakshatra_ingress", nakshatra, NAKSHATRAS)):
+                for left, right in zip(limits, limits[1:]):
+                    events.extend({"kind": kind, "at": _timestamp(jd), "sign_index": after if kind == "sign_ingress" else None,
+                                   "from": names[before], "to": names[after]}
+                                  for jd, before, after in _changes(read, left, right))
+            crossings = [row for left, right in zip(limits, limits[1:]) for row in _changes(kakshya, left, right)]
+            divisions = [_timestamp(a), *(_timestamp(jd) for jd, _, _ in crossings), _timestamp(b)]
+            kakshya_changes = [kakshya(a), *(value for _, _, value in crossings)]
+            events.extend({"kind": "station", "at": _timestamp(jd), "to": "retrograde" if after else "direct"}
+                          for jd, _, after in stations)
+            initial_sign = sign(a)
+        finally:
+            if topo:
+                swe.set_topo(0, 0, 0)
     return {"planet": planet, "start": _timestamp(a), "end": _timestamp(b), "initial_sign": initial_sign,
             "events": sorted(events, key=lambda event: (event["at"], event["kind"])),
             "time_zone": "UTC", "rule_version": RULE_VERSION, "settings": birth.settings.to_dict(),

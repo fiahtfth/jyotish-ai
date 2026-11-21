@@ -187,12 +187,17 @@ def _calibrated_client():
     c = _client()
     email = f"p_{uuid.uuid4().hex[:8]}@test.dev"
     tok = c.post("/api/auth/register",
-                 json={"terms_accepted": True, "email": email, "password": "password123"}).json()["access_token"]
+                 json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123"}).json()["access_token"]
     h = {"authorization": f"Bearer {tok}"}
     c.put("/api/profile", json=ARJUN, headers=h)
     c.get("/api/chat/history", headers=h)
-    for _ in range(3):
-        c.post("/api/chat/send", json={"text": "Yes, that happened"}, headers=h)
+    out = c.post("/api/chat/send", json={"text": "Ask me a few questions instead"}, headers=h).json()
+    for _ in range(6):
+        eid = out[-1]["meta"].get("event_id") if out[-1].get("kind") == "options" else None
+        if not eid:
+            break
+        answer = "No, that didn't happen" if eid.endswith("_ctl") else "Yes, that happened"
+        out = c.post("/api/chat/send", json={"text": answer}, headers=h).json()
     return c, h
 
 
@@ -281,8 +286,8 @@ def test_hora_and_d6_boundaries_and_muntha():
     rasi = [["L", (0, 0)], [0, (0, 15)], [1, (1, 15)], [2, (1, 5)]]
     assert [r[1][0] for r in VARGA_FUNCS["D2"](rasi)] == [4, 3, 4, 3]
     assert [r[1][0] for r in VARGA_FUNCS["D6"](rasi)] == [0, 3, 9, 7]
-    assert engine.muntha_sign(11, 0) == 12
-    assert engine.muntha_sign(11, 1) == 1
+    assert engine.muntha_sign(11, 0) == 11
+    assert engine.muntha_sign(11, 1) == 0
 
 
 def test_all_gates_use_the_same_sample_and_missing_bindus_cannot_confirm():

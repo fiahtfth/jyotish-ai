@@ -12,6 +12,8 @@ class RegisterIn(BaseModel):
     display_name: str = ""
     # External AI is included in the service terms, not a separate option.
     terms_accepted: Literal[True]
+    # the account holder is an adult (18+); required by the privacy policy
+    age_confirmed: Literal[True]
 
 
 class TermsIn(BaseModel):
@@ -78,6 +80,13 @@ class BirthProfileIn(BaseModel):
     dst_fold: Optional[Literal[0, 1]] = None    # which occurrence of a repeated local time
     calc_preset: str = "default"
     permission_confirmed: bool = False
+    # optional; omitted -> unchanged on edit
+    gender: Optional[Literal["female", "male", "other", "prefer_not_to_say"]] = None
+    residence_name: str = ""
+    residence_state: str = ""
+    residence_country: str = ""
+    residence_latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    residence_longitude: Optional[float] = Field(default=None, ge=-180, le=180)
 
     @model_validator(mode="after")
     def _valid_calendar_date(self):
@@ -101,6 +110,8 @@ class BirthProfileOut(BirthProfileIn):
     offset_source: str = ""
     tz_warnings: list[str] = []
     tzdb_version: str = ""
+    residence_timezone_name: str = ""
+    is_minor: bool = False
     calc_fingerprint: str
     calibration_state: str
     predictions_allowed: bool

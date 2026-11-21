@@ -1,0 +1,108 @@
+{
+ "pack": "micro",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "P4_TRIGGER_INGRESS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "trigger planet in TRIG transits the primary E-house sign, the D1 E-lord's sign or a karaka's sign",
+   "exceptions": [
+    "Mode B: NE (E-house sign is Lagna-based)"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_kakshya_supportive"
+   ]
+  },
+  {
+   "rule_id": "P4_BAV_THRESHOLDS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "BAV of the transiting planet in that sign: >=4 support, >=5 strong, <=2 adverse; nodes have no BAV (NE)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_kakshya_supportive",
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_adverse"
+   ]
+  },
+  {
+   "rule_id": "P4_SAV_WEIGHT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "SAV of the E-house sign >= 28 raises the BAV evidence weight",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_kakshya_supportive"
+   ]
+  },
+  {
+   "rule_id": "P4_KAKSHYA_NARROWING",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "narrow to the 3deg45' kakshya whose lord contributed a bindu to the planet's BAV in that sign (prastara)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_kakshya_supportive"
+   ]
+  },
+  {
+   "rule_id": "P4_FAST_TRIGGERS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "Mars/Sun (TRIG.fast) transiting or aspecting the E-house / E-lord sign give month-level triggers",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_fast_trigger_aspect"
+   ]
+  },
+  {
+   "rule_id": "P4_TARABALA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "transit over the natal nakshatra of the E-lord or a karaka when that nakshatra is tara 2,4,6,8,9 from the natal Moon",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_tarabala"
+   ]
+  },
+  {
+   "rule_id": "P4_RESULT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P4; BPHS Ashtakavarga chapters (BAV/SAV, Kakshya); Muhurta Chintamani (Tarabala)",
+   "conditions": "S = trigger + BAV>=4 + charged kakshya; W = trigger + BAV only; A = BAV<=2 for every trigger planet in the window",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p4_bav_adverse",
+    "backend/tests/test_convergence_p3p4.py::test_p4_mode_b_ne"
+   ]
+  }
+ ]
+}

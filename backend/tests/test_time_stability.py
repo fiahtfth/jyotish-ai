@@ -190,7 +190,7 @@ def api():
     init_db()
     c = TestClient(app)
     email = f"ts_{uuid.uuid4().hex[:8]}@test.dev"
-    r = c.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": "password123"})
+    r = c.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123"})
     assert r.status_code == 200, r.text
     return c, {"authorization": f"Bearer {r.json()['access_token']}"}
 

@@ -4,6 +4,7 @@ from sqlalchemy import (
     Column, Integer, String, Float, Boolean, Date, DateTime, Text, ForeignKey, UniqueConstraint,
     create_engine, false, inspect, text,
 )
+from sqlalchemy import event
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
@@ -47,6 +48,10 @@ class User(Base):
     terms_accepted_at = Column(DateTime, nullable=True)
     email_verified = Column(Boolean, nullable=False, default=False, server_default=false())
     prediction_followups = Column(Boolean, nullable=False, default=False, server_default=false())
+    # account holder confirmed they are 18 or older (DPDP: no child accounts)
+    age_confirmed_at = Column(DateTime, nullable=True)
+    # set when the user withdrew consent for AI processing without deleting the account
+    ai_withdrawn_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     # the birth profile (person) the chat/chart/calibration endpoints act on;
     # plain integer, validated against the user's own profiles on every use
@@ -78,6 +83,15 @@ class BirthProfile(Base):
     # who this chart is for, relative to the account owner
     relation = Column(String, nullable=False, default="self", server_default="self")
     permission_confirmed_at = Column(DateTime, nullable=True)
+    # optional: used for matching; female|male|other|prefer_not_to_say
+    gender = Column(String, nullable=True)
+    # optional current residence (desha for transits/panchang); the birthplace stays the chart anchor
+    residence_name = Column(String, nullable=True)
+    residence_state = Column(String, nullable=True)
+    residence_country = Column(String, nullable=True)
+    residence_lat = Column(Float, nullable=True)
+    residence_lon = Column(Float, nullable=True)
+    residence_timezone_name = Column(String, nullable=True)
     year = Column(Integer); month = Column(Integer); day = Column(Integer)
     hour = Column(Integer); minute = Column(Integer); second = Column(Integer, default=0)
     place_name = Column(String); place_state = Column(String, default="")
@@ -155,6 +169,45 @@ class PredictionRecord(Base):
     outcome = Column(String, nullable=True)   # happened|partly|did_not|unsure
     outcome_at = Column(DateTime, nullable=True)
     event_date = Column(Date, nullable=True)
+    registration = relationship("PredictionRegistration", uselist=False, cascade="all, delete-orphan",
+                                back_populates="prediction")
+
+
+class PreRegistrationError(Exception):
+    """Raised when code tries to edit a pre-registered prediction field."""
+
+
+# Everything except these outcome-capture fields is frozen once a prediction is saved.
+OUTCOME_FIELDS = frozenset({"followup_asked_at", "outcome", "outcome_at", "event_date"})
+
+
+class PredictionRegistration(Base):
+    """Immutable pre-registration of a prediction: rule IDs fired per pillar,
+    convergence, promise, window, event definition, settings fingerprint,
+    rule-pack version/hash, app version, timestamp. payload_sha256 covers the
+    canonical payload; rows can be inserted (and erased with the account) but
+    never updated."""
+    __tablename__ = "prediction_registrations"
+    id = Column(Integer, primary_key=True)
+    prediction_id = Column(Integer, ForeignKey("prediction_records.id"), nullable=False, unique=True)
+    payload_json = Column(Text, nullable=False)
+    payload_sha256 = Column(String, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    prediction = relationship("PredictionRecord", back_populates="registration")
+
+
+@event.listens_for(PredictionRecord, "before_update")
+def _guard_prediction_update(mapper, connection, target):
+    st = inspect(target)
+    changed = [a.key for a in st.mapper.column_attrs
+               if a.key not in OUTCOME_FIELDS and st.attrs[a.key].history.has_changes()]
+    if changed:
+        raise PreRegistrationError(f"pre-registered prediction fields are immutable: {sorted(changed)}")
+
+
+@event.listens_for(PredictionRegistration, "before_update")
+def _guard_registration_update(mapper, connection, target):
+    raise PreRegistrationError("a prediction pre-registration can never be edited")
 
 
 class UserMilestone(Base):

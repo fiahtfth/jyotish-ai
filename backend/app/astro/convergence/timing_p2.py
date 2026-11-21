@@ -18,6 +18,7 @@ from .. import constants as K
 from .. import jaimini as J
 from .. import transits
 from . import links, rulepack
+from ._facts import unknown_time
 from .timing_p1 import _note, date_to_jd, hull_iso, iso, jd_to_date, merge, to_date
 from .types import A, M, S, W, Evidence, IntentConfig, PillarResult
 
@@ -143,7 +144,7 @@ def _classify(act: bool, jup: bool, adverse: bool) -> str:
 
 def evaluate(facts: dict, birth, cfg: IntentConfig, start, end) -> list:
     start, end = to_date(start), to_date(end)
-    if (facts.get("meta") or {}).get("birth_time_precision") == "unknown":
+    if unknown_time(facts, birth):
         return [PillarResult.not_evaluated("P2", "birth time unknown (Mode B): Jaimini Chara Dasha needs the Lagna")]
     E = cfg.E or cfg.E_adverse_explicit
     if not E:

@@ -1,0 +1,61 @@
+{
+ "pack": "kp",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "KP_SIGNIFICATOR_LEVELS",
+   "version": "1.0",
+   "source": "K.S. Krishnamurti, KP Readers (significator levels, cusp sub-lord theory)",
+   "conditions": "house significators in 4 levels: planets in the star of occupants; occupants; planets in the star of the cusp-sign owner; the owner",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_kp.py::test_significator_table_shape"
+   ]
+  },
+  {
+   "rule_id": "KP_CUSP_SUBLORD_PROMISE",
+   "version": "1.0",
+   "source": "K.S. Krishnamurti, KP Readers (significator levels, cusp sub-lord theory)",
+   "conditions": "the sub-lord of the primary E cusp signifies at least one favourable house and not more negating than favourable houses",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_kp.py::test_kp_report_not_evaluated_until_verified",
+    "backend/tests/test_kp.py::test_kp_report_computes_when_enabled"
+   ]
+  },
+  {
+   "rule_id": "KP_DASHA_SIGNIFICATION",
+   "version": "1.0",
+   "source": "K.S. Krishnamurti, KP Readers (significator levels, cusp sub-lord theory)",
+   "conditions": "at least two of MD/AD/PD lords signify a favourable house and none signifies more negating than favourable houses",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_kp.py::test_kp_report_computes_when_enabled"
+   ]
+  },
+  {
+   "rule_id": "KP_RULING_PLANETS_HORARY",
+   "version": "0.1",
+   "source": "K.S. Krishnamurti, KP Readers (significator levels, cusp sub-lord theory) (VERIFY)",
+   "conditions": "ruling planets at query time, optional, labelled horary; not used",
+   "exceptions": [],
+   "status": "disabled_verify",
+   "verify": true,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": []
+  }
+ ]
+}

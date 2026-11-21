@@ -87,3 +87,10 @@ def ne_reason(rule_id: str):
 
 def all_rule_ids() -> list:
     return sorted(load())
+
+
+def pack_hash() -> str:
+    """sha256 over the loaded rule pack (sorted JSON): freezes 'which rules were used'."""
+    import hashlib
+    raw = json.dumps(load(), sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()

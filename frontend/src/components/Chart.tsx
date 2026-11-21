@@ -32,7 +32,11 @@ const getStyleServer = (): Style => "north";
 
 type Occ = { name: string; label: string; retro: boolean; comb: boolean };
 
-export default function NorthChart({ varga, chart }: { varga: string; chart: ChartData }) {
+// Rahu and Ketu always move backward, so they are never marked retrograde.
+const NODES = new Set(["Rahu", "Ketu"]);
+
+// moonChart: the birth time is unknown, so the Moon sign is drawn as Lagna (Chandra Lagna).
+export default function NorthChart({ varga, chart, moonChart = false }: { varga: string; chart: ChartData; moonChart?: boolean }) {
   const { t } = useI18n();
   const style = useSyncExternalStore(subStyle, getStyle, getStyleServer);
   const [sel, setSel] = useState<number | null>(null); // selected sign index
@@ -46,13 +50,14 @@ export default function NorthChart({ varga, chart }: { varga: string; chart: Cha
   const bySign: Record<number, Occ[]> = {};
   for (const [name, p] of Object.entries(chart || {})) {
     (bySign[p.sign] = bySign[p.sign] || []).push({
-      name, label: ABBR[name] || name.slice(0, 2), retro: !!p.retrograde, comb: !!p.combust,
+      name, label: ABBR[name] || name.slice(0, 2), retro: !!p.retrograde && !NODES.has(name), comb: !!p.combust && !NODES.has(name),
     });
   }
   const occText = (o: Occ) => o.label + (o.retro ? " R" : "") + (o.comb ? " c" : "");
   const occFull = (o: Occ) => o.name + (o.retro ? ` (${t("retro")})` : "") + (o.comb ? ` (${t("combust")})` : "");
 
-  const summary = `${varga} ${t("lagna")} ${SIGN_NAMES[lagnaSign]}. ` +
+  const lagnaWord = moonChart ? t("chandraLagna") : t("lagna");
+  const summary = `${varga} ${lagnaWord} ${SIGN_NAMES[lagnaSign]}. ` +
     Array.from({ length: 12 }, (_, i) => i).map(sign => {
       const o = (bySign[sign] || []).filter(x => x.name !== "Lagna");
       return o.length ? `${o.map(occFull).join(", ")} — ${SIGN_NAMES[sign]}, ${t("house")} ${signHouse(sign)}` : "";
@@ -131,12 +136,12 @@ export default function NorthChart({ varga, chart }: { varga: string; chart: Cha
               );
             })}
             <text x="100" y="98" textAnchor="middle" fontSize="9" fill="var(--muted)">{varga}</text>
-            <text x="100" y="110" textAnchor="middle" fontSize="8" fill="var(--muted)">{t("lagna")} {SIGN_NAMES[lagnaSign]}</text>
+            <text x="100" y="110" textAnchor="middle" fontSize="8" fill="var(--muted)">{lagnaWord} {SIGN_NAMES[lagnaSign]}</text>
           </>
         )}
       </svg>
       <div className="text-center text-xs text-muted mt-1">
-        {varga} · {t("lagna")} {SIGN_NAMES[lagnaSign]}
+        {varga} · {lagnaWord} {SIGN_NAMES[lagnaSign]}
       </div>
       {sel != null && (
         <div className="mt-2 text-xs border border-bord rounded-lg p-2 bg-card" role="status">

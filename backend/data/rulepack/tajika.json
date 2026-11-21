@@ -1,0 +1,94 @@
+{
+ "pack": "tajika",
+ "version": "1.0",
+ "rules": [
+  {
+   "rule_id": "P3_ANNUAL_ELORD_ITHASALA",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3; Tajika Neelakanthi (Varshaphala); PyJHora tajaka / sudharsana_chakra",
+   "conditions": "annual E-house lord strong by Pancha-vargiya bala AND in Ithasala with the Varsha Lagna lord or the Varsheshwara",
+   "exceptions": [
+    "Mode B: NE"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_supportive_ithasala_and_override_muntha",
+    "backend/tests/test_convergence_p3p4.py::test_p3_weak_annual_lord_adverse"
+   ]
+  },
+  {
+   "rule_id": "P3_MUNTHA_INTENT_OVERRIDE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3; Tajika Neelakanthi (Varshaphala); PyJHora tajaka / sudharsana_chakra",
+   "conditions": "Muntha in a house listed in the intent's TAJ.muntha_supportive set is supportive (intent override, spec Part 3)",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_supportive_ithasala_and_override_muntha"
+   ]
+  },
+  {
+   "rule_id": "P3_VARSHESHWARA_LINK",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3; Tajika Neelakanthi (Varshaphala); PyJHora tajaka / sudharsana_chakra",
+   "conditions": "Varsheshwara links (L1-L6, annual chart from the Varsha Lagna) to an annual E-house",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_supportive_ithasala_and_override_muntha"
+   ]
+  },
+  {
+   "rule_id": "P3_MUDDA_WINDOWS",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3; Tajika Neelakanthi (Varshaphala); PyJHora tajaka / sudharsana_chakra",
+   "conditions": "Mudda (Vimshottari-in-year) periods of planets linked to an annual E-house give month-level windows inside the year",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_mudda_windows"
+   ]
+  },
+  {
+   "rule_id": "P3_SUDARSHANA_TRIPLE",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3 item 6; BPHS Sudarshana Chakra (year progression one house per year)",
+   "conditions": "per reference Lagna/Moon/Sun: the year sign equals an E-house from that reference, or holds / is aspected by a D1 E-lord or karaka; score 0-3",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_sudarshana_score"
+   ]
+  },
+  {
+   "rule_id": "P3_RESULT",
+   "version": "1.0",
+   "source": "INTENT_CONVERGENCE_SPEC 1.4 P3; Tajika Neelakanthi (Varshaphala); PyJHora tajaka / sudharsana_chakra",
+   "conditions": "S = item2 AND (Muntha supportive OR Sudarshana>=2); M = item2 + adverse Muntha; A = adverse Muntha + weak annual E-lord + Sudarshana 0; else W",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_convergence_p3p4.py::test_p3_supportive_ithasala_and_override_muntha",
+    "backend/tests/test_convergence_p3p4.py::test_p3_mode_b_ne"
+   ]
+  }
+ ]
+}

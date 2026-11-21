@@ -21,10 +21,12 @@ export type ClassicalAudit = {
 };
 export type MsgMeta = {
   options?: string[];
+  notice?: string;                 // short non-conversational note shown above a reply
   followup_id?: number | string;   // prediction follow-up options
   actions?: Record<string, "edit_birth">; // option label -> client-side action instead of sending text
   varga?: string;
   chart?: unknown;                 // chart payload, shape differs per sender (see chat page)
+  chandra_lagna?: boolean;         // birth time unknown: the chart is the Moon chart
   convergence?: string;
   support_count?: number;
   classical?: ClassicalAudit;
@@ -36,6 +38,7 @@ export type MsgMeta = {
   };
   report?: { domains?: { domain: string; analysis?: { classical?: ClassicalAudit } }[] };
   expanded?: boolean;
+  followup?: { id: number; options: string[]; question?: string; success_criteria?: string | null };
   analysis?: { convergence?: string; classical?: ClassicalAudit; decision?: { event?: unknown } };
 };
 export type Msg = {
@@ -46,6 +49,7 @@ export type Msg = {
 export type Me = {
   id: number; email: string; display_name: string; has_profile: boolean;
   llm_consent: boolean; email_verified: boolean; ai_terms_required: boolean; terms_version: string | null;
+  age_confirmed?: boolean; ai_processing_enabled?: boolean;
 };
 export type Place = {
   name: string; state: string; country: string; latitude: number; longitude: number;
@@ -64,8 +68,13 @@ export type Profile = {
   calc_preset: string;
   timezone_name: string; utc_offset_hours: number;
   offset_source?: string; tz_warnings?: string[]; tzdb_version?: string;
+  // optional extras
+  gender?: "female" | "male" | "other" | "prefer_not_to_say" | null;
+  residence_name?: string; residence_state?: string; residence_country?: string;
+  residence_latitude?: number | null; residence_longitude?: number | null;
+  residence_timezone_name?: string; is_minor?: boolean;
 };
-export type ProfileIn = Omit<Profile, "timezone_name" | "utc_offset_hours" | "offset_source" | "tz_warnings" | "tzdb_version">;
+export type ProfileIn = Omit<Profile, "timezone_name" | "utc_offset_hours" | "offset_source" | "tz_warnings" | "tzdb_version" | "residence_timezone_name" | "is_minor">;
 export type TzReject = { code: "ambiguous_time" | "nonexistent_time"; message: string; offsets: number[] | [number, number]; timezone_name?: string };
 export class TzError extends Error { detail: TzReject; constructor(d: TzReject) { super(d.message); this.detail = d; } }
 
@@ -125,6 +134,11 @@ export type PredictionRecord = {
   convergence: string; created_at: string | null;
   outcome: "happened" | "partly" | "did_not" | "unsure" | "outside_window" | null;
   outcome_at: string | null;
+};
+export type OutcomePrediction = {
+  id: number; domain: string; event_type: string | null; question: string; success_criteria: string | null;
+  window_start: string | null; window_end: string | null;
+  outcome: PredictionRecord["outcome"]; event_date: string | null;
 };
 export type PredictionsResponse = {
   predictions: PredictionRecord[];
@@ -194,8 +208,11 @@ async function readStream(body: ReadableStream<Uint8Array>, onDelta: (t: string)
 }
 
 export const api = {
-  register: (email: string, password: string, display_name: string, terms_accepted: boolean) =>
-    req<TokenOut>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name, terms_accepted }) }),
+  register: (email: string, password: string, display_name: string, terms_accepted: boolean, age_confirmed: boolean) =>
+    req<TokenOut>("/api/auth/register", { method: "POST", body: JSON.stringify({ email, password, display_name, terms_accepted, age_confirmed }) }),
+  withdrawConsent: () => req<{ ai_processing_enabled: boolean }>("/api/auth/me/withdraw-consent", { method: "POST" }),
+  resumeConsent: () => req<{ ai_processing_enabled: boolean }>("/api/auth/me/resume-consent", {
+    method: "POST", body: JSON.stringify({ terms_accepted: true }) }),
   acceptTerms: () => req<{ llm_consent: boolean; ai_terms_required: boolean; terms_version: string }>(
     "/api/auth/terms", { method: "POST", body: JSON.stringify({ terms_accepted: true }) }),
   exportMe: () => req("/api/auth/me/export"),
@@ -232,6 +249,8 @@ export const api = {
   resendVerify: () => req("/api/auth/verify/resend", { method: "POST" }),
   predictionOutcome: (id: number, outcome: string, event_date?: string) => req(`/api/predictions/${id}/outcome`, {
     method: "POST", body: JSON.stringify({ outcome, event_date }) }),
+  duePredictions: () => req<{ due: OutcomePrediction[]; count: number }>("/api/predictions/due"),
+  answeredPredictions: () => req<{ answered: OutcomePrediction[] }>("/api/predictions/history"),
   predictions: (): Promise<PredictionsResponse> => req<PredictionsResponse>("/api/predictions"),
   predictionFollowups: (enabled: boolean) =>
     req<{ followups_enabled: boolean }>("/api/predictions/followups", { method: "PUT", body: JSON.stringify({ enabled }) }),
@@ -247,6 +266,7 @@ export type ChartDashboard = {
   settings: { calc_settings: Record<string, string | number>; varga_rule_version: string; varga_schemes: Record<string, string>;
     ayanamsa: { id: string; dms: string }; ephemeris: string; warnings: string[]; tzdb_version: string;
     dasha_year: { mode: string; days: number }; utc_offset_hours: number; birth_datetime_local: string; place: string };
+  time_known?: boolean; chandra_lagna?: boolean;   // false/true when the birth time is unknown (Moon chart)
   vargas: Record<string, import("@/components/Chart").ChartData>;
   planets: Record<string, Position>;
   aspects: { from: string; to: string; distance: number }[];
@@ -277,4 +297,88 @@ export type KpChart = {
 export type Coverage = { version: string; counts: Record<string, number>;
   intents: { intent_id: string; phase: number; domain: string; status: string; sample_questions: string[];
     specificity: { status: string; chart_windows: number; supportive_chart_rate: number | null; mean_supportive_window_share: number | null } | null }[];
+};
+
+// ---------------------------------------------------------------- extra services (matching, muhurta, varshaphala, prashna, report views)
+export type Exception = { id: string; text: string; applies: boolean; verified: boolean; source: string };
+export type Koota = { id: string; name: string; max: number; score: number; groom: string; bride: string;
+  explanation: string; rule_id: string; source: string; verified: boolean; verified_note?: string };
+export type MangalSide = { present: boolean; severity: string; houses_from: Record<string, number | null>; mars_sign: string;
+  cancellations: Exception[]; cancelled: boolean; basis: string; source: string; verified: boolean };
+export type MatchResult = {
+  groom_name: string; bride_name: string; partner_data_stored: boolean;
+  kootas: Koota[]; total: number; max: number; adjusted_total: number; adjusted_note: string | null;
+  band: { key: string; text: string };
+  doshas: { nadi: { present: boolean; cancelled: boolean; exceptions: Exception[] };
+    bhakoot: { present: boolean; cancelled: boolean; exceptions: Exception[] };
+    gana: { present: boolean; mitigated: boolean; exceptions: Exception[] } };
+  mangal: { groom: MangalSide; bride: MangalSide; pair: { verdict: string; text: string; verified: boolean } };
+  navamsa: { available: boolean; text?: string; groom_d9_lagna?: string; bride_d9_lagna?: string };
+  seventh_house: null | Record<"groom" | "bride", { sign: string; lord: string; lord_house: number; occupants: string[]; karaka: string; karaka_house: number }>;
+  dasha: Record<"groom" | "bride", { available: boolean; maha?: string; antar?: string; until?: string; strongly_adverse?: boolean }>;
+  disclaimer: string;
+};
+export type PartnerBirthIn = { display_name: string; year: number; month: number; day: number; hour: number; minute: number;
+  place_name: string; latitude: number; longitude: number; place_country: string; gender?: "male" | "female" };
+export type PersonRef = { profile_id?: number; birth?: PartnerBirthIn };
+export type MuhurtaSlot = { date: string; weekday: string; start: string; end: string; lagna: string; k: number; n: number; badge: string;
+  tithi: string; paksha: string; nakshatra: string; yoga: string; karana: string; reasons: string[]; not_met: string[];
+  bonus: string[]; warnings: string[]; factors: { id: string; label: string; ok: boolean; verified: boolean | string }[] };
+export type MuhurtaResult = { event_label: string; location: { name: string; latitude: number; longitude: number; source?: string };
+  slots: MuhurtaSlot[]; scanned_steps: number; accepted_steps: number; native_moon: string | null;
+  excluded: { steps: number; by_reason: Record<string, number>; examples: { date: string; time: string; reasons: string[] }[] };
+  rules: { id: string; label: string; source: string; verified: boolean | string }[];
+  event_rules: { lagna: string; verified: boolean; source: string; note: string }; disclaimer: string };
+export type Varshaphala = { year: number; year_of_life: number; return_local: string; status: string;
+  varsha_lagna: { sign_name: string }; muntha: { sign_name: string; house_from_varsha_lagna: number };
+  year_lord: { planet?: string; lord?: string; [k: string]: unknown } | null;
+  office_bearers: Record<string, unknown> | null;
+  positions: { planet: string; sign: string; degree: number; house: number }[];
+  tajika_yogas: { name: string; planets?: number[]; note?: string; detail?: string; [k: string]: unknown }[];
+  mudda: { scheme: string; periods: { lords: string[]; start: string; end: string | null; duration_years: number }[] } | null;
+  sahams: { name: string; sign: string; degree: number; house: number; lord: string }[]; sahams_note: string;
+  chart: import("@/components/Chart").ChartData };
+export type PrashnaResult = {
+  question_label: string; relevant_house: number; karakas: string[];
+  cast: { local: string; place: string; location_source: string };
+  lagna: { sign: string; degree: number; lord: string; lord_house: number; lord_sign: string; modality: string; nakshatra: string };
+  moon: { sign: string; house: number; nakshatra: string; waxing: boolean };
+  relevant: { sign: string; lord: string; lord_house: number; occupants: string[] };
+  indicators: { id: string; label: string; favourable: boolean | null; detail: string; source: string; verified: boolean }[];
+  summary: { favourable: number; unfavourable: number; text: string; leaning: string; label: string };
+  kp_lite: { available: boolean; note?: string };
+  rectification: { applicable: boolean; windows?: { lagna: string; start: string; end: string; in_prashna_trine: boolean }[];
+    heuristic?: { text: string }; guidance?: string[] };
+};
+export type Tree = { lord?: string; sign?: string; start: string; end: string | null; running: boolean; antars?: Tree[]; pratyantars?: Tree[] };
+export type ReportViews = {
+  time_known: boolean; settings_line: string;
+  dasha: { vimshottari: Tree[] | { unavailable: string }; yogini: Tree[] | { unavailable: string }; chara: Tree[] | { unavailable: string } };
+  panchang: { tithi: { name: string; paksha: string }; vaara: string; nakshatra: { name: string; pada: number };
+    yoga: { name: string }; karana: { name: string }; basis: string } | { unavailable: string };
+  avakahada: { items: Record<string, string | number>; notes: string[] };
+  shadbala: null | { planets: { planet: string; components: Record<string, number>; total_virupas: number; rupas: number;
+    required_rupas: number; ratio: number; meets_minimum: boolean }[]; bhava_bala: { house: number; rupas: number; ratio: number }[] | null; note: string };
+  chalit: null | { chart: import("@/components/Chart").ChartData; rows: { planet: string; rasi_house: number; chalit_house: number; shifted: boolean }[]; note: string };
+  planets: { planet: string; sign: string; house: number; longitude_dms: string; nakshatra: string; pada: number; nakshatra_lord: string;
+    dignity: string[]; compound_dignity: string | null; avastha: string | null; flags: string[] }[];
+  ashtakavarga: { signs: string[]; planets: string[]; bav: number[][] | null; sav: number[] | null };
+};
+export const apiExtra = {
+  match: (groom: PersonRef, bride: PersonRef, partner_consent: boolean) =>
+    req<MatchResult>("/api/matching", { method: "POST", body: JSON.stringify({ groom, bride, partner_consent }) }),
+  muhurta: (b: { event: string; start: string; end: string; latitude?: number; longitude?: number; place_name?: string; direction?: string }) =>
+    req<MuhurtaResult>("/api/muhurta", { method: "POST", body: JSON.stringify(b) }),
+  varshaphala: (year?: number) => req<Varshaphala>(`/api/varshaphala${year ? `?year=${year}` : ""}`),
+  prashna: (b: { question_type: string; latitude?: number; longitude?: number; place_name?: string }) =>
+    req<PrashnaResult>("/api/prashna", { method: "POST", body: JSON.stringify(b) }),
+  reportViews: () => req<ReportViews>("/api/report-views"),
+  downloadPdf: async () => {
+    const r = await fetch(API + "/api/report.pdf", { cache: "no-store", headers: authHeaders() });
+    await failIfBad(r);
+    const href = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a");
+    a.href = href; a.download = "kundli.pdf"; a.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  },
 };

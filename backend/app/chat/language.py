@@ -14,6 +14,9 @@ _MONTHS.update({name: month for month, name in enumerate(
 _MONTHS.update({"फरवरी": 2, "सितम्बर": 9, "दिसंबर": 12})
 _MONTH = re.compile(r"(?<!\w)(" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")(?!\w)\.?", re.I)
 _CALENDAR_YEAR = r"(?:19|20)\d{2}"
+_YEAR_RANGE = re.compile(
+    rf"\b({_CALENDAR_YEAR})\s*(?:to|through|thru|until|से|se|[-–—])\s*({_CALENDAR_YEAR})(?![\w-])"
+    rf"|\bbetween\s+({_CALENDAR_YEAR})\s+and\s+({_CALENDAR_YEAR})\b", re.I)
 
 _DASHA_LORDS = {
     "sun": "Sun", "surya": "Sun", "सूर्य": "Sun",
@@ -90,7 +93,7 @@ def reported_accident_window(text, today):
         window = requested_window(t, today)
     except ValueError:
         return None
-    return window if window and window[0] <= today else None
+    return window if window and window[0] <= today and not is_long_window(window) else None
 
 
 # Topic corrections often name the discarded subject as well as its replacement.
@@ -126,12 +129,74 @@ def _month_window(year, month):
 def requested_window(text, today, prior=None):
     """None means the user supplied no time period. Resolve a bare month against
     the last stated year, or its next occurrence when no year is in scope."""
-    result = _parse_window(text.casefold(), today, prior)
-    # The precision engine samples each interval at several possible birth times.
-    # Keep the existing one-year calculation horizon when accepting explicit ranges.
-    if result and (result[1] - result[0]).days > 365:
-        raise ValueError("choose a period of up to one year")
-    return result
+    return _parse_window(text.casefold(), today, prior)
+
+
+def is_long_window(window):
+    return (window[1] - window[0]).days > 365
+
+
+def default_window(today):
+    """The coming twelve months, used when a timing question names no period."""
+    return today, _shift_months(today, 12) - timedelta(days=1)
+
+
+_CLAUSE_SPLIT = re.compile(r"(?<=[,;.!?।])\s+|\s+(?:and|but|then)\s+", re.I)
+_ASKING = re.compile(
+    r"\?|^\s*(?:what|when|how|why|which|will|would|should|shall|can|could|did|do|does|is|are|was|were|"
+    r"tell|show|explain|check|compare|kab|kya)\b|\b(?:will|would|should|predict\w*|forecast|outlook|"
+    r"future|next|coming|upcoming)\b", re.I)
+
+
+def strip_past_statements(text, today):
+    """Drop clauses that state a past fact with a year ("I married in 2015").
+    A past year inside a statement is context, not the period being asked
+    about. Returns the remaining (question) text, possibly empty."""
+    kept = []
+    for clause in _CLAUSE_SPLIT.split(text):
+        years = [int(y) for y in re.findall(rf"\b{_CALENDAR_YEAR}\b", clause)]
+        if years and all(y < today.year for y in years) and not _ASKING.search(clause):
+            continue
+        kept.append(clause)
+    return " ".join(kept).strip()
+
+
+def resolve_window(text, today, prior=None):
+    """Like requested_window, but never fails: past-year statements are
+    ignored, two candidate periods ("May or June", "2026 and 2028") become one
+    span covering both, and anything unresolvable returns None so the caller
+    can use the default window. Returns (window, note) where note explains an
+    adjustment for the model, or None."""
+    try:
+        return requested_window(text, today, prior), None
+    except ValueError as exc:
+        reason = str(exc)
+    question = strip_past_statements(text, today)
+    if question != text.strip():
+        try:
+            return requested_window(question, today, prior), None
+        except ValueError as exc:
+            reason = str(exc)
+        text = question
+    if "reversed" not in reason:
+        joined = re.sub(r"\b(?:or|and|vs\.?|versus)\b", " to ", text, flags=re.I)
+        try:
+            window = requested_window(joined, today, prior)
+        except ValueError:
+            window = None
+        if window:
+            return window, ("The user named more than one candidate period; the window spans all of them "
+                            f"({window[0].isoformat()} to {window[1].isoformat()}). Compare the candidates.")
+    return None, ("The dates in the message could not be read as one period"
+                  + (" (the end comes before the start)" if "reversed" in reason else "")
+                  + "; the default window is used instead. Mention this briefly.")
+
+
+def general_outlook(text):
+    return bool(re.search(
+        r"\b(?:(?:my|the) future|(?:life|years?) ahead|(?:overall|general|long[- ]term) outlook|"
+        r"outlook (?:for|from|over)|bhavishya|what will happen|what(?:'s| is) (?:coming|ahead|in store))\b|भविष्य",
+        text, re.I))
 
 
 def _shift_months(day, count):
@@ -203,8 +268,15 @@ def _parse_window(t, today, prior):
         if end < start:
             raise ValueError("reversed interval")
         return start, end
-    if len(set(re.findall(rf"\b{_CALENDAR_YEAR}\b", t))) > 1:
-        raise ValueError("choose one year")
+    years = set(re.findall(rf"\b{_CALENDAR_YEAR}\b", t))
+    if len(years) > 1:
+        year_range = _YEAR_RANGE.search(t)
+        if not year_range or len(years) != 2:
+            raise ValueError("choose one date range")
+        first_year, last_year = (int(year) for year in year_range.groups() if year)
+        if last_year < first_year:
+            raise ValueError("reversed dates")
+        return date(first_year, 1, 1), date(last_year, 12, 31)
     if year_match or relative_year:
         year = int(year_match[1]) if year_match else relative_year
         first = 7 if re.search(r"second half|late\b", t) else 1
@@ -228,8 +300,8 @@ def window_label(window):
     start, end = window
     if _month_window(start.year, start.month) == window:
         return start.strftime("%B %Y")
-    if start == date(start.year, 1, 1) and end == date(start.year, 12, 31):
-        return str(start.year)
+    if start == date(start.year, 1, 1) and end == date(end.year, 12, 31):
+        return str(start.year) if start.year == end.year else f"{start.year}–{end.year}"
     if start == end:
         return f"{start:%d %B %Y}"
     return f"{start:%d %b %Y} to {end:%d %b %Y}"

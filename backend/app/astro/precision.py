@@ -382,7 +382,7 @@ def _week_scores(facts, birth: BirthInput, domain_signs: set,
     weeks = []
     t = start
     while t <= end:
-        pos = engine.transit_positions((t.year, t.month, t.day), place)
+        pos = engine.transit_positions((t.year, t.month, t.day), place, birth.settings)
         score, reasons = 0, []
         for name in _SLOW:
             rec = pos.get(name)
@@ -419,7 +419,7 @@ def _adverse_tara_days(facts, birth: BirthInput, start: date, end: date) -> dict
     bad, seen = 0, {}
     t = start
     while t <= end:
-        pos = engine.transit_positions((t.year, t.month, t.day), place)
+        pos = engine.transit_positions((t.year, t.month, t.day), place, birth.settings)
         moon = pos.get("Moon")
         if moon:
             ti, tn = tara_of(nak_index(_abs_long(moon)), janma)
@@ -556,13 +556,15 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
     """Eclipses in the window within 3 deg of a natal planet (or natal Lagna
     on calibrated charts)."""
     place = _place(birth)
-    jd0, jd1 = _jd_noon(start), _jd_noon(end)
+    # swe.*_eclipse_when_loc expects UT JDs and returns UT JDs; _jd_noon is local-style
+    tz_h = place.timezone
+    jd0, jd1 = _jd_noon(start) - tz_h / 24.0, _jd_noon(end) - tz_h / 24.0
     natal = {p: rec["abs_longitude"] for p, rec in facts["planets"].items()}
     if calibrated:
         natal["Lagna"] = facts["lagna"]["sign"] * 30 + facts["lagna"]["degree"]
     hits = []
-    for kind, fn in (("solar", drik.next_solar_eclipse),
-                     ("lunar", drik.next_lunar_eclipse)):
+    for kind, fn, body in (("solar", drik.next_solar_eclipse, const._SUN),
+                           ("lunar", drik.next_lunar_eclipse, const._MOON)):
         jd, found = jd0, 0
         while found < _MAX_ECLIPSES_PER_WINDOW:
             try:
@@ -579,20 +581,15 @@ def _eclipse_hits(facts, birth: BirthInput, start: date, end: date,
             found += 1
             try:
                 with _frame(birth):
-                    pos = drik.dhasavarga(ecl_jd, place, divisional_chart_factor=1)
-                pmap = {p: (s * 30 + d) % 360 for p, (s, d) in pos
-                        if isinstance(p, int)}
-                ecl_long = pmap.get(0 if kind == "solar" else 1)
+                    # sidereal_longitude takes a UTC JD — ecl_jd already is one
+                    ecl_long = drik.sidereal_longitude(ecl_jd, body)
             except Exception as exc:
                 raise ValueError("eclipse longitude unavailable") from exc
-            if ecl_long is None:
-                raise ValueError("eclipse longitude unavailable")
             touches = []
-            if ecl_long is not None:
-                for name, along in natal.items():
-                    if _sep(ecl_long, along) <= ECLIPSE_HIT_ORB:
-                        touches.append(name)
-            hits.append({"date": _ymd(ecl_jd), "kind": kind,
+            for name, along in natal.items():
+                if _sep(ecl_long, along) <= ECLIPSE_HIT_ORB:
+                    touches.append(name)
+            hits.append({"date": _ymd(ecl_jd + tz_h / 24.0), "kind": kind,
                          "touches": touches})
     return hits
 
@@ -670,7 +667,8 @@ def _ithasala_triggers(facts, birth: BirthInput, start: date, end: date) -> dict
                 if ok:
                     pairs.append({"between": K.PLANET_NAMES[lord], "and": K.PLANET_NAMES[asc_lord],
                                   "role": "varsha lagna lord", "type": int(kind)})
-            out.append({"varsha_year": age, "varsha_start": vd.isoformat(),
+            out.append({"varsha_year": age, "completed_years": age, "label": pillars.varsha_label(age),
+                        "varsha_start": vd.isoformat(),
                         "varsha_end_exclusive": until.isoformat(),
                         "year_lord": K.PLANET_NAMES[lord], "ithasala": pairs})
         except Exception as exc:
@@ -693,6 +691,33 @@ def fast_triggers(facts, birth: BirthInput, start: date, end: date,
     watch = sorted({h["date"][:7] for h in eclipses if h["touches"]})
     return {"ithasala": ith, "eclipses": eclipses, "eclipse_status": eclipse_status,
             "eclipse_error": eclipse_error, "watch_months": watch}
+
+
+def gochara_now(facts, birth: BirthInput, today: date) -> dict:
+    """Slow-planet transit snapshot for `today` against the Lagna and the natal Moon.
+
+    Positions are the sidereal signs at local noon (engine.transit_positions, birth
+    calc settings applied under the calculation lock). Returns, per Saturn / Jupiter /
+    Rahu / Ketu: sign, house from Lagna and house from Moon, plus Saturn flags
+    sade_sati (12th/1st/2nd from Moon), kantaka (4th) and ashtama (8th).
+    """
+    pos = engine.transit_positions((today.year, today.month, today.day), _place(birth), birth.settings)
+    lagna, moon = facts["lagna"]["sign"], facts["planets"]["Moon"]["sign"]
+    out = {"date": today.isoformat(), "planets": {}}
+    for name in ("Saturn", "Jupiter", "Rahu", "Ketu"):
+        if name not in pos:
+            continue
+        sign = pos[name]["sign"]
+        out["planets"][name] = {"sign": sign, "sign_name": K.SIGN_NAMES[sign],
+                                "degree": pos[name]["degree"],
+                                "house_from_lagna": (sign - lagna) % 12 + 1,
+                                "house_from_moon": (sign - moon) % 12 + 1}
+    sat = out["planets"].get("Saturn")
+    flags = pillars.saturn_moon_states(moon, sat["sign"]) if sat else []
+    out["sade_sati"] = "sade_sati" in flags
+    out["kantaka"] = "kantaka" in flags
+    out["ashtama"] = "ashtama" in flags
+    return out
 
 
 # ------------------------------------------------------------------ entry point

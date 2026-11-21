@@ -84,6 +84,24 @@ Do not commit private exports. Synthetic regression fixtures verify evaluation b
 
 Repeated forecasts for the same profile, event definition and interval are scored once (the earliest record). The API also returns a Wilson interval around the observed hit rate; it describes uncertainty in the self-reported scored subset and does not correct selection bias or prove predictive validity.
 
+## Outcome tracking and rule backtest
+
+This is the measurement pipeline that precedes any calibrated-probability mode. It measures; it does not tune.
+
+**Pre-registration (immutable).** When an event forecast is saved, `prediction_registrations` stores a canonical JSON payload and its SHA-256: stable rule IDs that fired per pillar (`<pillar rule>/<rule label>`, with dates, planets and house numbers removed), per-pillar verdicts, convergence n/4, promise grade, window, event definition and success criteria, settings fingerprint, calc fingerprint, rule-pack version and file hash, app version and timestamp (`app/astro/preregistration.py`). Code enforces it: an ORM guard rejects any update of a `PredictionRecord` outside `followup_asked_at / outcome / outcome_at / event_date`, and any update of a registration. A bulk SQL edit bypasses ORM guards, so the backtest re-verifies hash, window and event type per row and excludes mismatches (reported as `registration_mismatch`). Legacy records without a registration are excluded.
+
+**Outcome capture.** `GET /api/predictions/due` lists the user's issued forecasts whose window has ended; `POST /api/predictions/{id}/outcome` records happened / partly / did_not / unsure / outside_window (an event date is required for "happened" and is checked against the window); `GET /api/predictions/history` lists answered ones. The page `/predictions` and the chat follow-up buttons use them. Only `happened` is a hit; partly, did_not and outside_window are misses; unsure is excluded. Repeated forecasts for the same profile, event and window count once (earliest).
+
+**Backtest** (`app/astro/backtest.py`, `backend/scripts/rule_backtest.py`, admin-only `GET /api/admin/backtest`, `refresh=true` recomputes and writes `backend/data/backtest_report.{json,md}`). For every rule ID and pillar: hit rate when fired vs the base rate of the same event type and window length (<=1m, <=3m, <=6m, >6m); lift; a shuffled-chart null (outcomes permuted across charts within each event type x window stratum, 2000 permutations, fixed seed) with a two-sided p-value, Bonferroni-adjusted across all tested features; reliability by convergence n/4 with Wilson intervals; leave-one-out Brier score of "hit rate of the convergence level" against the constant base rate. Anything with fewer than 30 outcomes is reported as `insufficient data` and gets no estimate. Access: set `JYOTISH_ADMIN_EMAILS`.
+
+```sh
+JYOTISH_DATABASE_URL=... backend/.venv/bin/python backend/scripts/rule_backtest.py
+```
+
+**Weighting hook.** `backtest.rule_weights()` returns a multiplier per rule: 1.0 unless the rule has at least 30 outcomes and a significant adjusted p-value against the null, then its lift clamped to 0.5-1.5. It is not applied to scoring. `JYOTISH_USE_BACKTEST_WEIGHTS` (default false) only gates `active_rule_weights()`. Applying weights would mean changing the `supports/conflicts` tallies inside each `pillars.pillar_*()` verdict rule, which is not a small change, so it is deliberately not wired in; that is where it would go. Weights fitted on a sample must be tested on a later untouched holdout before use.
+
+**Display policy.** No percentages, lifts or hit rates are shown to users until a holdout validation passes; the report is owner-only. Outcomes are self-reported and subject to selection and recall bias; the backtest cannot establish predictive validity, only whether a rule beats randomly paired outcomes in this sample.
+
 ## Calibrated probabilities (not implemented)
 
 The software deliberately emits no probabilities. The convergence badge ("Traditional convergence: n/4 pillars indicate this window") counts agreement among techniques that share the same birth data; it is not a probability and carries a fixed disclaimer (Carlson 1985; Narlikar et al. 2009 found no better-than-chance performance in controlled studies). A calibrated-probability mode would require, in order:
@@ -95,7 +113,7 @@ The software deliberately emits no probabilities. The convergence badge ("Tradit
 5. A shuffled-chart null: the same rules run on charts paired with other people's outcomes, to show the real result beats chance.
 6. Publication of the method, data description and negative results.
 
-`backend/app/astro/validation.py::evaluate_dataset` already implements the cutoff / held-out-profile split and majority-event baseline for step 4; it does not yet compute Brier/log loss or the shuffled null.
+`backend/app/astro/validation.py::evaluate_dataset` already implements the cutoff / held-out-profile split and majority-event baseline for step 4; the shuffled null and per-rule Brier-style metrics are computed by the outcome backtest above (log loss is not).
 
 ## LLM output controls
 

@@ -37,10 +37,13 @@ log = logging.getLogger(__name__)
 MUNTHA_GOOD_HOUSES = {1, 2, 3, 5, 9, 10, 11}
 MUNTHA_BAD_HOUSES = {6, 8, 12}
 
-# Tajika aspect: a sign is aspected from every other sign distance except the
-# 6th and 8th (0-based offsets 5 and 7); conjunction included.
+# Tajika (Neelakanthi) aspects: conjunction plus the 3/11, 4/10, 5/9 and 7/7
+# sign relationships. Signs 2/12 and 6/8 apart do not aspect each other.
+_TAJIKA_ASPECT_OFFSETS = frozenset({0, 2, 3, 4, 6, 8, 9, 10})
+
+
 def _aspects(a_sign: int, b_sign: int) -> bool:
-    return (b_sign - a_sign) % 12 not in (5, 7)
+    return (b_sign - a_sign) % 12 in _TAJIKA_ASPECT_OFFSETS
 
 
 _SPEED_ORDER = list(const.order_of_planets_by_speed)          # slowest -> fastest
@@ -51,6 +54,17 @@ _ORB_NEAR = 1.0    # "poorna" / approaching-edge allowance used by PyJHora too
 
 def _place(birth: BirthInput):
     return drik.Place(birth.place_label, birth.lat, birth.lon, birth.tz_offset)
+
+
+def _pancha_vargeeya_bala(jd_val, place) -> dict:
+    """PyJHora pancha_vargeeya_bala with the upstream /4.0 divisor corrected.
+
+    PyJHora sums five components (kshetra, uchcha, hadda, drekkana, navamsa)
+    but divides by 4.0, inflating every score by 25%. Rescale to the correct
+    /5.0 basis (x0.8) so threshold gates and reported values are right.
+    """
+    return {p: round(v * 0.8, 2)
+            for p, v in strength.pancha_vargeeya_bala(jd_val, place).items()}
 
 
 def _jd_birth(birth: BirthInput) -> float:
@@ -136,7 +150,7 @@ def varsheshwara(annual_positions, return_jd_val, place, completed_years,
         pool = eligible or candidates
         if not pool:
             raise ValueError("no eligible annual lord")
-        bala = strength.pancha_vargeeya_bala(return_jd_val, place)
+        bala = _pancha_vargeeya_bala(return_jd_val, place)
         strongest = max(pool, key=lambda p: bala[p])
         chosen = strongest if bala[strongest] > _PVB_THRESHOLD else pool[0]
         via = "pancha_vargeeya_bala" if bala[strongest] > _PVB_THRESHOLD else "first_candidate"
@@ -414,7 +428,7 @@ def varsha(birth: BirthInput, completed_years: int,
             apply(birth.settings)
             rec["pancha_vargeeya_bala"] = {
                 K.PLANET_NAMES[p]: v for p, v in
-                strength.pancha_vargeeya_bala(r_jd, place).items()}
+                _pancha_vargeeya_bala(r_jd, place).items()}
             vl = varsheshwara(positions, r_jd, place, completed_years,
                               natal_lagna_sign)
             rec["night"] = vl.pop("night")

@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { api, errMsg, type ChartDashboard, type ChartTransits, type DegreeTable, type KpChart, type ProfileItem } from "@/lib/api";
+import { api, apiExtra, errMsg, type ChartDashboard, type ChartTransits, type DegreeTable, type KpChart, type ProfileItem, type ReportViews, type Tree } from "@/lib/api";
 import NorthChart from "@/components/Chart";
 
-const tabs = ["Chart", "Timeline", "Sensitivity", "Ashtakavarga", "Transits", "KP", "Paste degrees"] as const;
+const tabs = ["Chart", "Timeline", "Dasha tree", "Panchang", "Strength", "Sensitivity", "Ashtakavarga", "Transits", "KP", "Paste degrees"] as const;
+const lagnaTabs: readonly string[] = ["Strength", "Sensitivity", "KP"];
 type Tab = typeof tabs[number];
 const input = "rounded-lg border border-bord bg-card px-3 py-2";
 const button = "rounded-lg bg-accent px-4 py-2 text-white disabled:opacity-50";
@@ -43,7 +44,27 @@ function markdown(data: ChartDashboard) {
   setTimeout(() => URL.revokeObjectURL(href), 1000);
 }
 
+function DashaNode({ node, label, depth }: { node: Tree; label: string; depth: number }) {
+  const kids = node.antars ?? node.pratyantars ?? [];
+  const head = <span className={node.running ? "font-semibold text-accent" : ""}>{label} · {node.start} → {node.end ?? "…"}{node.running ? " (running)" : ""}</span>;
+  if (!kids.length) return <li className="py-0.5 text-sm">{head}</li>;
+  return (
+    <li className="py-0.5 text-sm"><details open={node.running}><summary className="cursor-pointer">{head}</summary>
+      <ul className="ml-4 border-l border-bord pl-3">{kids.map((k, i) => <DashaNode key={i} node={k} depth={depth + 1}
+        label={`${(node.lord ?? node.sign ?? "")}${depth === 0 ? "" : ""} – ${k.lord ?? k.sign}`} />)}</ul></details></li>
+  );
+}
+
+function DashaList({ title, tree }: { title: string; tree: Tree[] | { unavailable: string } }) {
+  return (
+    <div className="min-w-0"><h2 className="mb-2 font-medium">{title}</h2>
+      {Array.isArray(tree) ? <ul>{tree.map((m, i) => <DashaNode key={i} node={m} depth={0} label={m.lord ?? m.sign ?? ""} />)}</ul> :
+        <p className="text-sm text-muted">Unavailable: {tree.unavailable}</p>}</div>
+  );
+}
+
 export default function Dashboard() {
+  const [views, setViews] = useState<ReportViews>();
   const [data, setData] = useState<ChartDashboard>();
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("Chart");
@@ -71,6 +92,7 @@ export default function Dashboard() {
       }
     }).catch(e => { if (active) setError(errMsg(e)); });
     api.listProfiles().then(result => { if (active) setProfiles(result); }).catch(() => {});
+    apiExtra.reportViews().then(v => { if (active) setViews(v); }).catch(() => {});
     return () => { active = false; };
   }, []);
 
@@ -85,7 +107,9 @@ export default function Dashboard() {
     setData(undefined);
     setTransits(undefined);
     setKp(undefined);
+    setViews(undefined);
     setVarga("D1");
+    apiExtra.reportViews().then(setViews).catch(() => {});
     await load(async () => {
       await api.activateProfile(id);
       setProfiles(await api.listProfiles());
@@ -95,6 +119,8 @@ export default function Dashboard() {
     });
   }
 
+  const timeKnown = (data as unknown as { time_known?: boolean } | undefined)?.time_known !== false;
+  const calcLine = views?.settings_line;
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-10">
       <header className="flex flex-wrap items-end justify-between gap-4">
@@ -104,7 +130,12 @@ export default function Dashboard() {
           {data && <p className="mt-1 text-sm text-muted">{data.settings.birth_datetime_local} · {data.settings.place}</p>}
         </div>
         <div className="flex gap-4 text-sm">
+          <Link href="/matching" className="text-accent hover:underline">Matching</Link>
+          <Link href="/muhurta" className="text-accent hover:underline">Muhurta</Link>
+          <Link href="/varshaphala" className="text-accent hover:underline">Varshaphala</Link>
+          <Link href="/prashna" className="text-accent hover:underline">Prashna</Link>
           <Link href="/coverage" className="text-accent hover:underline">Coverage</Link>
+          <button onClick={() => { void apiExtra.downloadPdf().catch(e => setError(errMsg(e))); }} className="text-accent hover:underline">Download PDF</button>
           <Link href="/birth?new=1" className="text-accent hover:underline">Add profile</Link>
           {data && <button onClick={() => markdown(data)} className="text-accent hover:underline">Download Markdown</button>}
         </div>
@@ -127,11 +158,12 @@ export default function Dashboard() {
           }}>I have permission to use these birth details</button>}
       </div>}
       <nav className="flex flex-wrap gap-2" aria-label="Chart views">
-        {tabs.map(name => <button key={name} aria-pressed={tab === name} onClick={() => { setTab(name); setError(""); }}
+        {tabs.filter(name => timeKnown || !lagnaTabs.includes(name)).map(name => <button key={name} aria-pressed={tab === name} onClick={() => { setTab(name); setError(""); }}
           className={`rounded-lg border border-bord px-3 py-2 text-sm ${tab === name ? "bg-accentsoft text-accent" : "bg-card"}`}>{name}</button>)}
       </nav>
       {error && <p role="alert" className="rounded-lg border border-bord p-3">{error}</p>}
       {!data && !error && tab !== "Paste degrees" && <p role="status">Loading chart…</p>}
+      {data && !timeKnown && <p role="status" className="rounded-lg bg-accentsoft p-3 text-sm">Birth time unknown: only the Moon chart is shown; Lagna-based views are hidden.</p>}
       {data?.settings.warnings.map(w => <p key={w} role="status" className="rounded-lg bg-accentsoft p-3 text-sm">{w}</p>)}
       {data && tab === "Chart" && <>
         <section className={`${panel} grid gap-6 lg:grid-cols-[250px_1fr]`}>
@@ -143,12 +175,17 @@ export default function Dashboard() {
             </label>
             <NorthChart varga={varga} chart={data.vargas[varga]} />
             <p className="text-sm text-muted">{data.settings.varga_schemes[varga]}</p>
+            {calcLine && <p className="text-xs text-muted">Calculation settings: {calcLine}</p>}
           </div>
-          <Table headings={["Planet", "D1 sign", "House", "Nakshatra", "Dignity and flags"]}
-            rows={Object.entries(data.planets).map(([name, p]) => [name, `${p.sign_name} ${p.degree.toFixed(4)}°`, p.house,
-              `${p.nakshatra.name} · ${p.nakshatra.pada}`,
+          <Table headings={["Planet", "D1 sign", "Longitude", "House", "Nakshatra", "Nak. lord", "Dignity and flags", "Compound dignity", "Avastha"]}
+            rows={Object.entries(data.planets).map(([name, p]) => {
+              const x = views?.planets.find(r => r.planet === name);
+              return [name, `${p.sign_name} ${p.degree.toFixed(4)}°`, x?.longitude_dms ?? "—", timeKnown ? p.house : "—",
+              `${p.nakshatra.name} · ${p.nakshatra.pada}`, x?.nakshatra_lord || "—",
               [...p.dignity, ...(p.retrograde ? ["Retrograde"] : []), ...(p.combust ? ["Combust"] : []),
-                ...(p.vargottama ? ["Vargottama"] : []), ...(p.gandanta ? ["Gandanta"] : []), ...(p.sandhi ? ["Sandhi"] : [])].join(" · ") || "—"])} />
+                ...(p.vargottama ? ["Vargottama"] : []), ...(p.gandanta ? ["Gandanta"] : []), ...(p.sandhi ? ["Sandhi"] : [])].join(" · ") || "—",
+              x?.compound_dignity ?? "—", x?.avastha ?? "—"];
+            })} />
         </section>
         <details className={panel}><summary className="cursor-pointer font-medium">Calculation settings</summary>
           <p className="my-3 text-sm">{data.settings.ayanamsa.id} {data.settings.ayanamsa.dms} · tzdb {data.settings.tzdb_version || "unavailable"} · {data.settings.ephemeris}</p>
@@ -173,15 +210,51 @@ export default function Dashboard() {
             <Table headings={["Lords or signs", "From", "Until"]} rows={data.dashas[system].map(p => [(p.lords ?? p.signs ?? []).join(" → "), p.start, p.end])} />
           </div>)}</div>
       </section>}
-      {data && tab === "Sensitivity" && <section className={panel}>
+      {tab === "Dasha tree" && <section className={panel}>
+        {!views ? <p role="status">Loading dashas…</p> : <div className="grid gap-6 lg:grid-cols-3">
+          <DashaList title="Vimshottari (MD → AD → PD)" tree={views.dasha.vimshottari} />
+          <DashaList title="Yogini (MD → AD)" tree={views.dasha.yogini} />
+          <DashaList title="Chara (sign → sign)" tree={views.dasha.chara} />
+        </div>}
+      </section>}
+      {tab === "Panchang" && <section className={`${panel} grid gap-6 md:grid-cols-2`}>
+        {!views ? <p role="status">Loading…</p> : <>
+          <div><h2 className="mb-2 font-medium">Birth panchang</h2>
+            {"unavailable" in views.panchang ? <p className="text-sm">Unavailable: {views.panchang.unavailable}</p> :
+              <><Table headings={["Limb", "Value"]} rows={[["Tithi", `${views.panchang.tithi.paksha} ${views.panchang.tithi.name}`], ["Vara", views.panchang.vaara],
+                ["Nakshatra", `${views.panchang.nakshatra.name} pada ${views.panchang.nakshatra.pada}`], ["Yoga", views.panchang.yoga.name], ["Karana", views.panchang.karana.name]]} />
+                <p className="mt-2 text-xs text-muted">{views.panchang.basis}</p></>}</div>
+          <div><h2 className="mb-2 font-medium">Avakahada chakra</h2>
+            <Table headings={["Item", "Value"]} rows={Object.entries(views.avakahada.items).map(([k, v]) => [k.replaceAll("_", " "), v])} />
+            {views.avakahada.notes.map(n => <p key={n} className="mt-2 text-xs text-muted">{n}</p>)}</div>
+        </>}
+      </section>}
+      {tab === "Strength" && timeKnown && <section className={`${panel} space-y-6`}>
+        {!views ? <p role="status">Loading…</p> : <>
+          {views.shadbala ? <div><h2 className="mb-2 font-medium">Shadbala</h2>
+            <Table headings={["Planet", ...Object.keys(views.shadbala.planets[0].components), "Total (virupas)", "Rupas", "Required", "Ratio"]}
+              rows={views.shadbala.planets.map(r => [r.planet, ...Object.values(r.components).map(v => v.toFixed(1)), r.total_virupas.toFixed(1), r.rupas.toFixed(2),
+                r.required_rupas, `${r.ratio.toFixed(2)}${r.meets_minimum ? "" : " (below)"}`])} />
+            <p className="mt-2 text-xs text-muted">{views.shadbala.note}</p>
+            {views.shadbala.bhava_bala && <><h2 className="mb-2 mt-4 font-medium">Bhava bala</h2>
+              <Table headings={["House", "Rupas", "Ratio"]} rows={views.shadbala.bhava_bala.map(b => [b.house, b.rupas.toFixed(2), b.ratio.toFixed(2)])} /></>}
+          </div> : <p>Shadbala is unavailable for this chart.</p>}
+          {views.chalit && <div className="grid gap-4 md:grid-cols-[250px_1fr]"><div><h2 className="mb-2 font-medium">Bhava chalit</h2>
+            <NorthChart varga="Chalit" chart={views.chalit.chart} />{calcLine && <p className="mt-2 text-xs text-muted">{calcLine}</p>}</div>
+            <div><Table headings={["Planet", "Rasi house", "Chalit house", ""]} rows={views.chalit.rows.map(r => [r.planet, r.rasi_house, r.chalit_house, r.shifted ? "shifted" : ""])} />
+              <p className="mt-2 text-xs text-muted">{views.chalit.note}</p></div></div>}
+        </>}
+      </section>}
+      {data && tab === "Sensitivity" && timeKnown && data.moon_pada && <section className={panel}>
         <h2 className="mb-3 font-medium">Stable windows around the recorded time</h2>
         <Table headings={["Position", "Seconds before", "Seconds after", "Boundary status"]}
           rows={[...Object.entries(data.sensitivity), ["Moon pada", data.moon_pada] as const].map(([name, w]) =>
             [name, w.margin_before_s, w.margin_after_s, w.status === "cusp_sensitive" ? "Cusp-sensitive" : w.open_ended ? "No nearby boundary on at least one side" : "Stable"])} />
       </section>}
       {data && tab === "Ashtakavarga" && <section className={panel}>
-        {data.ashtakavarga.sav && data.ashtakavarga.bav ? <Table headings={["Points", ...data.ashtakavarga.signs]}
-          rows={[["SAV", ...data.ashtakavarga.sav], ...data.ashtakavarga.planets.map((p, i) => [p, ...data.ashtakavarga.bav![i]])]} /> :
+        {data.ashtakavarga.sav && data.ashtakavarga.bav ? <Table headings={["Points", ...data.ashtakavarga.signs, "Total"]}
+          rows={[...data.ashtakavarga.planets.map((p, i) => [p, ...data.ashtakavarga.bav![i], data.ashtakavarga.bav![i].reduce((a, b) => a + b, 0)]),
+            ["SAV", ...data.ashtakavarga.sav, data.ashtakavarga.sav.reduce((a, b) => a + b, 0)]]} /> :
           <p>Ashtakavarga is unavailable for this chart.</p>}
       </section>}
       {tab === "Transits" && <section className={panel}>

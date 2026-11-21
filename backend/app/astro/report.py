@@ -11,12 +11,79 @@ from datetime import date, timedelta
 from jhora.panchanga import drik
 
 from . import constants as K
-from . import panchang, precision, sensitivity, prediction
+from . import classical, dosha, inspection, panchang, precision, sensitivity, prediction
 from .engine import BirthInput, engine
 
-_MANGAL_HOUSES = {1, 2, 4, 7, 8, 12}   # Kuja dosha houses from lagna/Moon
-
 _OUTLOOK_DAYS = 365
+
+_HOUSE_THEMES = (
+    "personal direction and independence", "income, savings and family resources",
+    "communication and developing practical skills", "home and family responsibilities",
+    "learning, teaching and creative work", "daily work and problem-solving",
+    "partnerships and agreements", "shared responsibilities and adapting to change",
+    "higher learning, mentors and travel", "career direction and responsibility",
+    "professional networks and long-term goals", "time behind the scenes and ties to distant places",
+)
+
+
+def period_outlook(facts, window, *, born, domain=None):
+    """Read the existing Vimshottari clock over a user-selected span."""
+    from ..chat.language import window_label
+
+    first, last = window
+    start, end = max(first, born).isoformat(), last.isoformat()
+    label = window_label(window)
+
+    def within(rows):
+        return [{**row, "start": max(row["start"], start), "end": min(row["end"], end)}
+                for row in rows if start <= end and row["start"] <= end and start <= row["end"]]
+
+    periods = within(inspection.vimshottari_mahadashas(facts))
+    if not periods:
+        return {"reading": f"The saved Vimshottari timeline has no chart periods for {label}.",
+                "audit": None}
+
+    subperiods = within(facts["vimshottari"]["periods"])
+    spec = K.DOMAINS.get(domain)
+    houses = {int(h): data["lord"] for h, data in facts["houses"].items()}
+    placements = facts["planets"]
+
+    def themes(lord):
+        house = placements[lord]["house"]
+        if spec:
+            house = next((h for h in spec["houses"] if house == h or houses[h] == lord), house)
+        return _HOUSE_THEMES[house - 1]
+
+    def period_label(row):
+        return window_label((date.fromisoformat(row["start"]), date.fromisoformat(row["end"])))
+
+    lines = [f"Here’s the outlook for {label}, based on the Vimshottari periods in this chart."]
+    if periods[0]["start"] != first.isoformat() or periods[-1]["end"] != end:
+        lines.append(f"The saved timeline covers {periods[0]['start']} to {periods[-1]['end']} within that span.")
+    lines.append("\n".join(
+        f"• {p['lord']} mahādasha ({period_label(p)}). The traditional emphasis is on {themes(p['lord'])}."
+        for p in periods))
+
+    relevant = subperiods
+    if spec:
+        relevant = [p for p in subperiods if placements[p["antar"]]["house"] in spec["houses"]
+                    or any(houses[h] == p["antar"] for h in spec["houses"])]
+    highlights = sorted(relevant, key=lambda p: date.fromisoformat(p["end"]) - date.fromisoformat(p["start"]),
+                        reverse=True)[:3]
+    if highlights:
+        lines.append("A closer look at the subperiods")
+        lines.append("\n".join(
+            f"• {p['antar']} antardasha ({period_label(p)}). Themes include {themes(p['antar'])}."
+            for p in sorted(highlights, key=lambda p: p["start"])))
+    lines.append("These are traditional chart themes. For specific event timing, choose a life area and a window of up to one year.")
+    audit = {
+        "tables": [classical.table("Vimshottari subperiods within the requested span",
+                                   ["Mahādasha", "Antardasha", "From", "To", "Natal house of subperiod lord"],
+                                   [[p["maha"], p["antar"], p["start"], p["end"], placements[p["antar"]]["house"]]
+                                    for p in subperiods])],
+        "note": "Calendar dates use the recorded birth UTC offset. A transition can appear at the end of one row and the start of the next.",
+    }
+    return {"reading": "\n\n".join(lines), "audit": audit}
 
 
 def _running_vimshottari(birth: BirthInput, today: date) -> list[dict]:
@@ -41,14 +108,15 @@ def _strength_summary(facts) -> dict:
             "all_rupas": {k: round(v, 2) for k, v in rows.items()}}
 
 
+def _mangal_assessment(facts) -> dict:
+    """Full Kuja-dosha assessment (Lagna, Moon, Venus + cancellations) from dosha.py."""
+    return facts.get("mangal_dosha") or dosha.mangal_dosha(facts)
+
+
 def _mangal_dosha(facts) -> dict:
-    """Kuja (Mangal) dosha — Mars in 1/2/4/7/8/12 from the lagna; the
-    wider school also counts it from the Moon."""
-    mars = facts["planets"]["Mars"]
-    from_moon = (mars["sign"] - facts["planets"]["Moon"]["sign"]) % 12 + 1
-    return {"present": mars["house"] in _MANGAL_HOUSES,
-            "house_from_lagna": mars["house"],
-            "also_from_moon": from_moon in _MANGAL_HOUSES}
+    """Legacy summary keys {present, house_from_lagna, also_from_moon}, now derived
+    from dosha.mangal_dosha (the full result is chart['mangal_dosha_assessment'])."""
+    return dosha.legacy_summary(_mangal_assessment(facts))
 
 
 def _today_section(facts, birth: BirthInput, today: date) -> dict:
@@ -84,6 +152,7 @@ def _chart_section(facts) -> dict:
                     "darakaraka": kar.get("Darakaraka")},
         "strength": _strength_summary(facts),
         "mangal_dosha": _mangal_dosha(facts),
+        "mangal_dosha_assessment": _mangal_assessment(facts),
     }
 
 
@@ -91,7 +160,6 @@ def _outlook(facts, birth: BirthInput, calibrated: bool,
              today: date, end: date | None = None) -> list[dict]:
     end = end or today + timedelta(days=_OUTLOOK_DAYS)
     out = []
-    from . import classical
     for domain in ("career", "education", "relationship", "relocation", "finance", "direction", "health"):
         spec = K.DOMAINS[domain]
         natal = classical.promise(facts, domain)
@@ -170,13 +238,10 @@ def build_report(facts, birth: BirthInput, *, calibrated: bool,
         lines.append(f"Shadbala — strongest: {s['strongest']['planet']} "
                      f"({s['strongest']['rupas']} rupas); weakest: "
                      f"{s['weakest']['planet']} ({s['weakest']['rupas']}).")
-    md = chart["mangal_dosha"]
-    if md["present"]:
-        lines.append(
-            f"Kuja (Mangal) dosha: Mars sits in the "
-            f"{_ordinal(md['house_from_lagna'])} from the lagna"
-            + (" — a dosha house from the Moon too."
-               if md["also_from_moon"] else "."))
+    md, mda = chart["mangal_dosha"], chart["mangal_dosha_assessment"]
+    if md["present"] or mda["net"] in ("mild", "present"):
+        refs = ", ".join(f"the {r['reference']} ({_ordinal(r['house'])})" for r in mda["present_from"])
+        lines.append(f"Kuja (Mangal) dosha — Mars is counted from {refs}. {mda['wording']}")
     if today_personal:
         t = today_personal.get("tara") or {}
         sfm = today_personal.get("saturn_from_moon") or {}

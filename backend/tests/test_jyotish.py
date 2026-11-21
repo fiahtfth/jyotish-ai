@@ -192,6 +192,7 @@ def test_llm_concurrency_limit_falls_back_to_offline(monkeypatch):
     monkeypatch.setattr(providers.settings, "GEMINI_API_KEY", "test")
     monkeypatch.setattr(providers.settings, "LLM_EXTERNAL_CONSENT", True)
     monkeypatch.setattr(providers, "_llm_slots", threading.BoundedSemaphore(1))
+    monkeypatch.setattr(providers.settings, "LLM_SLOT_WAIT_SECONDS", 0.05)
     calls = []
     monkeypatch.setitem(providers.PROVIDERS, "gemini",
                         lambda s, m, timeout=None: calls.append(1) or "LLM reply.")
@@ -218,7 +219,7 @@ def test_openrouter_rejects_paid_model(monkeypatch):
 
 def register_and_profile():
     email = f"t_{uuid.uuid4().hex[:8]}@test.dev"
-    r = client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": "password123"})
+    r = client.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123"})
     assert r.status_code == 200, r.text
     tok = r.json()["access_token"]
     h = {"authorization": f"Bearer {tok}"}
@@ -231,17 +232,42 @@ def send(text, h):
     assert r.status_code == 200, r.text
     return r.json()
 
+
+def start_checks(h):
+    """Open the chat and take the generated-questions route (the opening first
+    invites the client's own dated events). Returns the first question."""
+    client.get("/api/chat/history", headers=h)
+    return send("Ask me a few questions instead", h)
+
+
+def answer_checks(h, out, real="No, that didn't happen", control=None):
+    """Answer the pending checks; the negative control gets `control`."""
+    control = control or real
+    for _ in range(6):
+        last = out[-1] if out else {}
+        eid = last["meta"].get("event_id") if last.get("kind") == "options" else None
+        if not eid:
+            break
+        out = send(control if eid.endswith("_ctl") else real, h)
+    return out
+
+
+def _has_notice(msgs):
+    """The unverified-birth-time notice: a reply of its own after an explicit
+    skip, or meta.notice on the answer when the user asked a question."""
+    return any("less accurate" in m["content"] or "less accurate" in m["meta"].get("notice", "")
+               for m in msgs)
+
 def test_full_calibration_flow_and_gate():
     h = register_and_profile()
     msgs = client.get("/api/chat/history", headers=h).json()
     assert msgs and msgs[0]["role"] == "assistant"
-    answers = ["Yes, that happened", "Yes, that happened", "Yes, that happened"]
-    last = []
-    for a in answers:
-        last = send(a, h)
-    # after 3 confirmations the gate must be open
+    assert "Ask me a few questions instead" in msgs[-1]["meta"]["options"]
+    first = send("Ask me a few questions instead", h)
+    # confirm every specific question, deny the negative control
+    answer_checks(h, first, real="Yes, that happened", control="No, that didn't happen")
     prof = client.get("/api/profile", headers=h).json()
-    assert prof["calibration_state"] in ("calibrated", "partial")
+    assert prof["calibration_state"] == "calibrated"
     assert prof["predictions_allowed"] is True
     # future question now answered, not gated
     r = send("What does 2027 look like for my career?", h)
@@ -254,7 +280,8 @@ def test_question_during_first_check_is_answered_in_same_turn():
     assert "Continue with the reading" in hist[-1]["meta"]["options"]
     reply = send("Will I get a promotion next year?", h)
     assert reply[-1]["meta"]["analysis"]["precision"]["calibrated"] is False
-    assert any("less accurate" in m["content"] for m in reply)
+    # the notice rides on the answer as metadata, not as a reply of its own
+    assert len(reply) == 2 and "less accurate" in reply[-1]["meta"]["notice"]
     cal = client.get("/api/calibration", headers=h).json()
     assert cal["state"] == "skipped" and cal["predictions_allowed"]
     assert all(not event["user_feedback"] for event in cal["events"])
@@ -262,6 +289,7 @@ def test_question_during_first_check_is_answered_in_same_turn():
 
 def test_explicit_skip_survives_reset_and_keeps_the_partial_history():
     h = register_and_profile()
+    start_checks(h)
     send("No, that didn't happen", h)
     reply = send("Continue with the reading", h)
     assert "less accurate" in reply[-1]["content"]
@@ -269,7 +297,8 @@ def test_explicit_skip_survives_reset_and_keeps_the_partial_history():
     hist = client.get("/api/chat/history", headers=h).json()
     assert all(not m["meta"].get("event_id") for m in hist)
     events = client.get("/api/calibration", headers=h).json()["events"]
-    assert [e["user_feedback"] for e in events] == ["rejected", "", ""]
+    assert [e["user_feedback"] for e in events][0] == "rejected" and not any(
+        e["user_feedback"] for e in events[1:])
     turn = _parse_sse(client.post("/api/chat/stream", json={"text": "What is my Moon sign?"}, headers=h))
     assert "Sagittarius" in turn[-1]["messages"][-1]["content"]
 
@@ -290,8 +319,7 @@ def test_opening_a_previously_blocked_chat_offers_a_reading_once():
 
 def test_failed_checks_allow_a_career_reading():
     h = register_and_profile()
-    for _ in range(3):
-        out = send("No, that didn't happen", h)
+    out = answer_checks(h, start_checks(h))
     assert "less accurate" in out[-1]["content"]
     prof = client.get("/api/profile", headers=h).json()
     assert prof["calibration_state"] == "uncalibrated" and prof["predictions_allowed"]
@@ -378,14 +406,14 @@ def test_token_revoked_after_account_deletion():
     from app.config import settings
     email_a = f"a_{uuid.uuid4().hex[:8]}@test.dev"
     tok_a = client.post("/api/auth/register",
-                        json={"terms_accepted": True, "email": email_a, "password": "password123"}).json()["access_token"]
+                        json={"terms_accepted": True, "age_confirmed": True, "email": email_a, "password": "password123"}).json()["access_token"]
     ha = {"authorization": f"Bearer {tok_a}"}
     uid_a = client.get("/api/auth/me", headers=ha).json()["id"]
     assert client.delete("/api/auth/me", headers=ha).status_code == 200
 
     email_b = f"b_{uuid.uuid4().hex[:8]}@test.dev"
     tok_b = client.post("/api/auth/register",
-                        json={"terms_accepted": True, "email": email_b, "password": "password123"}).json()["access_token"]
+                        json={"terms_accepted": True, "age_confirmed": True, "email": email_b, "password": "password123"}).json()["access_token"]
     uid_b = client.get("/api/auth/me", headers={"authorization": f"Bearer {tok_b}"}).json()["id"]
     assert uid_b != uid_a
     assert client.get("/api/auth/me", headers=ha).status_code == 401
@@ -421,7 +449,7 @@ def test_existing_rectification_chat_continues_with_notice():
     db.commit()
     db.close()
     r = send("What does 2027 look like for my career?", h)
-    assert any("less accurate" in m["content"] for m in r)
+    assert _has_notice(r)
     assert r[-1]["meta"]["analysis"]["domain"] == "career"
 
 
@@ -515,7 +543,8 @@ def test_login_throttled_after_10_bad_attempts():
 def test_insufficient_history_state(monkeypatch):
     monkeypatch.setattr(C, "generate_statements", lambda *a, **k: [])
     h = register_and_profile()
-    msgs = client.get("/api/chat/history", headers=h).json()
+    client.get("/api/chat/history", headers=h)
+    msgs = send("Ask me a few questions instead", h)
     assert any("enough past history" in m["content"] for m in msgs)
     prof = client.get("/api/profile", headers=h).json()
     assert prof["calibration_state"] == "insufficient_history"
@@ -540,7 +569,7 @@ def test_domain_detection_word_boundaries():
 
 def test_successful_logins_do_not_consume_email_budget():
     email = f"ok_{uuid.uuid4().hex[:8]}@test.dev"
-    assert client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": "password123"}).status_code == 200
+    assert client.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123"}).status_code == 200
     from app import main as M
     for _ in range(9):
         assert client.post("/api/auth/login", json={"email": email, "password": "password123"}).status_code == 200
@@ -670,7 +699,7 @@ def test_ai_enabled_by_accepting_signup_terms():
 def test_register_records_consent():
     email = f"c_{uuid.uuid4().hex[:8]}@test.dev"
     r = client.post("/api/auth/register",
-                    json={"terms_accepted": True, "email": email, "password": "password123", "llm_consent": True})
+                    json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": "password123", "llm_consent": True})
     h = {"authorization": f"Bearer {r.json()['access_token']}"}
     assert client.get("/api/auth/me", headers=h).json()["llm_consent"] is True
 
@@ -744,7 +773,7 @@ def _token_from(mail, path):
 
 def _register(email=None, password="password123"):
     email = email or f"r_{uuid.uuid4().hex[:8]}@test.dev"
-    r = client.post("/api/auth/register", json={"terms_accepted": True, "email": email, "password": password})
+    r = client.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True, "email": email, "password": password})
     assert r.status_code == 200, r.text
     return email, {"authorization": f"Bearer {r.json()['access_token']}"}
 
@@ -894,7 +923,7 @@ def test_init_db_fresh_sqlite_reaches_head(tmp_path):
     assert {"users", "auth_tokens", "prediction_records", "alembic_version"} <= set(insp.get_table_names())
     assert "email_verified" in {c["name"] for c in insp.get_columns("users")}
     with eng.connect() as c:
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0015"
 
 
 def test_init_db_upgrades_pre_alembic_database(tmp_path):
@@ -931,7 +960,7 @@ def test_init_db_upgrades_pre_alembic_database(tmp_path):
     with eng.connect() as c:
         row = c.exec_driver_sql("select token_nonce, email_verified from users").one()
         assert row[0] and not row[1]          # nonce backfilled, unverified
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0015"
 
 
 # ---------- 8. Streaming chat ----------
@@ -970,7 +999,7 @@ def test_stream_offline_yields_delta_then_done_matching_persisted():
 
 def test_stream_calibration_turn_emits_only_done():
     h = register_and_profile()
-    client.get("/api/chat/history", headers=h)      # conversation starts in calibration
+    start_checks(h)      # conversation starts in calibration
     ev = _parse_sse(client.post("/api/chat/stream", json={"text": "yes"}, headers=h))
     assert [e["type"] for e in ev] == ["done"]
     hist = client.get("/api/chat/history", headers=h).json()
@@ -1159,11 +1188,11 @@ def _age_predictions(h, days=400):
     uid = client.get("/api/auth/me", headers=h).json()["id"]
     db = SessionLocal()
     pid = db.query(BirthProfile).filter(BirthProfile.user_id == uid).first().id
-    for r in db.query(PredictionRecord).filter(PredictionRecord.profile_id == pid).all():
-        r.forecast = "event_indicated"
-        r.success_criteria = "A formal promotion takes effect within the recorded window."
-        r.window_start = date.today() - timedelta(days=days + 365)
-        r.window_end = date.today() - timedelta(days=days)
+    db.query(PredictionRecord).filter(PredictionRecord.profile_id == pid).update({   # bulk: bypasses the ORM guard
+        "forecast": "event_indicated",
+        "success_criteria": "A formal promotion takes effect within the recorded window.",
+        "window_start": date.today() - timedelta(days=days + 365),
+        "window_end": date.today() - timedelta(days=days)})
     db.commit(); db.close()
 
 
@@ -1186,15 +1215,19 @@ def test_followup_asked_after_window_and_reply_records_outcome():
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     # window still in the future: no follow-up
-    assert all(m["kind"] != "options" for m in send("tell me about my moon", h))
+    assert all("followup" not in m["meta"] for m in send("tell me about my moon", h))
     _age_predictions(h)
-    msgs = send("tell me about my lagna", h)
-    opts = [m for m in msgs if m["kind"] == "options"]
-    assert len(opts) == 1 and opts[0]["role"] == "assistant"
-    assert opts[0]["meta"]["options"] == ["It happened", "Partly", "It didn't happen", "Outside the window", "Not sure"]
-    fid = opts[0]["meta"]["followup_id"]
+    # an unrelated topic mid-session does not carry the survey
+    assert all("followup" not in m["meta"] for m in send("tell me about my lagna", h))
+    msgs = send("How is my career looking?", h)
+    assert len(msgs) == 2 and msgs[-1]["kind"] == "text"
+    follow = msgs[-1]["meta"]["followup"]
+    assert follow["options"] == ["It happened", "Partly", "It didn't happen", "Outside the window", "Not sure"]
+    assert msgs[-1]["content"].rstrip().endswith("did it happen?")
+    assert msgs[-1]["content"].count("did it happen?") == 1
+    fid = follow["id"]
     # asked once only
-    assert all(m["kind"] != "options" for m in send("and my moon?", h))
+    assert all("followup" not in m["meta"] for m in send("and my moon?", h))
     reply = send("Partly", h)
     assert len(reply) == 2 and reply[1]["role"] == "assistant"
     d = client.get("/api/predictions", headers=h).json()
@@ -1215,7 +1248,7 @@ def test_followup_option_mapping(text, outcome):
     _open_calibrated(h)
     send("Will I get a promotion in my career next year?", h)
     _age_predictions(h)
-    send("hello", h)
+    assert "followup" in send("How is my career looking?", h)[-1]["meta"]
     send(text, h)
     assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] == outcome
 
@@ -1229,7 +1262,7 @@ def test_no_followup_while_calibrating_and_export_includes_predictions():
     db, conv, _ = _db_profile_and_conv(h)
     conv.state = "cal_ask"
     db.commit(); db.close()
-    assert all(m["meta"].get("followup_id") is None for m in send("hello", h))
+    assert all(not m["meta"].get("followup") for m in send("hello", h))
     exp = client.get("/api/auth/me/export", headers=h).json()
     assert len(exp["predictions"]) == 1 and exp["predictions"][0]["domain"] == "career"
     assert client.get("/api/predictions").status_code == 401
@@ -1257,11 +1290,7 @@ def test_account_deletion_removes_predictions_and_tokens(outbox):
 
 def _fail_calibration(h):
     """Answer no to each opening check."""
-    client.get("/api/chat/history", headers=h)
-    out = []
-    for _ in range(3):
-        out = send("No, that didn't happen", h)
-    return out
+    return answer_checks(h, start_checks(h))
 
 
 def test_failed_calibration_offers_milestones_and_edit(monkeypatch):
@@ -1339,8 +1368,7 @@ def test_milestone_flow_adopted_then_fresh_checks(monkeypatch):
     db.close()
     assert r[-1]["kind"] == "options" and r[-1]["meta"].get("event_id")
     # the new checks fail too -> original time restored, no more searches offered
-    for _ in range(3):
-        r = send("No, that didn't happen", h)
+    r = answer_checks(h, r)
     db, conv, prof = _db_profile_and_conv(h)
     assert (prof.hour, prof.minute) == (6, 15) and prof.rectified_from is None
     assert conv.state == "rectify" and prof.predictions_allowed
@@ -1381,7 +1409,7 @@ def test_reset_does_not_reask_checks_when_uncalibrated(monkeypatch):
 
 def test_reset_keeps_answers_while_pending():
     h = register_and_profile()
-    client.get("/api/chat/history", headers=h)
+    start_checks(h)
     send("No, that didn't happen", h)
     first = client.get("/api/calibration", headers=h).json()["events"][0]
     client.post("/api/chat/reset", headers=h)
@@ -1567,7 +1595,7 @@ def test_migration_0006_preserves_data_and_allows_many_profiles(tmp_path):
         assert c.exec_driver_sql("select profile_id from calibration_events").scalar() == 7
         # a second profile for the same user is now legal
         c.exec_driver_sql("INSERT INTO birth_profiles (id, user_id, relation) VALUES (10, 1, 'mother')")
-        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0013"
+        assert c.exec_driver_sql("select version_num from alembic_version").scalar() == "0015"
         assert c.exec_driver_sql("select calc_preset from birth_profiles where id = 7").scalar() == "legacy_tropical"
     D.init_db(eng)       # idempotent
 
@@ -1587,7 +1615,8 @@ def test_profiles_create_list_activate_and_separate_conversations():
     # Mum's own calibration starts, worded about her
     hist = client.get("/api/chat/history", headers=h).json()
     assert hist[0]["content"] != first[0]["content"] and "Mum" in hist[0]["content"]
-    ask = hist[-1]["content"]
+    assert "Mum's birth time" in hist[-1]["content"]
+    ask = send("Ask me a few questions instead", h)[-1]["content"]
     assert "Mum's chart" in ask and "ask your own question" in ask
     assert "your career" not in ask and "your work path" not in ask
     # answering Mum's questions doesn't touch the first person's chat
@@ -1598,11 +1627,11 @@ def test_profiles_create_list_activate_and_separate_conversations():
     assert client.post(f"/api/profiles/{me_id}/activate", headers=h).json()["is_active"]
     again = client.get("/api/chat/history", headers=h).json()
     assert [m["content"] for m in again] == [m["content"] for m in first]
-    assert [e["user_feedback"] for e in client.get("/api/calibration", headers=h).json()["events"]] == ["", "", ""]
+    assert [e["user_feedback"] for e in client.get("/api/calibration", headers=h).json()["events"]] == []
     # per-profile rate limit stays per user; export has everything
     exp = client.get("/api/auth/me/export", headers=h).json()
     assert len(exp["birth_profiles"]) == 2 and {c["profile_id"] for c in exp["conversations"]} == {me_id, mum["id"]}
-    assert sum(e["profile_id"] == mum["id"] for e in exp["calibration_events"]) == 3
+    assert sum(e["profile_id"] == mum["id"] for e in exp["calibration_events"]) == 4
 
 
 def test_family_member_calibration_wording_uses_name_only_for_others():
@@ -1689,6 +1718,7 @@ def test_put_profile_by_id_edits_that_profile_and_keeps_relation_when_omitted():
 def test_stream_uses_profile_active_at_request_time():
     h = register_and_profile()
     mum = client.post("/api/profiles", json=MUM, headers=h).json()
+    start_checks(h)
     ev = _parse_sse(client.post("/api/chat/stream", json={"text": "yes"}, headers=h))
     assert ev[-1]["type"] == "done"
     cal = client.get("/api/calibration", headers=h).json()
@@ -1761,13 +1791,13 @@ def test_why_domain_question_is_answered_instead_of_old_evidence(monkeypatch):
 
 def test_calibration_date_followup_does_not_swallow_questions():
     h = register_and_profile()
-    client.get('/api/chat/history', headers=h)
+    start_checks(h)
     send('Something similar, different time', h)
     before = client.get('/api/calibration', headers=h).json()['events']
     out = send('What does my chart mean?', h)
     after = client.get('/api/calibration', headers=h).json()['events']
     assert [e['user_feedback'] for e in before] == [e['user_feedback'] for e in after]
-    assert any("less accurate" in m["content"] for m in out)
+    assert _has_notice(out)
     assert "lagna" in out[-1]["content"].lower()
     assert all(not e["actual_date"] for e in after)
 
@@ -1856,10 +1886,10 @@ def test_frozen_prediction_and_dated_outcomes_are_owned_and_window_checked():
     assert original['snapshot']['analysis']['decision']['disposition'] == original['forecast']
     # Isolate reporting behavior using an explicit issued-forecast fixture.
     from app.db import SessionLocal, PredictionRecord
-    db = SessionLocal(); rec = db.get(PredictionRecord, original['id'])
-    rec.forecast = 'event_indicated'
-    rec.created_at = datetime(2020,1,1)
-    rec.window_start, rec.window_end = date(2020,2,1), date(2020,2,28)
+    db = SessionLocal()   # bulk UPDATE: bypasses the ORM pre-registration guard (fixture only)
+    db.query(PredictionRecord).filter_by(id=original['id']).update(
+        {'forecast': 'event_indicated', 'created_at': datetime(2020,1,1),
+         'window_start': date(2020,2,1), 'window_end': date(2020,2,28)})
     db.commit(); db.close()
     endpoint = f"/api/predictions/{original['id']}/outcome"
     other = register_and_profile()
@@ -1875,7 +1905,7 @@ def test_frozen_prediction_and_dated_outcomes_are_owned_and_window_checked():
     assert data['scorecard']['scored'] == 0 and data['scorecard']['partial'] == 1
     client.post(endpoint,json={'outcome':'happened','event_date':'2020-02-15'},headers=h)
     assert client.get('/api/predictions',headers=h).json()['scorecard']['hits'] == 1
-    db=SessionLocal();rec=db.get(PredictionRecord,original['id']);rec.window_end=date.today()+timedelta(days=10);db.commit();db.close()
+    db=SessionLocal();db.query(PredictionRecord).filter_by(id=original['id']).update({'window_end':date.today()+timedelta(days=10)});db.commit();db.close()
     assert client.post(endpoint,json={'outcome':'did_not'},headers=h).status_code == 409
 
 
@@ -1923,11 +1953,12 @@ def test_conversational_correction_uses_new_event_and_same_month_over_stream():
         done = _parse_sse(client.post("/api/chat/stream", json={"text": question}, headers=h))[-1]
         assert done["type"] == "done"
         reply = done["messages"][-1]
-        if index == 0:
-            assert reply["meta"]["pending_event"]["event_type"] == event
-            assert "analysis" not in reply["meta"]
-            continue
         analysis = reply["meta"]["analysis"]
+        if index == 0:
+            # no period named: the coming twelve months are read, never asked for
+            assert analysis["decision"]["event"]["event_type"] == event
+            assert analysis["default_window"] and not analysis["period_requested"]
+            continue
         assert analysis["decision"]["event"]["event_type"] == event
         if index:
             assert analysis["analysis_window"] == {"start": "2027-07-01", "end": "2027-07-31"}
@@ -1970,6 +2001,8 @@ def test_semantic_topic_accepts_only_known_labels_and_respects_consent(monkeypat
     labels = iter(["promotion", "invented event"])
     seen = []
     def classify(system, messages, timeout):
+        if system.startswith("You route one turn"):
+            return ""                 # structured turn router unavailable -> legacy topic router
         seen.append(messages[-1]["content"])
         return next(labels)
     monkeypatch.setitem(p.PROVIDERS, "gemini", classify)
@@ -1978,8 +2011,9 @@ def test_semantic_topic_accepts_only_known_labels_and_respects_consent(monkeypat
     h = register_and_profile()
     _open_calibrated(h)
     monkeypatch.setattr(p, "generate", lambda *a, **k: ("Synthetic reading", "gemini"))
-    pending = send(msg[0]["content"], h)[-1]["meta"]
-    assert pending["pending_event"]["event_type"] == "promotion"
+    first = send(msg[0]["content"], h)[-1]["meta"]
+    assert first["analysis"]["decision"]["event"]["event_type"] == "promotion"
+    assert first["analysis"]["default_window"]
     analysis = send("next month", h)[-1]["meta"]["analysis"]
     assert analysis["decision"]["event"]["event_type"] == "promotion"
     assert p.conversation_topic(msg, allow_external=True) is None
@@ -2001,8 +2035,11 @@ def test_conversational_periods_are_calendar_intervals():
     assert requested_window("June 15 to July 2, 2027", today) == (date(2027, 6, 15), date(2027, 7, 2))
     with pytest.raises(ValueError):
         requested_window("31 February 2027", today)
-    with pytest.raises(ValueError):
-        requested_window("2027-01-01 to 2099-12-31", today)
+    assert requested_window("2027-01-01 to 2099-12-31", today) == (date(2027, 1, 1), date(2099, 12, 31))
+    for text in ("2027 to 2040", "2027–2040", "between 2027 and 2040", "2027 से 2040 तक"):
+        assert requested_window(text, today) == (date(2027, 1, 1), date(2040, 12, 31))
+    with pytest.raises(ValueError, match="reversed"):
+        requested_window("2040 to 2027", today)
 
 
 
@@ -2027,7 +2064,7 @@ def test_initial_checks_score_the_displayed_window(monkeypatch):
 
 def test_untouched_old_checks_refresh_on_history_load():
     h = register_and_profile()
-    client.get("/api/chat/history", headers=h)
+    start_checks(h)
     db, conv, prof = _db_profile_and_conv(h)
     for event in prof.calibrations:
         event.event_id = event.event_id.replace("recent_", "")
@@ -2064,15 +2101,15 @@ def test_opening_windows_allow_older_periods_and_periods_before_age_fifteen(monk
 def test_opening_ranks_all_domains_and_accepts_two_indications(monkeypatch):
     from datetime import date
     birth, facts = make_facts()
-    windows = [{"start": date(2023, 1, 1), "end": date(2023, 12, 31)},
-               {"start": date(2024, 1, 1), "end": date(2024, 12, 31)}]
+    windows = [{"lords": ["Sun", "Moon"], "start": date(2023, 1, 1), "end": date(2023, 12, 31)},
+               {"lords": ["Sun", "Moon"], "start": date(2024, 1, 1), "end": date(2024, 12, 31)}]
     monkeypatch.setattr(C, "_past_ad_windows", lambda *args: windows)
     def evaluate(facts, birth, domain, start, end):
         score = 4 if domain == "relationship" and start.year == 2024 else 1
         return {"support_count": score, "conflict_count": 0, "traditional_rule_ids": [],
                 "pillars": {}, "convergence": "support"}
     monkeypatch.setattr(C.pillars, "evaluate", evaluate)
-    statements = C.generate_statements(facts, birth, "fp")
+    statements = C.generate_statements(facts, birth, "fp", sensitivity_fn=lambda *a: 0)
     assert len(statements) == 2
     assert statements[0]["domain"] == "relationship"
     outcome = C.calibration_outcome([{"user_feedback": "confirmed"}] * 2)
@@ -2082,8 +2119,7 @@ def test_opening_ranks_all_domains_and_accepts_two_indications(monkeypatch):
 
 def test_mismatched_indications_invite_past_events_directly():
     h = register_and_profile()
-    for _ in range(3):
-        replies = send("No, that didn't happen", h)
+    replies = answer_checks(h, start_checks(h))
     invitation = replies[-1]
     assert "two or three significant events" in invitation["content"]
     assert "approximate year" in invitation["content"]
@@ -2111,9 +2147,7 @@ def test_frontend_assets_do_not_fall_back_to_html():
 
 def test_reset_preserves_completed_birth_time_checks():
     h = register_and_profile()
-    client.get("/api/chat/history", headers=h)
-    for _ in range(3):
-        send("Yes, that happened", h)
+    answer_checks(h, start_checks(h), real="Yes, that happened", control="No, that didn't happen")
     before = client.get("/api/calibration", headers=h).json()
     assert before["state"] == "calibrated"
     client.post("/api/chat/reset", headers=h)
@@ -2127,7 +2161,7 @@ def test_reset_preserves_completed_birth_time_checks():
 
 def test_factual_chart_lookup_does_not_repeat_birth_time_question():
     h = register_and_profile()
-    history = client.get("/api/chat/history", headers=h).json()
+    history = start_checks(h)
     event_id = history[-1]["meta"]["event_id"]
     send("show my D9 chart", h)
     for _ in range(3):
@@ -2138,16 +2172,18 @@ def test_factual_chart_lookup_does_not_repeat_birth_time_question():
     assert events[0]["user_feedback"] == "confirmed"
 
 
-def test_forecast_asks_for_period_and_uses_conversational_duration(monkeypatch):
+def test_forecast_without_period_reads_next_twelve_months_then_uses_conversational_duration(monkeypatch):
     from app.chat import orchestrator as O
     from datetime import date
     monkeypatch.setattr(O, "_today_at", lambda birth: date(2026, 11, 20))
     h = register_and_profile()
     send("Continue with the reading", h)
     first = send("Will I get a promotion?", h)[-1]
-    assert first["meta"]["pending_domain"] == "career"
-    assert "analysis" not in first["meta"] and "period" in first["content"]
-    assert client.get("/api/predictions", headers=h).json()["predictions"] == []
+    a = first["meta"]["analysis"]
+    assert a["decision"]["event"]["event_type"] == "promotion"
+    assert a["analysis_window"] == {"start": "2026-11-21", "end": "2027-11-19"}
+    assert a["default_window"] and not a["period_requested"]
+    assert "What period" not in first["content"]
     answer = send("next three months", h)[-1]
     a = answer["meta"]["analysis"]
     assert a["decision"]["event"]["event_type"] == "promotion"
@@ -2155,6 +2191,69 @@ def test_forecast_asks_for_period_and_uses_conversational_duration(monkeypatch):
     assert a["period_requested"]
     changed = send("Actually, only March 2027", h)[-1]["meta"]["analysis"]
     assert changed["analysis_window"] == {"start": "2027-03-01", "end": "2027-03-31"}
+
+
+def test_long_life_outlook_answers_the_exact_span_and_keeps_it_in_chat(monkeypatch):
+    from app.chat import orchestrator as O
+
+    def unexpected_timing(*args, **kwargs):
+        pytest.fail("A long-range overview must use the saved dasha timeline")
+
+    monkeypatch.setattr(O, "_precision_analysis", unexpected_timing)
+    seen = []
+
+    def gist(*args, **kwargs):
+        seen.append(kwargs.get("context_note", ""))
+        return "The broad strokes favour steady groundwork over big leaps.", "groq"
+
+    monkeypatch.setattr(O.providers, "generate", gist)
+    h = register_and_profile()
+    events = _parse_sse(client.post("/api/chat/stream", headers=h, json={
+        "text": "tell me my future from 2027 to 2040",
+    }))
+    first = events[-1]["messages"][-1]
+    # AI-first: the model narrates a gist from the computed outlook; the full
+    # period list stays in the prompt context, not in the reply.
+    assert first["content"] == "The broad strokes favour steady groundwork over big leaps."
+    assert "COMPUTED OUTLOOK" in seen[-1]
+    assert first["meta"]["requested_window"] == ["2027-01-01", "2040-12-31"]
+    db, _, profile = _db_profile_and_conv(h)
+    facts = O.chart_facts(profile)
+    saved = facts["vimshottari"]["periods"]
+    expected = [[p["maha"], p["antar"], max("2027-01-01", p["start"]), min("2040-12-31", p["end"])]
+                for p in saved if p["start"] <= "2040-12-31" and "2027-01-01" <= p["end"]]
+    db.close()
+    audit = first["meta"]["classical"]
+    assert [row[:4] for row in audit["tables"][0]["rows"]] == expected
+    # The reasoning is explained by the model from the stored audit; the
+    # tables stay in meta (expanded for an explicit detail request).
+    monkeypatch.setattr(O.providers, "generate", lambda *a, **k: ("The dasha periods drive this overview.", "groq"))
+    reasoning = send("Show me the reasoning", h)[-1]
+    assert reasoning["meta"]["classical"] == audit and reasoning["meta"]["expanded"]
+    assert reasoning["content"] == "The dasha periods drive this overview."
+    monkeypatch.setattr(O.providers, "generate", lambda *a, **k: ("", "offline"))
+    # Offline: the computed overview itself is the reply.
+    assert "outlook for 2027–2040" in send("2027 to 2040", h)[-1]["content"]
+    assert "outlook for 2030" in send("2030", h)[-1]["content"]
+    assert client.get("/api/predictions", headers=h).json()["predictions"] == []
+
+
+def test_long_period_gives_overview_before_narrowing_a_specific_event(monkeypatch):
+    from app.chat import orchestrator as O
+    from datetime import date
+
+    monkeypatch.setattr(O, "_today_at", lambda birth: date(2026, 11, 20))
+    h = register_and_profile()
+    send("Tell me my future", h)
+    overview = send("2027 to 2040", h)[-1]
+    assert overview["meta"]["requested_window"] == ["2027-01-01", "2040-12-31"]
+    career = send("Will I get a promotion in that same period?", h)[-1]
+    assert career["meta"]["requested_window"] == overview["meta"]["requested_window"]
+    assert career["meta"]["pending_event"]["event_type"] == "promotion"
+    assert "analysis" not in career["meta"]
+    narrower = send("2027", h)[-1]["meta"]["analysis"]
+    assert narrower["analysis_window"] == {"start": "2027-01-01", "end": "2027-12-31"}
+    assert narrower["decision"]["event"]["event_type"] == "promotion"
 
 
 def test_duration_parser_handles_month_ends_and_short_periods():
@@ -2168,22 +2267,21 @@ def test_duration_parser_handles_month_ends_and_short_periods():
 
 def test_career_match_collects_current_options_and_preserves_timing():
     h = register_and_profile()
+    # "What suits me" is a chart question for the model, not the role matcher.
     first = send("Which job profile suits me?", h)[-1]
-    assert first["meta"]["career_match"]["asked"] == "options"
-    choices = send("BI analyst or corporate trainer", h)[-1]
-    assert [r["title"] for r in choices["meta"]["career_result"]["roles"]] == [
-        "Business intelligence analyst", "Learning and development specialist"]
+    assert "career_match" not in first["meta"] and first["meta"]["varga"] == "D10"
+    choices = send("Compare BI analyst and corporate trainer", h)[-1]
+    assert [r["title"] for r in choices["meta"]["career_result"]["roles"]] == ["BI analyst", "corporate trainer"]
     response = client.post("/api/chat/stream", json={"text": "I built SQL dashboards and I enjoy reporting."}, headers=h)
     reading = _parse_sse(response)[-1]["messages"][-1]
-    assert reading["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    assert reading["meta"]["career_result"]["leader"] == "BI analyst"
     assert client.get("/api/predictions", headers=h).json()["predictions"] == []
     chart = send("What does my chart say about this career?", h)[-1]
     assert chart["meta"]["classical"]["tables"]
-    assert chart["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    assert chart["meta"]["career_result"]["leader"] == "BI analyst"
     timing = send("Will I receive a job offer?", h)[-1]
-    assert timing["meta"]["pending_event"]["event_type"] == "job_offer"
-    assert "analysis" not in timing["meta"]
-    assert "period" in timing["content"]
+    assert timing["meta"]["analysis"]["decision"]["event"]["event_type"] == "job_offer"
+    assert timing["meta"]["analysis"]["default_window"]
     forecast = send("next month", h)[-1]["meta"]
     assert forecast["analysis"]["decision"]["event"]["event_type"] == "job_offer"
     assert forecast["analysis"]["period_requested"]
@@ -2210,7 +2308,9 @@ def test_career_match_uses_offer_duties_and_rejects_constraint_conflicts():
 def test_career_discovery_uses_stated_interests_and_leaves_ties_open():
     h = register_and_profile()
     first = send("Suggest careers. I am a student in India and I enjoy designing courses and lesson materials.", h)[-1]
-    assert first["meta"]["career_result"]["leader"] == "Instructional designer"
+    # no roles listed: the model answers from the 10th house and D10
+    assert "career_match" not in first["meta"] and first["meta"]["varga"] == "D10"
+    assert first["meta"]["classical"]["tables"]
     reply = send("Compare data analyst and BI analyst. Skills: SQL, dashboards", h)[-1]
     # A new comparison can use the person's existing context, while a single
     # skill shared by both roles doesn't decide the comparison.
@@ -2225,14 +2325,14 @@ def test_career_intake_stays_with_its_profile():
     own_id = client.get("/api/profile", headers=h).json()["id"]
     # Lookups of chart concepts must not enter the career intake.
     assert "career_match" not in send("Compare Saturn and Jupiter", h)[-1]["meta"]
-    first = send("Suggest careers. I built SQL dashboards and I like reporting.", h)[-1]
-    assert first["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    first = send("Compare BI analyst and corporate trainer. I built SQL dashboards and I like reporting.", h)[-1]
+    assert first["meta"]["career_result"]["leader"] == "BI analyst"
     assert client.post("/api/profiles", json=MUM, headers=h).status_code == 200
-    other = send("Which job profile suits me?", h)[-1]["meta"]["career_match"]
-    assert other["evidence"] == [] and other["options"] == []
+    other = send("Compare BI analyst and corporate trainer", h)[-1]["meta"]["career_match"]
+    assert other["evidence"] == [] and other["preferences"] == []
     assert client.post(f"/api/profiles/{own_id}/activate", headers=h).status_code == 200
     again = client.get("/api/chat/history", headers=h).json()[-1]
-    assert again["meta"]["career_result"]["leader"] == "Business intelligence analyst"
+    assert again["meta"]["career_result"]["leader"] == "BI analyst"
 
 
 def test_career_match_accepts_uncatalogued_roles_and_stated_skills():
@@ -2295,15 +2395,27 @@ def test_chat_memory_stays_with_the_birth_profile_and_resets_with_chat():
     assert "married" not in send("What do you remember about me?", h)[-1]["content"]
 
 
-def test_chat_keeps_reaction_to_reading_without_scoring_it_as_forecast_outcome():
+def test_chat_keeps_reaction_to_reading_without_scoring_it_as_forecast_outcome(monkeypatch):
     from app.chat.memory import KEY
+    from app.llm import providers
     h = register_and_profile()
     _open_calibrated(h)
     reading = send("Will I get a promotion in my career next year?", h)[-1]
+    seen = []
+
+    def generate(messages, **kwargs):
+        seen.append((messages[-1]["content"], kwargs["context_note"]))
+        return "I hear you; let me look again.", "offline"
+
+    monkeypatch.setattr(providers, "generate", generate)
     feedback = send("Your prediction about my promotion was wrong.", h)
     entry = feedback[0]["meta"][KEY][0]
     assert entry["reading_id"] == reading["id"] and entry["status"] == "disagreed"
-    assert "noted your feedback" in feedback[-1]["content"]
+    # recorded, and the model still answers with the reaction in context
+    assert seen and seen[-1][0] == "Your prediction about my promotion was wrong."
+    assert "reacting to an earlier reading (disagreed)" in seen[-1][1]
+    assert feedback[-1]["content"] == "I hear you; let me look again."
+    monkeypatch.undo()
     assert "didn't match your experience" in send("What do you remember about me?", h)[-1]["content"]
     assert client.get("/api/predictions", headers=h).json()["predictions"][0]["outcome"] is None
 
@@ -2332,7 +2444,7 @@ def test_career_comparison_uses_previously_shared_experience():
     assert "dashboards" in result["roles"][0]["matched"]
 
 
-def test_provider_receives_saved_details_as_user_data(monkeypatch):
+def test_provider_receives_saved_details_as_background_system_block(monkeypatch):
     from app.llm import providers
     seen = []
 
@@ -2347,9 +2459,8 @@ def test_provider_receives_saved_details_as_user_data(monkeypatch):
     providers.generate([{"role": "user", "content": question}],
                        consultation_memory=[{"kind": "personal", "quote": saved}])
     system, messages = seen[0]
-    assert saved not in system
-    assert messages[-1]["role"] == "user"
-    assert saved in messages[-1]["content"] and messages[-1]["content"].endswith(question)
+    assert saved in system and "Use silently" in system
+    assert messages[-1] == {"role": "user", "content": question}
 
 
 def _decision_answer(label, options, probability=0.9):
@@ -2395,8 +2506,9 @@ def test_decider_uses_openrouter_decisions_and_preserves_the_confirmed_period(mo
     assert broad["decision"]["event"] is None
     assert broad["analysis_window"] == corrected["analysis_window"]
     fresh = send("Separately, will I get a job offer?", h)[-1]
-    assert fresh["meta"]["pending_event"]["event_type"] == "job_offer"
-    assert "analysis" not in fresh["meta"] and "What period" in fresh["content"]
+    assert fresh["meta"]["analysis"]["decision"]["event"]["event_type"] == "job_offer"
+    assert fresh["meta"]["analysis"]["default_window"] and "What period" not in fresh["content"]
+    assert fresh["meta"]["analysis"]["analysis_window"] != corrected["analysis_window"]
     assert len(calls) == 3
 
 
@@ -2517,7 +2629,96 @@ def test_automatic_outcome_requests_default_to_off():
     _open_calibrated(h)
     send("Will I get a promotion in July 2027?", h)
     _age_predictions(h)
-    assert not any(m["meta"].get("followup_id") for m in send("Hello", h))
+    assert not any(m["meta"].get("followup") for m in send("How is my career looking?", h))
     assert client.get("/api/predictions", headers=h).json()["followups_enabled"] is False
     assert client.put("/api/predictions/followups", json={"enabled": True}, headers=h).status_code == 200
-    assert any(m["meta"].get("followup_id") for m in send("Hello", h))
+    assert any(m["meta"].get("followup") for m in send("How is my career looking?", h))
+
+
+def test_graduation_stream_question_does_not_ask_for_a_period():
+    h = register_and_profile()
+    _open_calibrated(h)
+
+    def reply(text):
+        out = send(text, h)
+        msgs = out if isinstance(out, list) else out.get("messages", [out])
+        return " ".join(m["content"] for m in msgs if m.get("role") == "assistant")
+
+    first = reply("when will I graduate")
+    second = reply("tell me 3 possible guess from your side regarding my graduation stream")
+    assert second and "What period would you like" not in second
+
+
+def test_router_graduation_event_is_dropped_for_stream_question(monkeypatch):
+    from app.llm import providers
+    h = register_and_profile()
+    _open_calibrated(h)
+    # simulate the LLM topic router mislabelling the stream question as a graduation event
+    monkeypatch.setattr(providers, "route_topic", lambda *a, **k: "graduation")
+    out = send("tell me 3 possible guess from your side regarding my graduation stream", h)
+    msgs = out if isinstance(out, list) else out.get("messages", [out])
+    text = " ".join(m["content"] for m in msgs if m.get("role") == "assistant")
+    assert text and "What period would you like" not in text
+
+
+def _fake_eval(table, default=(2, 0)):
+    def evaluate(facts, birth, domain, start, end):
+        support, conflict = table.get((domain, start.year), default)
+        return {"support_count": support, "conflict_count": conflict,
+                "traditional_rule_ids": [], "convergence": "x",
+                "pillars": {"parashari": "support" if support >= 3 else "neutral"}}
+    return evaluate
+
+
+def test_opening_only_major_domains_and_definite_wording(monkeypatch):
+    birth, facts = make_facts()
+    monkeypatch.setattr(C.pillars, "evaluate", _fake_eval({}))
+    statements = C.generate_statements(facts, birth, "fp", sensitivity_fn=lambda *a: 0)
+    assert len(statements) == 3
+    assert {s["domain"] for s in statements} <= {"career", "education", "relocation", "relationship"}
+    assert all(s["event_id"].startswith("recent_calibration_v5_") for s in statements)
+    for s in statements:
+        assert "tentative" not in s["chat_text"] and "weaker" not in s["chat_text"]
+        assert "did you" in s["chat_text"]
+        assert s["chat_text"].endswith("?") and s["chat_text"] == s["predicted_event"]
+        assert any(w in s["chat_text"] for w in
+                   ("start a new job", "course of study", "move to live", "get married"))
+    other = C.generate_statements(facts, birth, "fp", subject="Mum", sensitivity_fn=lambda *a: 0)
+    assert all("did Mum" in s["chat_text"] for s in other)
+
+
+def test_opening_ranks_by_net_support_over_recency(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    windows = [{"lords": ["Sun", "Moon"], "start": date(2020, 1, 1), "end": date(2020, 12, 31)},
+               {"lords": ["Sun", "Moon"], "start": date(2024, 1, 1), "end": date(2024, 12, 31)}]
+    monkeypatch.setattr(C, "_past_ad_windows", lambda *a: windows)
+    monkeypatch.setattr(C.pillars, "evaluate", _fake_eval(
+        {("career", 2020): (4, 0), ("career", 2024): (3, 1)}, default=(2, 1)))
+    statements = C.generate_statements(facts, birth, "fp", sensitivity_fn=lambda *a: 0)
+    career = [s for s in statements if s["domain"] == "career"][0]
+    assert career["predicted_window"]["start"] == "2020-01"
+
+
+def test_opening_never_uses_conflicting_or_unsupported_windows(monkeypatch):
+    from datetime import date
+    birth, facts = make_facts()
+    monkeypatch.setattr(C, "_past_ad_windows", lambda *a: [
+        {"lords": ["Sun", "Moon"], "start": date(2020, 1, 1), "end": date(2020, 12, 31)},
+        {"lords": ["Sun", "Moon"], "start": date(2022, 1, 1), "end": date(2022, 12, 31)}])
+    monkeypatch.setattr(C.pillars, "evaluate", _fake_eval(
+        {("career", 2020): (1, 2), ("education", 2020): (0, 0)}, default=(1, 0)))
+    statements = C.generate_statements(facts, birth, "fp", sensitivity_fn=lambda *a: 0)
+    assert all(s["domain"] != "career" or s["predicted_window"]["start"] != "2020-01"
+               for s in statements)
+    assert all(s["domain"] != "education" or s["predicted_window"]["start"] != "2020-01"
+               for s in statements)
+    assert len(statements) <= 2
+
+
+def test_fewer_than_three_statements_outcome_is_sensible():
+    two = C.calibration_outcome([{"user_feedback": "confirmed"}] * 2)
+    assert two["state"] == "calibrated"
+    one_of_two = C.calibration_outcome([{"user_feedback": "confirmed"}, {"user_feedback": "rejected"}])
+    assert one_of_two["state"] == "uncalibrated"
+    assert C.calibration_outcome([{"user_feedback": "confirmed"}])["state"] == "partial"

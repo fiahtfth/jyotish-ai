@@ -9,6 +9,7 @@ from __future__ import annotations
 from .. import constants as K
 from .. import yogas as yogas_mod
 from . import links
+from ._facts import varga_unusable
 from .types import (Evidence, IntentConfig, PromiseFactor, PromiseResult, PROMISE_MODERATE, PROMISE_NE,
                     PROMISE_STRONG, PROMISE_WEAK, JAIMINI_KARAKAS)
 
@@ -51,7 +52,11 @@ def resolve_karakas(cfg: IntentConfig, facts: dict) -> list:
 
 
 def _ratio(facts, planet):
-    """Shadbala ratio (row 8) for Sun..Saturn, or None."""
+    """Shadbala ratio vs the BPHS minimum (facts['strength']) for Sun..Saturn; falls back to
+    PyJHora's row 8 of facts['shadbala'] when the strength block is absent; None for nodes."""
+    st = (facts.get("strength") or {}).get(planet) or {}
+    if st.get("shadbala_ratio") is not None:
+        return float(st["shadbala_ratio"])
     shad = facts.get("shadbala")
     pid = {v: k for k, v in K.PLANET_NAMES.items()}[planet]
     if shad and len(shad) > 8 and pid < len(shad[8]):
@@ -133,6 +138,9 @@ def _vhouse(facts, varga, planet):
 def _f4(facts, lord, h, varga):
     if not varga:
         return _unavail("F4_varga", "no varga configured")
+    gated = varga_unusable(facts, varga)
+    if gated:
+        return _unavail("F4_varga", gated)
     vh = _vhouse(facts, varga, lord)
     if vh is None:
         return _unavail("F4_varga", f"{varga} not available")
