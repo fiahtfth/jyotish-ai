@@ -268,9 +268,12 @@ def timing_run(facts, birth, cfg: IntentConfig, start, end, *, reliability=None,
                       f"{len(activated)} antardasha(s) link a period lord to the topic"))
 
     # Gate 3 — double transit --------------------------------------------------
-    supported = [p for p in p1s if p.value in (S, M, W)
-                 and any(e.rule_id == "P1_DOUBLE_TRANSIT" and e.direction > 0
-                         for e in p.evidence)]
+    # must hold in an ACTIVATED antardasha: a W pillar can carry transit
+    # evidence with no dasha link, which would forecast outside every
+    # period gate 2 accepted
+    supported = [p for p in activated
+                 if any(e.rule_id == "P1_DOUBLE_TRANSIT" and e.direction > 0
+                        for e in p.evidence)]
     if not supported:
         gates.append(Gate("transit", "stopped",
                           "the dasha lords link to the topic, but Jupiter and Saturn do not jointly "
@@ -526,7 +529,7 @@ def analysis_from_run(run: TimingRun, domain: str, start, end, *, calibrated=Tru
         "classical": {
             "promise": PROMISE_LABEL.get(wr.promise.level if wr.promise else "NE", "Unavailable"),
             "scores": [{"complete": wr.k_evaluated >= 2, "count": wr.n}],
-            "tables": [{"title": "Gate report", "header": ["Gate", "Result", "Detail"],
+            "tables": [{"title": "Gate report", "columns": ["Gate", "Result", "Detail"],
                         "rows": [[g["gate"], g["status"], g["detail"]] for g in gates]}],
             "timing_sensitive": run.timing_unstable or bool(run.unreliable_vargas),
         },
