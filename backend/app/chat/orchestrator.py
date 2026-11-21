@@ -865,6 +865,9 @@ def _milestones_from_entries(db, profile, entries) -> list:
     and are never re-asked. A correction ("actually, it was 2018") replaces the
     earlier date for that domain instead of adding a second event."""
     existing = db.query(UserMilestone).filter_by(profile_id=profile.id).all()
+    # only persisted rows may be deleted — rows created in this same call are
+    # still transient and db.delete() would raise InvalidRequestError
+    persisted = list(existing)
     known = {(m.domain, m.year, m.month) for m in existing}
     out = []
     for e in entries:
@@ -877,11 +880,26 @@ def _milestones_from_entries(db, profile, entries) -> list:
         month = next((n for name, n in _MONTH_WORDS.items() if name in quote.lower()), None)
         key = (e["domain"], int(ym.group(1)), month)
         if e.get("correction"):
-            for m in list(existing):
-                if m.domain == e["domain"] and (m.year, m.month) != (key[1], key[2]):
-                    db.delete(m)
-                    existing.remove(m)
-                    known.discard((m.domain, m.year, m.month))
+            # a correction replaces the latest stated date for that domain —
+            # other confirmed events there (an earlier job change, a promotion)
+            # are real history and stay
+            target = next((m for m in reversed(persisted)
+                           if m.domain == e["domain"] and (m.year, m.month) != (key[1], key[2])),
+                          None)
+            if target is not None:
+                db.delete(target)
+                persisted.remove(target)
+                existing.remove(target)
+                known.discard((target.domain, target.year, target.month))
+            # rows added earlier in this same call are still transient — drop
+            # the latest pending one rather than db.delete()ing it
+            pending = next((r for r in reversed(out)
+                            if r.domain == e["domain"] and (r.year, r.month) != (key[1], key[2])),
+                           None)
+            if pending is not None:
+                out.remove(pending)
+                existing.remove(pending)
+                known.discard((pending.domain, pending.year, pending.month))
         if key in known or (e["domain"], key[1], None) in known:
             continue
         known.add(key)
