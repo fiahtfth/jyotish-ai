@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import ClassicalEvidence from "@/components/ClassicalEvidence";
+import AnswerCard, { type Card as AnswerCardData } from "@/components/AnswerCard";
 import { api, clearToken, errMsg, streamSend, token, type Me, type Msg } from "@/lib/api";
 import type { ChartData } from "@/components/Chart";
 import type { PredictionsResponse } from "@/lib/api";
@@ -273,6 +274,12 @@ export default function Chat() {
                 {audit && m.meta.expanded && <ClassicalEvidence audit={audit} expanded />}
                 {m.meta.notice && <div className="mb-2 text-xs text-muted">{m.meta.notice}</div>}
                 {m.content}
+                {!!m.meta.card && (
+                  <div className="mt-3 whitespace-normal">
+                    <AnswerCard card={m.meta.card as AnswerCardData}
+                      onSecondOpinion={() => send("Give me a second opinion on that")} />
+                  </div>
+                )}
                 {i === msgs.length - 1 && !busy && !!m.meta.followup?.options?.length && (
                   <div className="mt-2 flex flex-wrap gap-2">
                     {m.meta.followup.options.map(o => (

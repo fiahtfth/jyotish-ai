@@ -539,7 +539,9 @@ _MINOR_EXCLUDED_TOPICS = ("marriage", "relationship", "children")
 
 
 def _personal_fit(p: BirthProfile) -> Optional[str]:
-    return _FIT.get(p.calibration_state or "")
+    # The core-engine chart check (dated milestones run backward) takes
+    # precedence; the older calibration outcome is the fallback.
+    return p.personal_fit or _FIT.get(p.calibration_state or "")
 
 
 @router.get("/api/core/topics")

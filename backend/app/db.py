@@ -116,6 +116,9 @@ class BirthProfile(Base):
     rectification_attempted = Column(Boolean, nullable=False, default=False)
     # milestone-based time search already run for this birth data
     milestone_search_done = Column(Boolean, nullable=False, default=False)
+    # core-engine chart check over the user's dated events:
+    # None = not checked yet; good | partial | poor
+    personal_fit = Column(String, nullable=True)
     user = relationship("User", back_populates="profiles")
     conversations = relationship("Conversation", back_populates="profile",
                                  cascade="all, delete-orphan")

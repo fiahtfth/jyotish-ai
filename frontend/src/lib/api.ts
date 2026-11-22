@@ -39,6 +39,7 @@ export type MsgMeta = {
   report?: { domains?: { domain: string; analysis?: { classical?: ClassicalAudit } }[] };
   expanded?: boolean;
   followup?: { id: number; options: string[]; question?: string; success_criteria?: string | null };
+  card?: unknown;                  // core-engine answer card; shaped like components/AnswerCard Card
   analysis?: { convergence?: string; classical?: ClassicalAudit; decision?: { event?: unknown } };
 };
 export type Msg = {

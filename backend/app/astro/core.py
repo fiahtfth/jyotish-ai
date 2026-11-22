@@ -44,6 +44,21 @@ PROMISE_STRONG_AT = 3.0
 PROMISE_WEAK_BELOW = 1.0
 REF_WEIGHT = {"lagna": 1.0, "moon": 0.5}
 
+# Selectivity targets (firing-rate bands, measured by tests/test_core_selectivity.py
+# over random charts). A method that says "strong"/"likely" for almost every chart
+# carries no information; these bands keep the engine honest while being tuned.
+TUNING = {
+    "targets": {
+        "promise_strong_max": 0.35,
+        "promise_weak_min": 0.20,
+        "likely_max": 0.50,
+        "likely_topic_max": 0.60,
+        "likely_day_share_max": 0.15,
+        "likely_window_days_mean_max": 90,
+        "confidence_high_max": 0.25,
+    },
+}
+
 
 class TopicError(ValueError):
     pass

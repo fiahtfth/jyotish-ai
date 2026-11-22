@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import career_events, classical, calibration, inspection, panchang, pillars, precision, preregistration, prediction, registry, report, sensitivity, transits, verify, vimshottari
+from ..astro import career_events, classical, calibration, core, inspection, panchang, pillars, precision, preregistration, prediction, registry, report, sensitivity, transits, verify, vimshottari
 from ..astro.constants import DOMAINS, DOMAIN_REMEDIES, SIGN_NAMES
 from .. import geo, moonmode
 from ..config import settings
@@ -771,6 +771,8 @@ def _collect_milestones(db, conv, profile, text) -> bool:
         profile.milestones.append(m)
         added.append(m)
     db.flush()
+    if added:
+        calibration.update_personal_fit(db, profile, chart_facts(profile), birth_input(profile))
     if added or problems:
         _ack_milestones(db, conv, profile, [m for m in added if m.domain], problems)
         return True
@@ -979,8 +981,12 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
     if entries:
         msg.meta_json = json.dumps({memory.KEY: entries}, ensure_ascii=False)
         if conv.state == "open":
-            for milestone in _milestones_from_entries(db, profile, entries):
+            added_ms = list(_milestones_from_entries(db, profile, entries))
+            for milestone in added_ms:
                 db.add(milestone)
+            if added_ms:
+                db.flush()
+                calibration.update_personal_fit(db, profile, facts, birth)
     if _vimshottari_lookup(db, conv, profile, facts, birth, text):
         db.commit()
         return conv.messages[start_len:]
@@ -2457,6 +2463,15 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     if default_used:
         window = language.default_window(today)
     moon_mode = moonmode.is_unknown(profile)
+    # The core engine reads from the Moon sign itself when the birth time is
+    # unknown, so moon_mode is not a reason to skip it.
+    if (settings.ENGINE == "core" and domain
+            and not re.search(r"second opinion", t)):
+        card_msgs = _core_card_turn(db, conv, profile, facts, birth, domain, event,
+                                    window, tense, focus, history, today, on_delta,
+                                    routing_seconds=routing_seconds)
+        if card_msgs is not None:
+            return card_msgs
     if (domain and window is not None and not moon_mode and not ground_window_only
             and (not selected or event or period or default_used)):
         # An accepted domain-only correction must survive the engine's event
@@ -2621,6 +2636,101 @@ _LONG_RANGE_HOUSES = (
     "partnerships", "shared obligations and change", "higher study and travel",
     "professional responsibility", "networks and longer-term goals", "work behind the scenes and distant ties",
 )
+
+
+# DOMAIN/event -> core topic (backend/data/topics.json). Events that the core
+# engine has no opinion on stay unmapped and fall through to the LLM path.
+_CORE_EVENT_TOPIC = {
+    "promotion": "promotion", "job_change": "job_change", "job_offer": "job_change",
+    "business_launch": "business", "marriage": "marriage", "engagement": "marriage",
+    "foreign_travel": "foreign", "foreign_settlement": "foreign",
+    "property_purchase": "property", "childbirth": "children",
+    "education_start": "education", "exam_result": "education",
+    "debt_clearance": "wealth",
+}
+_CORE_DOMAIN_TOPIC = {
+    "career": "career", "finance": "wealth", "relationship": "relationship",
+    "education": "education", "relocation": "foreign", "property": "property",
+    "children": "children", "health": "wellbeing",
+}
+
+
+def _core_topic_id(domain: str | None, event) -> str | None:
+    etype = (event or {}).get("event_type") if isinstance(event, dict) else event
+    return _CORE_EVENT_TOPIC.get(etype or "") or _CORE_DOMAIN_TOPIC.get(domain or "")
+
+
+def _profile_fit(profile) -> str | None:
+    return profile.personal_fit or {"calibrated": "good", "partial": "partial",
+                                    "uncalibrated": "poor"}.get(profile.calibration_state or "")
+
+
+def _card_consistent(reply: str, card) -> bool:
+    """The phrased reply must keep the card's verdict and stay inside its dates."""
+    low = reply.lower()
+    if card.verdict == "not_indicated" and re.search(r"\blikely\b|\byes\b|will (?:happen|occur|be)", low):
+        return False
+    if card.verdict == "likely" and re.search(r"not indicated|unlikely|no strong", low):
+        return False
+    years = set(int(y) for y in re.findall(r"\b((?:19|20)\d{2})\b", reply))
+    if years:
+        allowed = set()
+        for key in ("start", "end"):
+            if card.range and card.range.get(key):
+                allowed.update(int(card.range[key][:4]) + d for d in (-1, 0, 1))
+        for c in card.candidates:
+            for key in ("start", "end"):
+                if c.get(key):
+                    allowed.update(int(c[key][:4]) + d for d in (-1, 0, 1))
+        if allowed and any(y not in allowed for y in years):
+            return False
+    return True
+
+
+def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
+                    tense, focus, history, today, on_delta, routing_seconds=0):
+    topic_id = _core_topic_id(domain, event)
+    if not topic_id:
+        return None
+    try:
+        qt = tense if tense in ("future", "past", "natal") else "future"
+        card = core.answer(facts, birth, topic_id, question_tense=qt,
+                           start=window[0] if window else None,
+                           end=window[1] if window else None,
+                           today=today, personal_fit=_profile_fit(profile))
+    except (core.TopicError, ValueError):
+        return None
+    fallback = core.card_text(card)
+    note = ("The analysis produced the answer card below. Phrase it in plain, warm words "
+            "for the user: keep the verdict and the dates exactly as given, at most 100 words, "
+            "no planet names, house numbers, jargon or new timings.\n\n" + fallback)
+    reply = None
+    try:
+        reply, provider = providers.generate(history, facts=facts, analysis=None,
+                                             context_note=note, on_delta=on_delta,
+                                             routing_seconds=routing_seconds)
+    except Exception:
+        provider = "offline"
+    if not reply or not _card_consistent(reply, card):
+        try:
+            retry, provider2 = providers.regenerate_with_issues(
+                history, facts, None, reply or "",
+                ["Keep the card's verdict and dates exactly; do not add new timings or jargon."],
+                context_note=note, routing_seconds=routing_seconds)
+            if retry and _card_consistent(retry, card):
+                reply, provider = retry, provider2
+        except Exception:
+            pass
+    if not reply or not _card_consistent(reply, card):
+        reply, provider = fallback, "core"
+    notes = card.details.get("notes") if isinstance(card.details, dict) else None
+    _add_msg(db, conv, "assistant", reply,
+             meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
+                   "card": {"topic": card.label, "verdict": card.verdict, "window": card.window,
+                            "confidence": card.confidence, "why": card.why, "action": card.action,
+                            "details": "\n".join(notes) if notes else None},
+                   "reading_domain": domain})
+    return conv.messages[-2:]
 
 
 def _dasha_overview(facts: dict, span: tuple, domain=None) -> list[str]:
