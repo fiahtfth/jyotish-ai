@@ -5,6 +5,6 @@ import { token } from "@/lib/api";
 
 export default function Home() {
   const router = useRouter();
-  useEffect(() => { router.replace(token() ? "/chat" : "/login"); }, [router]);
+  useEffect(() => { router.replace(token() ? "/home" : "/login"); }, [router]);
   return null;
 }

@@ -2764,7 +2764,9 @@ def test_decider_skips_external_request_without_both_consent_gates(monkeypatch):
     assert providers.route_topic(messages, allow_external=False, use_fallback=False) is None
 
 
-def test_calculation_views_use_the_active_chart_and_show_versions():
+def test_calculation_views_use_the_active_chart_and_show_versions(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "KP_ENABLED", True)       # off by default (Phase 4 flags)
     h = register_and_profile()
     dashboard = client.get("/api/chart-dashboard?as_of=2027-07-12", headers=h)
     assert dashboard.status_code == 200, dashboard.text

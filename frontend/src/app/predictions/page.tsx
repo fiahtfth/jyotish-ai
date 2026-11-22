@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import AppNav from "@/components/AppNav";
 import { useEffect, useState } from "react";
 import { api, errMsg, type OutcomePrediction } from "@/lib/api";
 import { useI18n, type Key } from "@/lib/i18n";
@@ -62,7 +62,7 @@ export default function PredictionsPage() {
   }, [version]);
   return (
     <main className="mx-auto max-w-2xl space-y-5 px-4 py-7 sm:px-8">
-      <Link href="/chat" className="text-sm text-accent hover:underline">{t("back")}</Link>
+      <AppNav />
       <h1 className="font-serif-astro text-3xl">{t("pastPredictions")}</h1>
       <p className="text-sm text-muted">{t("outcomeNote")}</p>
       {error && <p role="alert" className="text-red-500">{error}</p>}

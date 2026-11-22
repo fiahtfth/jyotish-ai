@@ -1,0 +1,114 @@
+{
+ "version": "1.0",
+ "note": "Core method topics (docs/SIMPLIFICATION_PLAN.md Phase 1). houses: primary first. karakas: natural significators (BPHS ch.32). varga: confirming divisional chart (BPHS ch.6-7). timing=false means theme only, never dated.",
+ "topics": {
+  "career": {
+   "label": {"en": "Career", "hi": "करियर"},
+   "houses": [10, 6, 2, 11],
+   "karakas": ["Saturn", "Sun"],
+   "varga": "D10",
+   "safety_domain": "career",
+   "timing": true,
+   "questions": ["how will my career go", "career growth", "my work and profession", "when will my career improve", "what about my job"]
+  },
+  "job_change": {
+   "label": {"en": "Job change", "hi": "नौकरी बदलना"},
+   "houses": [10, 6, 3, 11],
+   "karakas": ["Saturn", "Mercury"],
+   "varga": "D10",
+   "safety_domain": "career",
+   "timing": true,
+   "questions": ["when will I change my job", "new job", "should I switch jobs", "will I get a new job", "job change timing"]
+  },
+  "promotion": {
+   "label": {"en": "Promotion", "hi": "पदोन्नति"},
+   "houses": [10, 11, 6, 2],
+   "karakas": ["Sun", "Jupiter"],
+   "varga": "D10",
+   "safety_domain": "career",
+   "timing": true,
+   "questions": ["when will I get promoted", "promotion", "raise at work", "higher position", "recognition at work"]
+  },
+  "business": {
+   "label": {"en": "Business", "hi": "व्यापार"},
+   "houses": [7, 10, 11, 3],
+   "karakas": ["Mercury"],
+   "varga": "D10",
+   "safety_domain": "career",
+   "timing": true,
+   "questions": ["should I start a business", "will my business grow", "business partnership", "own venture", "self-employment"]
+  },
+  "wealth": {
+   "label": {"en": "Money and income", "hi": "धन और आय"},
+   "houses": [2, 11, 5, 9],
+   "karakas": ["Jupiter", "Venus"],
+   "varga": "D2",
+   "safety_domain": "finance",
+   "timing": true,
+   "questions": ["how will my finances be", "income growth", "money", "savings and wealth", "when will my income rise"]
+  },
+  "marriage": {
+   "label": {"en": "Marriage", "hi": "विवाह"},
+   "houses": [7, 2, 11],
+   "karakas": ["Venus", "Jupiter"],
+   "varga": "D9",
+   "safety_domain": "marriage_relationship",
+   "timing": true,
+   "questions": ["when will I get married", "marriage timing", "my married life", "will I marry", "spouse"]
+  },
+  "relationship": {
+   "label": {"en": "Relationship", "hi": "संबंध"},
+   "houses": [7, 5, 11],
+   "karakas": ["Venus"],
+   "varga": "D9",
+   "safety_domain": "marriage_relationship",
+   "timing": true,
+   "questions": ["love life", "will I find a partner", "my relationship", "romance", "partner"]
+  },
+  "children": {
+   "label": {"en": "Children", "hi": "संतान"},
+   "houses": [5, 9, 11],
+   "karakas": ["Jupiter"],
+   "varga": "D7",
+   "safety_domain": "children_family",
+   "timing": true,
+   "questions": ["when will I have children", "child", "family growth", "progeny", "baby"]
+  },
+  "education": {
+   "label": {"en": "Education", "hi": "शिक्षा"},
+   "houses": [4, 5, 9, 2],
+   "karakas": ["Mercury", "Jupiter"],
+   "varga": "D24",
+   "safety_domain": "education",
+   "timing": true,
+   "questions": ["studies", "exams", "higher education", "will I do well in my studies", "admission"]
+  },
+  "foreign": {
+   "label": {"en": "Foreign travel and settling abroad", "hi": "विदेश यात्रा और निवास"},
+   "houses": [12, 9, 3, 7],
+   "karakas": ["Rahu", "Saturn"],
+   "varga": "D4",
+   "safety_domain": "foreign",
+   "timing": true,
+   "questions": ["will I go abroad", "foreign travel", "settle abroad", "relocation", "visa"]
+  },
+  "property": {
+   "label": {"en": "Home and property", "hi": "घर और संपत्ति"},
+   "houses": [4, 11, 2],
+   "karakas": ["Mars", "Venus"],
+   "varga": "D4",
+   "safety_domain": "property",
+   "timing": true,
+   "questions": ["will I buy a house", "property purchase", "own home", "land", "vehicle"]
+  },
+  "wellbeing": {
+   "label": {"en": "Wellbeing", "hi": "कल्याण"},
+   "houses": [1, 6, 8],
+   "karakas": ["Sun", "Moon"],
+   "varga": "D1",
+   "safety_domain": "wellbeing",
+   "timing": false,
+   "questions": ["general wellbeing", "energy and vitality", "how am I doing overall", "stress", "balance in life"]
+  }
+ }
+}

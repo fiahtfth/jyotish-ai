@@ -487,6 +487,9 @@ def _window_view(w, display_type=None, segment=None) -> dict:
 @router.post("/api/convergence/{intent_id}")
 def convergence_intent(intent_id: str, body: ConvergenceIn, user: User = Depends(current_user)):
     """Read-only convergence v2 result for one spec intent (no chat/LLM involvement)."""
+    from .config import settings as app_settings
+    if not app_settings.CONVERGENCE_V2:
+        raise HTTPException(404, "The convergence engine is switched off (CONVERGENCE_V2).")
     from .astro.convergence import intents as conv_intents
     from .astro.convergence import template_t
     from .astro.convergence.serialize import jsonable
@@ -524,3 +527,74 @@ def convergence_intent(intent_id: str, body: ConvergenceIn, user: User = Depends
     if "special" in res:
         out["special"] = jsonable(res["special"])
     return out
+
+
+# ------------------------------------------------------------------ core method (Phase 1/5)
+# One classical Parashari method (astro/core.py): answer cards and the Home screen.
+# Pure computation; no LLM is called here.
+
+_CORE_MAX_DAYS = 366 * 16
+_FIT = {"calibrated": "good", "partial": "partial", "uncalibrated": "poor"}
+_MINOR_EXCLUDED_TOPICS = ("marriage", "relationship", "children")
+
+
+def _personal_fit(p: BirthProfile) -> Optional[str]:
+    return _FIT.get(p.calibration_state or "")
+
+
+@router.get("/api/core/topics")
+def core_topics():
+    from .astro import core
+    return core.topics_list()
+
+
+@router.get("/api/core/answer")
+def core_answer(topic: str, tense: Literal["future", "past", "natal"] = "future",
+                start: Optional[date] = None, end: Optional[date] = None,
+                user: User = Depends(current_user)):
+    from .astro import core
+    try:
+        core.topic(topic)
+    except core.TopicError:
+        raise HTTPException(404, "unknown topic")
+    if start and end and (end <= start or (end - start).days > _CORE_MAX_DAYS):
+        raise HTTPException(422, "Choose an end after the start and a range of at most 16 years.")
+    p = _main()._require_profile(user)
+    birth = orchestrator.birth_input(p)
+    facts = orchestrator.chart_facts(p)
+    try:
+        card = core.answer(facts, birth, topic, question_tense=tense, start=start, end=end,
+                           today=orchestrator._today_at(birth), personal_fit=_personal_fit(p))
+    except ValueError as exc:
+        raise HTTPException(422, str(exc))
+    return card.to_dict()
+
+
+@router.get("/api/home")
+def home(user: User = Depends(current_user)):
+    from .astro import core
+    p = _main()._require_profile(user)
+    birth = orchestrator.birth_input(p)
+    facts = orchestrator.chart_facts(p)
+    today = orchestrator._today_at(birth)
+    time_known = birth.birth_time_precision != "unknown"
+    fit = _personal_fit(p)
+    exclude = _MINOR_EXCLUDED_TOPICS if orchestrator.is_minor(p) else ()
+    overview = core.year_overview(facts, birth, today, personal_fit=fit, exclude=exclude)
+    moon = facts["planets"]["Moon"]
+    picked = [o["topic"] for o in overview if not o.get("caution")]
+    picked += [t for t in ("career", "wealth", "marriage", "education", "property", "foreign")
+               if t not in picked and t not in exclude]
+    questions = []
+    for tid in picked[:5]:
+        q = core.topic(tid)["questions"][0]
+        questions.append(q[0].upper() + q[1:] + "?")
+    questions.append("What does my current period mean for me?")
+    return {
+        "chart_brief": {"lagna": facts["lagna"]["sign_name"] if time_known else None,
+                        "moon_sign": moon["sign_name"], "nakshatra": moon["nakshatra"]["name"],
+                        "current_dasha": core.dasha_brief(facts, today), "time_known": time_known},
+        "year_overview": overview,
+        "chart_check": {"state": "checked" if fit else "not_checked", "personal_fit": fit},
+        "suggested_questions": questions,
+    }

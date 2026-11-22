@@ -122,7 +122,7 @@ export default function Birth() {
       if ((p.tz_warnings?.length ?? 0) > 0 || p.offset_source !== "tzdb") {
         setResolved(p);
       } else {
-        router.replace("/chat");
+        router.replace("/home");
       }
     } catch (x) {
       if (x instanceof TzError) {
@@ -156,7 +156,7 @@ export default function Birth() {
         )}
         <div className="flex gap-2">
           <button onClick={() => setResolved(null)} className="flex-1 border border-bord rounded-lg py-2.5">{t("changeTime")}</button>
-          <button onClick={() => router.replace("/chat")} className="flex-1 bg-accent text-white rounded-lg py-2.5 font-medium">{t("confirmContinue")}</button>
+          <button onClick={() => router.replace("/home")} className="flex-1 bg-accent text-white rounded-lg py-2.5 font-medium">{t("confirmContinue")}</button>
         </div>
       </div>
     </main>

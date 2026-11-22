@@ -946,6 +946,8 @@ def chart_transits(start: date, end: date, planet: str = "Saturn", user: User = 
 
 @app.get("/api/kp")
 def kp_chart(user: User = Depends(current_user)):
+    if not settings.KP_ENABLED:
+        raise HTTPException(404, "KP is switched off (KP_ENABLED).")
     profile = _require_profile(user)
     if moonmode.is_unknown(profile):
         raise HTTPException(409, "KP needs the birth time; it is not available while the birth time is unknown.")

@@ -7,6 +7,7 @@ import type { ChartData } from "@/components/Chart";
 import type { PredictionsResponse } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
 import NorthChart from "@/components/Chart";
+import AppNav from "@/components/AppNav";
 import ServiceAgreement from "@/components/ServiceAgreement";
 import PredictionOutcome from "@/components/PredictionOutcome";
 
@@ -71,6 +72,17 @@ export default function Chat() {
     window.addEventListener("focus", onFocus);
     return () => { disposed = true; window.removeEventListener("focus", onFocus); };
   }, [router]);
+
+  // /chat?q=... (from Home): ask that question once, after history has loaded
+  const preAsked = useRef(false);
+  useEffect(() => {
+    if (preAsked.current || loading || chatError || !me || me.ai_terms_required) return;
+    preAsked.current = true;
+    const q = new URLSearchParams(window.location.search).get("q");
+    if (!q) return;
+    window.history.replaceState(null, "", "/chat");
+    void send(q);
+  });
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy, live]);
 
@@ -181,6 +193,7 @@ export default function Chat() {
 
   return (
     <div className="h-dvh w-full min-w-0 flex flex-col max-w-2xl mx-auto">
+      <AppNav />
       <header className="flex items-center justify-between px-4 py-3 border-b border-bord">
         <div>
           <div className="font-serif-astro text-lg leading-tight">{t("appName")}</div>

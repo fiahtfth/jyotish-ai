@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { api, apiExtra, errMsg, type ChartDashboard, type ChartTransits, type DegreeTable, type KpChart, type ProfileItem, type ReportViews, type Tree } from "@/lib/api";
+import AppNav from "@/components/AppNav";
 import NorthChart from "@/components/Chart";
 
 const tabs = ["Chart", "Timeline", "Dasha tree", "Panchang", "Strength", "Sensitivity", "Ashtakavarga", "Transits", "KP", "Paste degrees"] as const;
@@ -123,9 +124,9 @@ export default function Dashboard() {
   const calcLine = views?.settings_line;
   return (
     <main className="mx-auto max-w-6xl space-y-6 px-4 py-6 sm:px-8 sm:py-10">
+      <AppNav />
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <Link href="/chat" className="text-sm text-accent hover:underline">Back to chat</Link>
           <h1 className="mt-2 font-serif-astro text-3xl sm:text-4xl">Chart dashboard</h1>
           {data && <p className="mt-1 text-sm text-muted">{data.settings.birth_datetime_local} · {data.settings.place}</p>}
         </div>
