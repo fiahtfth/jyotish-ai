@@ -3226,3 +3226,27 @@ def test_dejargon_abstention_scrubs_without_rewrite():
         orchestrator.providers.regenerate_with_issues = orig
     assert not called                       # no rewrite — the refusal must survive verbatim
     assert out == "The chart doesn't promise this."
+
+
+def test_detect_domain_job_transfer_not_litigation():
+    from app.chat import orchestrator
+    assert orchestrator.detect_domain("I was transferred during my trial shift") == "career"
+    assert orchestrator.detect_domain("transferred to the hearing team") == "career"
+    assert orchestrator.detect_domain("my court case was transferred") == "litigation"
+
+
+def test_dejargon_never_returns_blank():
+    from app.chat import orchestrator
+    hist = [{"role": "user", "content": "Will I get promoted?"}]
+    reply = "The Vimshottari chart doesn't promise this."
+    called = []
+    orig = orchestrator.providers.regenerate_with_issues
+    orchestrator.providers.regenerate_with_issues = lambda *a, **k: called.append(1) or ("", "offline")
+    try:
+        out = orchestrator._dejargon_if_needed(reply, "groq", hist, {}, None, "", (), False)
+    finally:
+        orchestrator.providers.regenerate_with_issues = orig
+    assert not called            # abstention path: verbatim scrub, no rewrite
+    assert out == reply          # every sentence had jargon → original kept, not blank
+    plain = orchestrator._dejargon_if_needed("All 34 bindus in Ashtakavarga.", "offline", hist, {}, None, "", (), False)
+    assert plain == "All 34 bindus in Ashtakavarga."   # offline provider untouched

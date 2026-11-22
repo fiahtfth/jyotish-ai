@@ -379,9 +379,10 @@ def detect_domain(text: str) -> str | None:
                 r"tumou?r|cancer|fracture|injur\w*|accident|medicin\w*|medical|complication\w*)\b", t):
             return "health"
         return "children"
-    # a transfer of a case/petition/hearing is a legal event, not a job change
+    # a transfer of a case/petition is a legal event, not a job change
+    # ('trial'/'hearing' excluded — a job trial shift is still a career topic)
     if (re.search(r"\btransfers?\w*\b", t)
-            and re.search(r"\b(?:court|lawsuit|litigation|petition|hearing|trial|legal matter)\b", t)):
+            and re.search(r"\b(?:court|lawsuit|litigation|petition|legal matter)\b", t)):
         return "litigation"
     for dom, rx in _DOMAIN_RES.items():
         if rx.search(t):
@@ -1780,8 +1781,9 @@ def _dejargon_if_needed(reply, provider, history, facts, analysis, context_note,
         return reply
     if _ABSTENTION.search(reply):
         # a rewrite could turn "the chart doesn't promise this" into a promise;
-        # scrub verbatim instead so the refusal survives word for word
-        return _scrub_calc_detail(reply)
+        # scrub verbatim instead so the refusal survives word for word —
+        # and if the refusal itself carried jargon, keep it rather than blank
+        return _scrub_calc_detail(reply) or reply
     try:
         cleaner, prov = providers.regenerate_with_issues(
             history, facts, analysis, reply,
@@ -1796,7 +1798,8 @@ def _dejargon_if_needed(reply, provider, history, facts, analysis, context_note,
             return cleaner
     except Exception:
         log.exception("dejargon pass failed")
-    return _scrub_calc_detail(reply)
+    # never blank the reply: if every sentence carried jargon, keep the original
+    return _scrub_calc_detail(reply) or reply
 
 
 def _generate_extras(**wanted) -> dict:
