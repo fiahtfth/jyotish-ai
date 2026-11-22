@@ -3265,3 +3265,11 @@ def test_detect_domain_support_case_transfer_is_career():
     assert orchestrator.detect_domain("my support case was transferred; will I get promoted?") == "career"
     assert orchestrator.detect_domain("the case was transferred to another bench") == "litigation"
     assert orchestrator.detect_domain("my hearing was transferred") == "litigation"
+
+
+def test_detect_domain_court_staff_transfer_is_career():
+    from app.chat import orchestrator
+    assert orchestrator.detect_domain("I was transferred to the district court; promotion?") == "career"
+    assert orchestrator.detect_domain("the case was transferred to another bench") == "litigation"
+    assert orchestrator.detect_domain("they transferred the case to the high court") == "litigation"
+    assert orchestrator.detect_domain("my support case was transferred; will I get promoted?") == "career"

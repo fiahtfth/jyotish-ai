@@ -379,12 +379,18 @@ def detect_domain(text: str) -> str | None:
                 r"tumou?r|cancer|fracture|injur\w*|accident|medicin\w*|medical|complication\w*)\b", t):
             return "health"
         return "children"
-    # a legal matter being transferred ("the hearing was transferred") or a
-    # transfer into a court is litigation — but "transferred to the hearing
-    # team" or "during my trial shift" is a job change
+    # a legal matter being transferred is litigation — either the matter is
+    # the subject ("the hearing was transferred") or the object ("transferred
+    # the case to another court"). A person posted somewhere ("I was
+    # transferred to the district court", "transferred to the hearing team",
+    # "during my trial shift") is a job change.
+    obj = r"(?:case|suit|petition|hearing|matter|lawsuit)s?"
+    dest = r"(?:court|bench|tribunal)"
     if (re.search(r"\b(?:suit|petition|hearing|court case|lawsuit)s?\s+"
                   r"(?:was|were|got|is|has been|had been|being)?\s*transfers?\w*\b", t)
-            or re.search(r"\btransfers?\w*.{0,30}?\b(?:court|lawsuit|petition|bench|tribunal)\b", t)):
+            or re.search(rf"\b{obj}\s+(?:was|were|got|is|has been|had been|being)?\s*"
+                         rf"transfers?\w*.{{0,20}}?\b{dest}\b", t)
+            or re.search(rf"\btransfers?\w*.{{0,20}}?\b{obj}\b.{{0,20}}?\b{dest}\b", t)):
         return "litigation"
     for dom, rx in _DOMAIN_RES.items():
         if rx.search(t):
