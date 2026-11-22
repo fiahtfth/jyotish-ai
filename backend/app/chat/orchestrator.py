@@ -2463,9 +2463,13 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     if default_used:
         window = language.default_window(today)
     moon_mode = moonmode.is_unknown(profile)
-    # The core engine reads from the Moon sign itself when the birth time is
-    # unknown, so moon_mode is not a reason to skip it.
+    # The core engine answers fresh forecast questions with a card. Follow-ups
+    # ("why", clarifications, feedback, statements) and "second opinion" stay on
+    # the legacy path. Moon mode is fine: core reads from the Moon sign itself.
     if (settings.ENGINE == "core" and domain
+            and (wants_forecast or (event and tense == "future"))
+            and not references_reading and not statement_only
+            and not (route and (route.is_feedback or route.clarifying_question))
             and not re.search(r"second opinion", t)):
         card_msgs = _core_card_turn(db, conv, profile, facts, birth, domain, event,
                                     window, tense, focus, history, today, on_delta,
