@@ -3202,3 +3202,27 @@ def test_dejargon_skips_offline_and_detail_asks():
     finally:
         monkey.regenerate_with_issues = orig
     assert out == "Strong support."
+
+
+def test_detect_domain_legal_transfer_and_medical_pregnancy():
+    from app.chat import orchestrator
+    assert orchestrator.detect_domain("my court case was transferred to another bench") == "litigation"
+    assert orchestrator.detect_domain("the petition got transferred to the high court") == "litigation"
+    assert orchestrator.detect_domain("I was transferred to Delhi by my company") == "career"
+    assert orchestrator.detect_domain("my wife is pregnant") == "children"
+    assert orchestrator.detect_domain("is surgery risky while my wife is expecting a baby") == "health"
+
+
+def test_dejargon_abstention_scrubs_without_rewrite():
+    from app.chat import orchestrator
+    reply = "The chart doesn't promise this. The 10th house has 34 bindus."
+    hist = [{"role": "user", "content": "Will I get promoted?"}]
+    called = []
+    orig = orchestrator.providers.regenerate_with_issues
+    orchestrator.providers.regenerate_with_issues = lambda *a, **k: called.append(1) or ("x", "groq")
+    try:
+        out = orchestrator._dejargon_if_needed(reply, "groq", hist, {}, None, "", (), False)
+    finally:
+        orchestrator.providers.regenerate_with_issues = orig
+    assert not called                       # no rewrite — the refusal must survive verbatim
+    assert out == "The chart doesn't promise this."

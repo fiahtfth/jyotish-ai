@@ -15,6 +15,7 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByPlaceholder(/email/i).fill(email);
   await page.getByPlaceholder(/password/i).fill(password);
   await page.getByRole("checkbox", { name: /privacy policy/i }).check();
+  await page.getByRole("checkbox", { name: /18 years/i }).check();
   await page.locator("form").getByRole("button", { name: /create account/i }).last().click();
 
   // Birth details (defaults for date/time are fine); pick Chennai

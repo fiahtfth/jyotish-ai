@@ -371,9 +371,18 @@ def detect_domain(text: str) -> str | None:
     "let's move on" is not a relocation."""
     t = _IDIOMS.sub(" ", text.lower().replace("’", "'"))
     # a pregnancy mention is about children even when a relative is named first
-    # ("my wife is pregnant" — the wife is context, not the topic)
+    # ("my wife is pregnant") — unless a medical anchor makes it a health
+    # question, which stays out of astrological verdicts entirely
     if re.search(r"\bpregnan\w*|\bconceiv\w*|\bexpecting (?:a |our )?(?:baby|child)\b", t):
+        if re.search(
+                r"\b(?:surger\w+|operation|hospital\w*|diagnos\w+|disease|illness|treatment|"
+                r"tumou?r|cancer|fracture|injur\w*|accident|medicin\w*|medical|complication\w*)\b", t):
+            return "health"
         return "children"
+    # a transfer of a case/petition/hearing is a legal event, not a job change
+    if (re.search(r"\btransfers?\w*\b", t)
+            and re.search(r"\b(?:court|lawsuit|litigation|petition|hearing|trial|legal matter)\b", t)):
+        return "litigation"
     for dom, rx in _DOMAIN_RES.items():
         if rx.search(t):
             return dom
@@ -1738,6 +1747,12 @@ _JARGON_SEARCH = re.compile(
 _ORDINAL_WORDS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth",
                   7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth", 11: "eleventh",
                   12: "twelfth"}
+# A reply declining or hedging a forecast must keep that stance word for word;
+# a paraphrase can flip it into a promise.
+_ABSTENTION = re.compile(
+    r"\bdoesn'?t (?:strongly |clearly )?promise\b|\bdoes not (?:strongly |clearly )?promise\b|"
+    r"\bnot (?:clearly )?indicated\b|\bno (?:clear |strong )?indication\b|\bcannot promise\b|"
+    r"\bnot (?:favou?rable|supported|promised)\b|\bunlikely\b|\bdon'?t see\b|\bdoes not see\b", re.I)
 
 
 def _scrub_calc_detail(reply: str) -> str:
@@ -1763,6 +1778,10 @@ def _dejargon_if_needed(reply, provider, history, facts, analysis, context_note,
         return reply
     if not _JARGON_SEARCH.search(reply):
         return reply
+    if _ABSTENTION.search(reply):
+        # a rewrite could turn "the chart doesn't promise this" into a promise;
+        # scrub verbatim instead so the refusal survives word for word
+        return _scrub_calc_detail(reply)
     try:
         cleaner, prov = providers.regenerate_with_issues(
             history, facts, analysis, reply,
