@@ -3250,3 +3250,11 @@ def test_dejargon_never_returns_blank():
     assert out == reply          # every sentence had jargon → original kept, not blank
     plain = orchestrator._dejargon_if_needed("All 34 bindus in Ashtakavarga.", "offline", hist, {}, None, "", (), False)
     assert plain == "All 34 bindus in Ashtakavarga."   # offline provider untouched
+
+
+def test_detect_domain_hearing_transferred_is_litigation():
+    from app.chat import orchestrator
+    assert orchestrator.detect_domain("my hearing was transferred to next month") == "litigation"
+    assert orchestrator.detect_domain("the case was transferred to another bench") == "litigation"
+    assert orchestrator.detect_domain("transferred to the hearing team") == "career"
+    assert orchestrator.detect_domain("I was transferred during my trial shift") == "career"

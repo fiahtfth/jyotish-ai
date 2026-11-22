@@ -379,10 +379,12 @@ def detect_domain(text: str) -> str | None:
                 r"tumou?r|cancer|fracture|injur\w*|accident|medicin\w*|medical|complication\w*)\b", t):
             return "health"
         return "children"
-    # a transfer of a case/petition is a legal event, not a job change
-    # ('trial'/'hearing' excluded — a job trial shift is still a career topic)
-    if (re.search(r"\btransfers?\w*\b", t)
-            and re.search(r"\b(?:court|lawsuit|litigation|petition|legal matter)\b", t)):
+    # a legal matter being transferred ("the hearing was transferred") or a
+    # transfer into a court is litigation — but "transferred to the hearing
+    # team" or "during my trial shift" is a job change
+    if (re.search(r"\b(?:case|suit|petition|hearing|matter)s?\s+"
+                  r"(?:was|were|got|is|has been|had been|being)?\s*transfers?\w*\b", t)
+            or re.search(r"\btransfers?\w*\s+\w{0,20}\b(?:court|lawsuit|petition|bench|tribunal)\b", t)):
         return "litigation"
     for dom, rx in _DOMAIN_RES.items():
         if rx.search(t):
