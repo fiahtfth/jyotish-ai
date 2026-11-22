@@ -273,24 +273,27 @@ def _add_msg(db: Session, conv: Conversation, role: str, content: str,
 
 
 DOMAIN_KEYWORDS = {
-    "career": ["job", "career", "promotion", "work", "business", "profession", "salary", "boss", "interview", "transfer", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work", "startup", "entrepreneur", "self-employed", "office", "vyapar", "व्यापार"],
-    "education": ["study", "studies", "exam", "education", "degree", "college", "university", "course", "admission", "graduate", "graduation", "graduating", "stream", "subject", "field of study", "padhai", "पढ़ाई", "engineering", "commerce", "science stream", "arts stream", "humanities", "mba", "phd", "masters", "bachelors", "b.tech", "btech", "neet", "jee", "upsc", "entrance"],
-    "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love life", "love marriage", "in love", "spouse", "engagement", "tie the knot", "dating", "girlfriend", "boyfriend", "shaadi", "shadi", "vivah", "शादी", "विवाह"],
-    "relocation": ["move", "city", "settle", "relocate", "relocating", "abroad", "foreign", "house shift", "shift house", "settle abroad", "settle in", "travel", "videsh", "विदेश", "buy a house", "buy a home", "buy a flat", "buy property", "house purchase", "own house", "own home", "new house", "new home", "property", "moving to", "move to", "move abroad", "move out"],
-    "children": ["children", "child", "childbirth", "baby", "kids", "son", "daughter", "parenthood", "creative legacy", "santan", "संतान"],
+    "career": ["job", "career", "promotion", "promoted", "promoting", "work", "business", "profession", "salary", "boss", "interview", "transfer", "transferred", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work", "startup", "entrepreneur", "self-employed", "office", "vyapar", "व्यापार", "hired", "fired", "resigned", "sacked", "laid off", "laid-off", "jobless"],
+    "education": ["study", "studies", "studied", "exam", "education", "degree", "college", "university", "course", "admission", "graduate", "graduation", "graduating", "stream", "subject", "field of study", "padhai", "पढ़ाई", "engineering", "commerce", "science stream", "arts stream", "humanities", "mba", "phd", "masters", "bachelors", "b.tech", "btech", "neet", "jee", "upsc", "entrance"],
+    "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love life", "love marriage", "in love", "spouse", "engagement", "engaged", "tie the knot", "dating", "girlfriend", "boyfriend", "shaadi", "shadi", "vivah", "शादी", "विवाह", "divorce", "divorced", "separated", "separation", "breakup", "broke up", "remarried"],
+    "relocation": ["move", "moved", "city", "settle", "settled", "relocate", "relocated", "relocating", "abroad", "foreign", "house shift", "shift house", "shifted", "settle abroad", "settle in", "travel", "travelled", "traveled", "videsh", "विदेश", "buy a house", "buy a home", "buy a flat", "buy property", "bought a house", "bought a home", "bought a flat", "bought property", "house purchase", "own house", "own home", "new house", "new home", "property", "moving to", "move to", "move abroad", "move out"],
+    "children": ["children", "child", "childbirth", "baby", "kids", "son", "daughter", "parenthood", "creative legacy", "santan", "संतान", "pregnant", "pregnancy", "expecting", "conceive", "conception"],
     "parents": ["my parents", "my father", "my mother", "my lineage"],
-    "debt": ["debt", "debts", "repay a loan"],
+    "debt": ["debt", "debts", "repay a loan", "borrowed", "lent"],
     "litigation": ["litigation", "lawsuit", "court case"],
-    "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest", "investment", "savings", "stock market", "shares"],
+    "finance": ["money", "wealth", "finance", "financial", "income", "loan", "debt", "invest", "investment", "savings", "stock market", "shares", "borrowed", "lent"],
     "direction": ["direction", "purpose", "path in life", "meaning of life", "meaning in life", "life purpose"],
-    "health": ["health", "illness", "sick", "disease", "hospital", "surgery", "recovery", "wellbeing", "wellness", "medical", "accident", "injury", "injur"],
-    "property": ["property", "real estate", "buy a house", "buy a home", "buy a flat", "buy a plot", "makaan", "vehicle", "a car"],
+    "health": ["health", "illness", "sick", "disease", "hospital", "hospitalised", "hospitalized", "diagnosed", "fracture", "surgery", "recovery", "wellbeing", "wellness", "medical", "accident", "injury", "injur"],
+    "property": ["property", "real estate", "buy a house", "buy a home", "buy a flat", "buy a plot", "bought a house", "bought a home", "bought a flat", "bought a plot", "bought a car", "makaan", "vehicle", "a car"],
 }
 # Figures of speech that contain a topic keyword but are not about that topic.
 _IDIOMS = re.compile(
     r"\bof course\b|\bhow does (?:this|it|that) work\b|\b(?:does|will|would|did) (?:this|it|that) work\b|"
     r"\bwork(?:s|ed)? out\b|\bmov(?:e|ing) on\b|\blet'?s move\b|\blearn about\b|\bthe meaning of\b|"
-    r"\bwhat does .{0,30} mean\b|\bmeaning of (?:rahu|ketu|sun|moon|mars|mercury|jupiter|venus|saturn)\b", re.I)
+    r"\bwhat does .{0,30} mean\b|\bmeaning of (?:rahu|ketu|sun|moon|mars|mercury|jupiter|venus|saturn)\b|"
+    r"\bmoved (?:me|us|him|her|them|you)\b|\bmoved by\b|\b(?:deeply|really|very|so) moved\b|"
+    r"\bsettle (?:the |your |my )?(?:bill|bills|tab|account|dues|score|scores)\b|"
+    r"\bfired? (?:up|questions?)\b|\bfire (?:a |the )?(?:gun|shot|missile)\b", re.I)
 
 # panchang: the day's limbs — factual almanac, not a prediction
 PANCHANG_PAT = re.compile(
@@ -367,6 +370,28 @@ def detect_domain(text: str) -> str | None:
     education keyword "course", "how does this work" is not about a job,
     "let's move on" is not a relocation."""
     t = _IDIOMS.sub(" ", text.lower().replace("’", "'"))
+    # a pregnancy mention is about children even when a relative is named first
+    # ("my wife is pregnant") — unless a medical anchor makes it a health
+    # question, which stays out of astrological verdicts entirely
+    if re.search(r"\bpregnan\w*|\bconceiv\w*|\bexpecting (?:a |our )?(?:baby|child)\b", t):
+        if re.search(
+                r"\b(?:surger\w+|operation|hospital\w*|diagnos\w+|disease|illness|treatment|"
+                r"tumou?r|cancer|fracture|injur\w*|accident|medicin\w*|medical|complication\w*)\b", t):
+            return "health"
+        return "children"
+    # a legal matter being transferred is litigation — either the matter is
+    # the subject ("the hearing was transferred") or the object ("transferred
+    # the case to another court"). A person posted somewhere ("I was
+    # transferred to the district court", "transferred to the hearing team",
+    # "during my trial shift") is a job change.
+    obj = r"(?:case|suit|petition|hearing|matter|lawsuit)s?"
+    dest = r"(?:court|bench|tribunal)"
+    if (re.search(r"\b(?:suit|petition|hearing|court case|lawsuit)s?\s+"
+                  r"(?:was|were|got|is|has been|had been|being)?\s*transfers?\w*\b", t)
+            or re.search(rf"\b{obj}\s+(?:was|were|got|is|has been|had been|being)?\s*"
+                         rf"transfers?\w*.{{0,20}}?\b{dest}\b", t)
+            or re.search(rf"\btransfers?\w*.{{0,20}}?\b{obj}\b.{{0,20}}?\b{dest}\b", t)):
+        return "litigation"
     for dom, rx in _DOMAIN_RES.items():
         if rx.search(t):
             return dom
@@ -1684,7 +1709,7 @@ def _stated_facts(conv, profile) -> list[str]:
 
 _WANTS_DETAIL = re.compile(
     r"\b(detail(?:ed|s)?|in[- ]depth|elaborate|explain|reasoning|reason|why|how come|step[- ]by[- ]step|"
-    r"full (?:analysis|reading|report)|complete (?:analysis|reading|report)|breakdown|calculation|evidence|"
+    r"full (?:analysis|reading|report)|complete (?:analysis|reading|report)|breakdown|calculations?|evidence|"
     r"thoroughly|everything about|show your work|how did you (?:get|arrive|calculate|compute)|proof)\b", re.I)
 MAX_DEFAULT_WORDS = 130
 
@@ -1716,6 +1741,73 @@ def _shorten_if_needed(reply, provider, history, facts, analysis, context_note, 
     if prov != "offline" and shorter and 0 < len(shorter.split()) < len(reply.split()):
         return shorter
     return reply
+
+
+# Mechanical detail a gist reply should never show: counts, degrees, internal
+# method/check names and karaka titles. Calculation stays in the backend; the
+# client hears only the conclusion unless they ask for the reasoning.
+_JARGON_SEARCH = re.compile(
+    r"\b\d+\s*(?:bindus?|points?)\b|\b\d+(?:\.\d+)?\s*(?:°|degrees?)\b|"
+    r"\b(?:yogakaraka|atmakaraka|amatyakaraka|darakaraka|gnatikaraka|putrakaraka|"
+    r"matrukaraka|pitrukaraka|bhratrukaraka)\b|"
+    r"\b(?:shadbala|ashtakavarga|sarvashtakavarga|kakshya)\b|"
+    r"\b(?:vimshottari|yogini|sudarshana|ashtottari|jaimini|parashari?|varshaphal\w*)\b|"
+    r"\b(?:P[1-4]|gate\s*\d+)\b", re.I)
+_ORDINAL_WORDS = {1: "first", 2: "second", 3: "third", 4: "fourth", 5: "fifth", 6: "sixth",
+                  7: "seventh", 8: "eighth", 9: "ninth", 10: "tenth", 11: "eleventh",
+                  12: "twelfth"}
+# A reply declining or hedging a forecast must keep that stance word for word;
+# a paraphrase can flip it into a promise.
+_ABSTENTION = re.compile(
+    r"\bdoesn'?t (?:strongly |clearly )?promise\b|\bdoes not (?:strongly |clearly )?promise\b|"
+    r"\bnot (?:clearly )?indicated\b|\bno (?:clear |strong )?indication\b|\bcannot promise\b|"
+    r"\bnot (?:favou?rable|supported|promised)\b|\bunlikely\b|\bdon'?t see\b|\bdoes not see\b", re.I)
+
+
+def _scrub_calc_detail(reply: str) -> str:
+    """Deterministic jargon fallback when no model can rewrite: drop the
+    sentences carrying counts/degrees/system names and write remaining
+    ordinals as words ("10th house" -> "tenth house")."""
+    paragraphs = []
+    for paragraph in re.split(r"\n\s*\n", reply):
+        sentences = re.split(r"(?<=[.!?])\s+", paragraph)
+        cleaned = " ".join(s for s in sentences if not _JARGON_SEARCH.search(s)).strip()
+        if cleaned:
+            paragraphs.append(cleaned)
+    text = "\n\n".join(paragraphs)
+    return re.sub(r"\b(\d{1,2})(st|nd|rd|th)\b",
+                  lambda m: _ORDINAL_WORDS.get(int(m.group(1)), m.group(0)), text)
+
+
+def _dejargon_if_needed(reply, provider, history, facts, analysis, context_note, remembered,
+                        allow_external):
+    """A gist reply shows no calculation detail. One rewrite pass when the
+    model leaks it anyway; sentence-drop scrub when no model is reachable."""
+    if provider == "offline" or _WANTS_DETAIL.search(_last_user_text(history)):
+        return reply
+    if not _JARGON_SEARCH.search(reply):
+        return reply
+    if _ABSTENTION.search(reply):
+        # a rewrite could turn "the chart doesn't promise this" into a promise;
+        # scrub verbatim instead so the refusal survives word for word —
+        # and if the refusal itself carried jargon, keep it rather than blank
+        return _scrub_calc_detail(reply) or reply
+    try:
+        cleaner, prov = providers.regenerate_with_issues(
+            history, facts, analysis, reply,
+            ["The reply shows backend calculation detail the user never asked for. Rewrite keeping the "
+             "same answer in everyday words: no bindu or point counts, no degrees, no house numbers, no "
+             "method names (Vimshottari, Ashtakavarga, Sudarshana), no karaka titles (yogakaraka and the "
+             "rest), no gate or pillar labels. A human astrologer would say 'Saturn is strong in your "
+             "chart', not cite the measurement."],
+            allow_external=allow_external, context_note=context_note,
+            consultation_memory=remembered)
+        if prov != "offline" and cleaner and cleaner.strip():
+            return cleaner
+    except Exception:
+        log.exception("dejargon pass failed")
+    # never blank the reply: if every sentence carried jargon, keep the original
+    return _scrub_calc_detail(reply) or reply
 
 
 def _generate_extras(**wanted) -> dict:
@@ -1755,6 +1847,8 @@ def _generate_reply(conv, profile, facts, birth, today, history, *, analysis=Non
         reply = prediction.constrain_reply(reply, analysis, facts, history)
     reply = _shorten_if_needed(reply, provider, history, facts, analysis, context_note, remembered,
                                _external_ok(profile))
+    reply = _dejargon_if_needed(reply, provider, history, facts, analysis, context_note, remembered,
+                                _external_ok(profile))
     if provider != "offline":
         # reject/strip degrees, signs, nakshatras, dates, durations and
         # probability wording the model was never given

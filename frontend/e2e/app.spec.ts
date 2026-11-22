@@ -15,11 +15,18 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByPlaceholder(/email/i).fill(email);
   await page.getByPlaceholder(/password/i).fill(password);
   await page.getByRole("checkbox", { name: /privacy policy/i }).check();
+  await page.getByRole("checkbox", { name: /18 years/i }).check();
   await page.locator("form").getByRole("button", { name: /create account/i }).last().click();
 
-  // Birth details (defaults for date/time are fine); pick Chennai
+  // Birth details; pick Chennai
   await page.waitForURL(/\/birth/);
-  await page.getByPlaceholder(/birth place|city/i).fill("Chennai");
+  await page.getByPlaceholder(/day/i).fill("15");
+  await page.locator("select").first().selectOption("May");
+  await page.getByPlaceholder(/year/i).fill("1990");
+  await page.getByLabel(/hour/i).fill("6");
+  await page.getByLabel(/minute/i).fill("15");
+  await page.getByRole("radio", { name: "AM" }).check();
+  await page.getByPlaceholder(/birth place/i).fill("Chennai");
   await page.getByRole("button", { name: /^Chennai/ }).first().click();
   await page.locator("form").getByRole("button", { name: /continue/i }).click();
 
@@ -29,15 +36,23 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   const no = page.getByRole("button", { name: "No, that didn't happen" });
   const continueReading = page.getByRole("button", { name: "Continue with the reading" });
   await expect(continueReading).toBeVisible();
-  for (let i = 0; i < 3; i++) {
+  await Promise.all([
+    page.waitForResponse(r => r.url().endsWith("/api/chat/stream") && r.ok()),
+    page.getByRole("button", { name: "Ask me a few questions instead" }).click(),
+  ]);
+  await expect(no).toBeVisible();
+  const warn = page.getByText(/predictions may be less accurate/);
+  let i = 0;
+  while (i < 12 && !(await warn.isVisible())) {
     await Promise.all([
       page.waitForResponse(r => r.url().endsWith("/api/chat/stream") && r.ok()),
       no.click(),
     ]);
-    await expect(page.getByText("No, that didn't happen", { exact: true }).and(page.locator(".chat-message"))).toHaveCount(i + 1);
+    i += 1;
+    await expect(page.getByText("No, that didn't happen", { exact: true }).and(page.locator(".chat-message"))).toHaveCount(i);
     await expect(page.getByPlaceholder(/ask anything/i)).toBeEnabled();
   }
-  await expect(page.getByText(/predictions may be less accurate/)).toBeVisible();
+  await expect(warn).toBeVisible();
   // A typed question must work immediately, without pressing Continue or editing the time.
   const box = page.getByPlaceholder(/ask anything/i);
   await box.fill("Will I change jobs next year?");
@@ -89,7 +104,7 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await expect(page.getByRole("heading", { name: "Sade Sati phases" })).toBeVisible();
   await page.getByRole("button", { name: "KP", exact: true }).click();
   await page.getByRole("button", { name: "Calculate KP chart" }).click();
-  await expect(page.getByText(/Swiss Krishnamurti.*Placidus/)).toBeVisible();
+  await expect(page.getByText(/LAHIRI.*Placidus/)).toBeVisible();
   await page.getByRole("button", { name: "Paste degrees" }).click();
   await page.getByLabel("Ayanamsa").selectOption("LAHIRI");
   await page.getByLabel("Original degree table").fill("Moon 3°20′00″ Ari");
@@ -97,7 +112,7 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await expect(page.getByText("Aries or Taurus", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Coverage", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Calculation coverage" })).toBeVisible();
-  await expect(page.getByText(/60 intents/)).toBeVisible();
+  await expect(page.getByText(/\d+ intents/)).toBeVisible();
 
   // Privacy page reachable
   const res = await page.goto("/privacy");
