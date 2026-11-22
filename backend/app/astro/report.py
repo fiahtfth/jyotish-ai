@@ -57,7 +57,7 @@ def period_outlook(facts, window, *, born, domain=None):
     def period_label(row):
         return window_label((date.fromisoformat(row["start"]), date.fromisoformat(row["end"])))
 
-    lines = [f"Here’s the outlook for {label}, based on the Vimshottari periods in this chart."]
+    lines = [f"Here’s the outlook for {label}, from the planetary periods running in this chart."]
     if periods[0]["start"] != first.isoformat() or periods[-1]["end"] != end:
         lines.append(f"The saved timeline covers {periods[0]['start']} to {periods[-1]['end']} within that span.")
     lines.append("\n".join(

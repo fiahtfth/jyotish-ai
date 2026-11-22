@@ -3145,3 +3145,60 @@ def test_milestone_correction_replaces_rejected_date():
     got = sorted((m.domain, m.year) for m in
                  db.query(UserMilestone).filter_by(profile_id=prof.id))
     assert ("education", 2016) in got and ("education", 2015) not in got
+
+
+def test_domain_detection_common_inflections():
+    """Natural past-tense phrasings must still reach the right domain when the
+    model router is unavailable — 'promoted', 'moved', 'bought a flat'."""
+    from app.chat.orchestrator import detect_domain
+    assert detect_domain("Will I get promoted this year?") == "career"
+    assert detect_domain("I got fired in 2021") == "career"
+    assert detect_domain("she was transferred to Pune") == "career"
+    assert detect_domain("I moved to Delhi in 2019") == "relocation"
+    assert detect_domain("I relocated last year") == "relocation"
+    assert detect_domain("we bought a flat in 2020") == "relocation"
+    assert detect_domain("I got divorced in 2021") == "relationship"
+    # figures of speech stay out
+    assert detect_domain("the movie moved me") is None
+    assert detect_domain("settle the bill") is None
+    assert detect_domain("he fired questions at me") is None
+    # a pregnancy mention is about children even when a relative is named
+    assert detect_domain("my wife is pregnant") == "children"
+
+
+def test_scrub_calc_detail_drops_backend_jargon():
+    from app.chat.orchestrator import _scrub_calc_detail, _JARGON_SEARCH
+    reply = ("Your career foundation is solid — Saturn (yogakaraka) owns the 10th and sits in "
+             "its own sign in the 9th, and the 10th house has 34 bindus.\n\n"
+             "Advancement looks very likely in the longer term.")
+    assert _JARGON_SEARCH.search(reply)
+    out = _scrub_calc_detail(reply)
+    assert "bindus" not in out and "yogakaraka" not in out
+    assert "Advancement looks very likely" in out
+    # ordinals become words, not digits
+    out2 = _scrub_calc_detail("The 10th lord supports the move.")
+    assert "10th" not in out2 and "tenth" in out2
+    # academic degrees are not chart degrees
+    assert not _JARGON_SEARCH.search("I have three degrees in engineering.")
+
+
+def test_dejargon_skips_offline_and_detail_asks():
+    from app.chat import orchestrator
+    hist = [{"role": "user", "content": "Will I get promoted?"}]
+    assert orchestrator._dejargon_if_needed("has 34 bindus", "offline", hist, {}, None, "", (), False) == "has 34 bindus"
+    hist[0]["content"] = "show me the calculations"
+    assert orchestrator._dejargon_if_needed("has 34 bindus", "groq", hist, {}, None, "", (), False) == "has 34 bindus"
+    hist[0]["content"] = "Will I get promoted?"
+    # no model reachable -> deterministic scrub
+    class _Failing:
+        @staticmethod
+        def regenerate_with_issues(*a, **k):
+            return "", "offline"
+    monkey = orchestrator.providers
+    orig = monkey.regenerate_with_issues
+    monkey.regenerate_with_issues = _Failing.regenerate_with_issues
+    try:
+        out = orchestrator._dejargon_if_needed("Saturn has 34 bindus. Strong support.", "groq", hist, {}, None, "", (), False)
+    finally:
+        monkey.regenerate_with_issues = orig
+    assert out == "Strong support."
