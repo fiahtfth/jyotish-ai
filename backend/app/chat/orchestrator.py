@@ -2577,7 +2577,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
             and not re.search(r"second opinion", t)):
         card_msgs = _core_card_turn(db, conv, profile, facts, birth, domain, event,
                                     window, tense, focus, history, today, on_delta,
-                                    routing_seconds=routing_seconds)
+                                    routing_seconds=routing_seconds, asked_window=period)
         if card_msgs is not None:
             return card_msgs
     if (domain and window is not None and not moon_mode and not ground_window_only
@@ -2810,7 +2810,8 @@ def _card_consistent(reply: str, card) -> bool:
 
 
 def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
-                    tense, focus, history, today, on_delta, routing_seconds=0):
+                    tense, focus, history, today, on_delta, routing_seconds=0,
+                    asked_window=None):
     topic_id = _core_topic_id(domain, event)
     if not topic_id:
         return None
@@ -2857,10 +2858,12 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
             "reading_domain": domain,
             # keys follow-up turns read via _previous_reading: domain reuse,
             # period inheritance and the previous event
-            "domain": domain, "period_requested": True,
-            "decision": {"event": event}}
-    if window:
-        meta["requested_window"] = [window[0].isoformat(), window[1].isoformat()]
+            "domain": domain, "decision": {"event": event}}
+    # Only a window the user asked for is reused later; an inherited or
+    # default span must not pull an unrelated follow-up into the old dates.
+    if asked_window:
+        meta["period_requested"] = True
+        meta["requested_window"] = [asked_window[0].isoformat(), asked_window[1].isoformat()]
     _add_msg(db, conv, "assistant", reply, meta=meta)
     return conv.messages[-2:]
 
