@@ -2850,12 +2850,18 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
     if not reply or not _card_consistent(reply, card):
         reply, provider = fallback, "core"
     notes = card.details.get("notes") if isinstance(card.details, dict) else None
-    _add_msg(db, conv, "assistant", reply,
-             meta={"provider": provider, "fingerprint": profile.calc_fingerprint,
-                   "card": {"topic": card.label, "verdict": card.verdict, "window": card.window,
-                            "confidence": card.confidence, "why": card.why, "action": card.action,
-                            "details": "\n".join(notes) if notes else None},
-                   "reading_domain": domain})
+    meta = {"provider": provider, "fingerprint": profile.calc_fingerprint,
+            "card": {"topic": card.label, "verdict": card.verdict, "window": card.window,
+                     "confidence": card.confidence, "why": card.why, "action": card.action,
+                     "details": "\n".join(notes) if notes else None},
+            "reading_domain": domain,
+            # keys follow-up turns read via _previous_reading: domain reuse,
+            # period inheritance and the previous event
+            "domain": domain, "period_requested": True,
+            "decision": {"event": event}}
+    if window:
+        meta["requested_window"] = [window[0].isoformat(), window[1].isoformat()]
+    _add_msg(db, conv, "assistant", reply, meta=meta)
     return conv.messages[-2:]
 
 
