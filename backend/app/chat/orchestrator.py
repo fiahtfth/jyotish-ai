@@ -2816,9 +2816,11 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
         return None
     try:
         qt = tense if tense in ("future", "past", "natal") else "future"
+        # chat windows end on the last day asked for; core.answer takes an
+        # exclusive end, so a one-day span ("tomorrow") would otherwise raise
         card = core.answer(facts, birth, topic_id, question_tense=qt,
                            start=window[0] if window else None,
-                           end=window[1] if window else None,
+                           end=(window[1] + timedelta(days=1)) if window else None,
                            today=today, personal_fit=_profile_fit(profile))
     except (core.TopicError, ValueError):
         return None
