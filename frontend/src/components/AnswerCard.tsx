@@ -23,11 +23,17 @@ const verdictTone: Record<Verdict, string> = {
 
 export function formatWindow(w: { start: string; end: string } | null, lang: string): string | null {
   if (!w) return null;
-  const f = (d: string) => {
-    const dt = new Date(d);
-    return isNaN(dt.getTime()) ? d : dt.toLocaleDateString(lang === "hi" ? "hi-IN" : "en-GB", { month: "short", year: "numeric" });
+  // date-only strings ("2027-03-01") must parse as local dates — new Date(d)
+  // reads them as UTC and shifts the month backward west of UTC. The end is
+  // exclusive, so show the last covered month, not the boundary itself.
+  const f = (d: string, end = false) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d);
+    if (!m) return d;
+    let dt = new Date(+m[1], +m[2] - 1, +m[3]);
+    if (end) dt = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate() - 1);
+    return dt.toLocaleDateString(lang === "hi" ? "hi-IN" : "en-GB", { month: "short", year: "numeric" });
   };
-  const a = f(w.start), b = f(w.end);
+  const a = f(w.start), b = f(w.end, true);
   return a === b ? a : `${a} – ${b}`;
 }
 

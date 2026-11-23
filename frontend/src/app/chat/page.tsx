@@ -277,7 +277,7 @@ export default function Chat() {
                 {!!m.meta.card && (
                   <div className="mt-3 whitespace-normal">
                     <AnswerCard card={m.meta.card as AnswerCardData}
-                      onSecondOpinion={() => send("Give me a second opinion on that")} />
+                      onSecondOpinion={() => send(`Give me a second opinion on ${(m.meta.card as AnswerCardData).topic?.toLowerCase() || "that"}`)} />
                   </div>
                 )}
                 {i === msgs.length - 1 && !busy && !!m.meta.followup?.options?.length && (

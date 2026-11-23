@@ -16,10 +16,12 @@ export default function AppNav() {
   const cls = (a: boolean) => `whitespace-nowrap rounded-lg px-3 py-1.5 text-sm ${a ? "bg-accentsoft text-accent font-medium" : "text-muted hover:text-accent"}`;
   const advActive = advanced.some(([h]) => on(h));
   return (
-    <nav aria-label={t("navMain")} className="flex w-full items-center gap-1 overflow-x-auto border-b border-bord bg-card px-2 py-1.5">
-      {main.map(([href, label]) => (
-        <Link key={href} href={href} aria-current={on(href) ? "page" : undefined} className={cls(on(href))}>{label}</Link>
-      ))}
+    <div className="flex w-full items-center gap-1 border-b border-bord bg-card px-2 py-1.5">
+      <nav aria-label={t("navMain")} className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto">
+        {main.map(([href, label]) => (
+          <Link key={href} href={href} aria-current={on(href) ? "page" : undefined} className={cls(on(href))}>{label}</Link>
+        ))}
+      </nav>
       <div className="relative ml-auto">
         <button type="button" aria-expanded={open} aria-haspopup="true" onClick={() => setOpen(!open)} className={cls(advActive)}>
           {t("navAdvanced")} ▾
@@ -33,6 +35,6 @@ export default function AppNav() {
           </div>
         )}
       </div>
-    </nav>
+    </div>
   );
 }
