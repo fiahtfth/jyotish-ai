@@ -1021,6 +1021,11 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
     # with the correction in context (see _answer_reading).
 
     # ---------- calibration phase ----------
+    # "Please check my birth time" from Home (or open chat) re-enters the
+    # optional checks after they were skipped.
+    if (conv.state == "open" and profile.calibration_state in ("skipped", "uncalibrated", "pending")
+            and re.search(r"check\s+(?:my\s+|the\s+|your\s+)?(?:birth\s+)?time|janm\s+samay|जन्म\s*समय", text, re.I)):
+        conv.state = "cal_intro"
     if conv.state in ("cal_intro", "cal_events", "cal_ask", "cal_followup"):
         _calibration_turn(db, conv, profile, facts, text, on_delta)
         db.commit()
@@ -2565,7 +2570,7 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     # The core engine answers fresh forecast questions with a card. Follow-ups
     # ("why", clarifications, feedback, statements) and "second opinion" stay on
     # the legacy path. Moon mode is fine: core reads from the Moon sign itself.
-    if (settings.ENGINE == "core" and domain
+    if (settings.ENGINE == "core" and domain and not is_minor(profile)
             and (wants_forecast or (event and tense == "future"))
             and not references_reading and not statement_only
             and not (route and (route.is_feedback or route.clarifying_question))
@@ -2787,6 +2792,20 @@ def _card_consistent(reply: str, card) -> bool:
                     allowed.update(int(c[key][:4]) + d for d in (-1, 0, 1))
         if allowed and any(y not in allowed for y in years):
             return False
+    # a month the model named must sit inside the card's range/candidates —
+    # same-year drift still contradicts the card shown beside the reply
+    months = {m[:3].lower() for m in _MONTH_RE.findall(reply)}
+    if months:
+        def _span_ok(mn: int) -> bool:
+            spans = ([(card.range["start"], card.range["end"])] if card.range else []
+                     ) + [(c["start"], c["end"]) for c in card.candidates
+                          if c.get("start") and c.get("end")]
+            for s, e in spans:
+                if int(s[5:7]) <= mn <= int(e[5:7]):
+                    return True
+            return False
+        if any(not _span_ok(_MONTHS[m]) for m in months if m in _MONTHS):
+            return False
     return True
 
 
@@ -2811,6 +2830,7 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
     try:
         reply, provider = providers.generate(history, facts=facts, analysis=None,
                                              context_note=note, on_delta=on_delta,
+                                             allow_external=_external_ok(profile),
                                              routing_seconds=routing_seconds)
     except Exception:
         provider = "offline"
@@ -2819,7 +2839,8 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
             retry, provider2 = providers.regenerate_with_issues(
                 history, facts, None, reply or "",
                 ["Keep the card's verdict and dates exactly; do not add new timings or jargon."],
-                context_note=note, routing_seconds=routing_seconds)
+                context_note=note, allow_external=_external_ok(profile),
+                routing_seconds=routing_seconds)
             if retry and _card_consistent(retry, card):
                 reply, provider = retry, provider2
         except Exception:
