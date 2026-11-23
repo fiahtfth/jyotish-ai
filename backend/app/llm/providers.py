@@ -472,7 +472,8 @@ def _available_providers(allow_external):
     provider = settings.LLM_PROVIDER
     providers_to_try = []
     if provider in PROVIDERS:
-        providers_to_try = [provider] + [f for f in ("groq", "openrouter") if f != provider]
+        providers_to_try = [provider] + [f for f in ("groq", "openrouter", "gemini")
+                                       if f != provider]
     # skip external providers that have no key or no consent — no point retrying them
     keys = {"gemini": settings.GEMINI_API_KEY, "groq": settings.GROQ_API_KEY,
             "openrouter": settings.OPENROUTER_API_KEY}
