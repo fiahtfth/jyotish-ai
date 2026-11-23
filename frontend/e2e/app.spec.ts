@@ -30,8 +30,10 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByRole("button", { name: /^Chennai/ }).first().click();
   await page.locator("form").getByRole("button", { name: /continue/i }).click();
 
-  // A clean tzdb resolution skips the offset confirmation and goes straight
-  // to the chat.
+  // A clean tzdb resolution skips the offset confirmation and lands on home;
+  // the conversation lives under chat.
+  await page.waitForURL(/\/home/);
+  await page.getByRole("link", { name: /chat/i }).first().click();
   await page.waitForURL(/\/chat/);
   const no = page.getByRole("button", { name: "No, that didn't happen" });
   const continueReading = page.getByRole("button", { name: "Continue with the reading" });
@@ -81,6 +83,8 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByPlaceholder(/email/i).fill(email);
   await page.getByPlaceholder(/password/i).fill(password);
   await page.locator("form").getByRole("button", { name: /sign in/i }).last().click();
+  await page.waitForURL(/\/home/);
+  await page.getByRole("link", { name: /chat/i }).first().click();
   await page.waitForURL(/\/chat/);
   await box.fill("What do you remember about me?");
   await box.press("Enter");
