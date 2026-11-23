@@ -781,8 +781,10 @@ def answer(facts: dict, birth, topic_id: str, *, question_tense: str = "future",
         return Card(topic_id, t["label"]["en"], question_tense, "not_indicated", None, conf, why_p[:2],
                     acts[2], rule_ids, tk, rng, [], details)
 
-    pers = periods(facts, birth, topic_id, lo_d, hi_d, time_known=tk)
-    trig = triggers(facts, birth, topic_id, lo_d, hi_d, time_known=tk)
+    # periods/triggers take inclusive ends; hi_d is the exclusive range bound
+    last_d = hi_d - timedelta(days=1)
+    pers = periods(facts, birth, topic_id, lo_d, last_d, time_known=tk)
+    trig = triggers(facts, birth, topic_id, lo_d, last_d, time_known=tk)
     details["periods"], details["triggers"] = pers, trig
     rule_ids["period"] = sorted({r for p in pers for r in p["rule_ids"]})
     rule_ids["trigger"] = ["CORE.DOUBLE_TRANSIT"] if trig else []
