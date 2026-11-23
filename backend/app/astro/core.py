@@ -766,6 +766,10 @@ def answer(facts: dict, birth, topic_id: str, *, question_tense: str = "future",
     else:
         lo_d = start or today
         hi_d = end or (lo_d + timedelta(days=365))
+        # elapsed portions of an asked span cannot be credited as a forecast —
+        # "a promotion this year" searched from January would surface last spring
+        if lo_d <= today:
+            lo_d = today + timedelta(days=1)
     if hi_d <= lo_d:
         raise ValueError("end must be after start")
     rng = {"start": lo_d.isoformat(), "end": hi_d.isoformat()}
