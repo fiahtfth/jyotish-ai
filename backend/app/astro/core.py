@@ -844,13 +844,29 @@ def overview_item(card: Card, caution: bool = False) -> dict:
             "confidence": card.confidence, "why": card.why, "action": card.action, "caution": caution}
 
 
+# desh-kaal-paristhiti: the typical life window a topic's promise can actually
+# play out in. A chart hit means nothing shown for an age where the event is
+# implausible (a 5th-house promise does not mean childbirth at 55).
+_TOPIC_AGE_RANGE = {
+    "career": (16, 75), "job_change": (16, 70), "promotion": (18, 70), "business": (18, 75),
+    "wealth": (16, None), "marriage": (18, 60), "relationship": (15, None),
+    "children": (18, 48), "education": (14, 35), "foreign": (16, None), "property": (21, None),
+}
+
+
+def _age_plausible(topic_id: str, age: int) -> bool:
+    lo, hi = _TOPIC_AGE_RANGE.get(topic_id, (0, None))
+    return age >= lo and (hi is None or age <= hi)
+
+
 def year_overview(facts: dict, birth, today: date, *, personal_fit: Optional[str] = None,
                   exclude: tuple = ()) -> list:
     """Top 3 topics for the next 12 months (strongest first, one per life area) plus one caution
     item last (verdict not_indicated, else a weak promise), if any."""
+    age = today.year - birth.year
     cards = []
     for tid, t in load_topics().items():
-        if not t["timing"] or tid in exclude:
+        if not t["timing"] or tid in exclude or not _age_plausible(tid, age):
             continue
         c = answer(facts, birth, tid, question_tense="future", today=today, personal_fit=personal_fit)
         cards.append(c)

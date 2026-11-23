@@ -4,6 +4,7 @@ Auth and profile ownership reuse main.py's helpers (imported lazily inside
 handlers to avoid a circular import: main includes this router at the end).
 """
 import logging
+import re
 from datetime import date, datetime, timedelta
 from typing import Literal, Optional
 
@@ -581,12 +582,25 @@ def home(user: User = Depends(current_user)):
     today = orchestrator._today_at(birth)
     time_known = birth.birth_time_precision != "unknown"
     fit = _personal_fit(p)
-    exclude = _MINOR_EXCLUDED_TOPICS if orchestrator.is_minor(p) else ()
-    overview = core.year_overview(facts, birth, today, personal_fit=fit, exclude=exclude)
+    exclude = list(_MINOR_EXCLUDED_TOPICS if orchestrator.is_minor(p) else ())
+    # desh-kaal-paristhiti: events already lived are not this year's forecast —
+    # a married user does not need "Marriage" as the year's highlight.
+    for m in p.milestones:
+        d = (m.description or "").lower()
+        if m.domain == "relationship" and re.search(r"marri|wedding|engag|spouse|\bwife\b|husband", d):
+            exclude.append("marriage")
+        if m.domain == "relationship" and re.search(r"\bchild\b|\bbaby\b|\bson\b|daughter", d):
+            exclude.append("children")
+        if m.domain == "education":
+            exclude.append("education")
+        if m.domain == "finance" and re.search(r"\bhouse\b|\bflat\b|property", d):
+            exclude.append("property")
+    overview = core.year_overview(facts, birth, today, personal_fit=fit, exclude=tuple(set(exclude)))
     moon = facts["planets"]["Moon"]
+    age = today.year - birth.year
     picked = [o["topic"] for o in overview if not o.get("caution")]
     picked += [t for t in ("career", "wealth", "marriage", "education", "property", "foreign")
-               if t not in picked and t not in exclude]
+               if t not in picked and t not in exclude and core._age_plausible(t, age)]
     questions = []
     for tid in picked[:5]:
         q = core.topic(tid)["questions"][0]

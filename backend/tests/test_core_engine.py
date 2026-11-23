@@ -251,6 +251,12 @@ def test_year_overview_shape(facts):
         assert all(set(w) == {"text", "fact_ids"} and w["fact_ids"] for w in i["why"])
     excl = core.year_overview(facts, ARJUN, TODAY, exclude=("career", "job_change", "promotion"))
     assert not {i["topic"] for i in excl} & {"career", "job_change", "promotion"}
+    # desh-kaal-paristhiti: topics implausible at the user's age never appear
+    senior = replace(ARJUN, year=1966)            # 60 — past childbirth/education/career-change age
+    topics_60 = {i["topic"] for i in core.year_overview(facts, senior, TODAY)}
+    assert "children" not in topics_60 and "education" not in topics_60
+    young = core.year_overview(facts, ARJUN, TODAY)
+    assert {i["topic"] for i in young} - topics_60 or len(young) >= len(topics_60) - 1
     assert core.dasha_brief(facts, TODAY) == "Rahu major period, Venus sub-period until June 2027"
 
 
