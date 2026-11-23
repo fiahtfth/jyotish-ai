@@ -575,6 +575,7 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
         if not is_new:
             db.query(UserMilestone).filter(UserMilestone.profile_id == p.id).delete()
         p.calibration_state = "pending"
+        p.personal_fit = None     # the events-backed fit belongs to the old chart
         p.predictions_allowed = False
         # the old calibration answers no longer apply to the new chart —
         # retire them and send the conversation back to calibration, else
