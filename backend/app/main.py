@@ -575,6 +575,7 @@ def _save_profile(db: Session, user: User, p: BirthProfile, body: BirthProfileIn
         if not is_new:
             db.query(UserMilestone).filter(UserMilestone.profile_id == p.id).delete()
         p.calibration_state = "pending"
+        p.personal_fit = None     # the events-backed fit belongs to the old chart
         p.predictions_allowed = False
         # the old calibration answers no longer apply to the new chart —
         # retire them and send the conversation back to calibration, else
@@ -946,6 +947,8 @@ def chart_transits(start: date, end: date, planet: str = "Saturn", user: User = 
 
 @app.get("/api/kp")
 def kp_chart(user: User = Depends(current_user)):
+    if not settings.KP_ENABLED:
+        raise HTTPException(404, "KP is switched off (KP_ENABLED).")
     profile = _require_profile(user)
     if moonmode.is_unknown(profile):
         raise HTTPException(409, "KP needs the birth time; it is not available while the birth time is unknown.")

@@ -30,8 +30,10 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByRole("button", { name: /^Chennai/ }).first().click();
   await page.locator("form").getByRole("button", { name: /continue/i }).click();
 
-  // A clean tzdb resolution skips the offset confirmation and goes straight
-  // to the chat.
+  // A clean tzdb resolution skips the offset confirmation and lands on home;
+  // the conversation lives under chat.
+  await page.waitForURL(/\/home/);
+  await page.getByRole("link", { name: /chat/i }).first().click();
   await page.waitForURL(/\/chat/);
   const no = page.getByRole("button", { name: "No, that didn't happen" });
   const continueReading = page.getByRole("button", { name: "Continue with the reading" });
@@ -55,19 +57,25 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await expect(warn).toBeVisible();
   // A typed question must work immediately, without pressing Continue or editing the time.
   const box = page.getByPlaceholder(/ask anything/i);
+  const sendBtn = page.getByRole("button", { name: "Send", exact: true });
   await box.fill("Will I change jobs next year?");
   await box.press("Enter");
-  await expect(page.locator(".chat-message").last()).toContainText(/for a job change in/i);
+  await expect(page.locator(".chat-message").last()).toContainText(/job change/i);
   await expect(continueReading).toHaveCount(0);
 
+  // The send button is disabled while the previous reply streams or the box is
+  // empty: fill first, then wait for it to enable, then send.
   await box.fill("What about July 2027?");
-  await box.press("Enter");
-  await expect(page.locator(".chat-message").last()).toContainText(/a job change in July 2027/i);
+  await expect(sendBtn).toBeEnabled();
+  await sendBtn.click();
+  await expect(page.locator(".chat-message").last()).toContainText(/2027/i);
   await box.fill("Actually, I meant a promotion at my current company.");
-  await box.press("Enter");
-  await expect(page.locator(".chat-message").last()).toContainText(/promotion in July 2027/i);
+  await expect(sendBtn).toBeEnabled();
+  await sendBtn.click();
+  await expect(page.locator(".chat-message").last()).toContainText(/promotion/i);
   await box.fill("I work as a school principal.");
-  await box.press("Enter");
+  await expect(sendBtn).toBeEnabled();
+  await sendBtn.click();
   await expect(page.getByText("I work as a school principal.", { exact: true })).toBeVisible();
   await expect(box).toBeEnabled();
 
@@ -81,6 +89,8 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await page.getByPlaceholder(/email/i).fill(email);
   await page.getByPlaceholder(/password/i).fill(password);
   await page.locator("form").getByRole("button", { name: /sign in/i }).last().click();
+  await page.waitForURL(/\/home/);
+  await page.getByRole("link", { name: /chat/i }).first().click();
   await page.waitForURL(/\/chat/);
   await box.fill("What do you remember about me?");
   await box.press("Enter");

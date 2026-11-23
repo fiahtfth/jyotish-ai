@@ -172,7 +172,10 @@ def test_specificity_report_shape(tmp_path):
         assert next(i for i in cov["intents"] if i["intent_id"] == "JOB_TIMING")["specificity"]
 
 
-def test_api_convergence_endpoint():
+def test_api_convergence_endpoint(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "CONVERGENCE_V2", True)   # off by default (Phase 4 flags)
+    monkeypatch.setattr(settings, "KP_ENABLED", True)
     from tests.test_jyotish import ARJUN as ARJUN_PROFILE, client
     import uuid
     r = client.post("/api/auth/register", json={"terms_accepted": True, "age_confirmed": True,

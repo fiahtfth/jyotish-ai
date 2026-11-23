@@ -476,3 +476,97 @@ def search_with_milestones(birth: BirthInput, stated_facts: dict, milestones: li
         return None
     return {"birth": best["birth"], "delta_minutes": best["delta"],
             "stated_score": stated_score, "best_score": best["score"]}
+
+
+# ------------------------------------------------------- core-engine chart check
+
+# Milestone domains -> core topic ids. Unmapped domains are skipped: the core
+# engine has no opinion on them, so they can't support or hurt the fit.
+_FIT_DOMAIN_TOPIC = {
+    "career": "job_change",
+    "education": "education",
+    "relationship": "marriage",
+    "relocation": "foreign",
+    "property": "property",
+    "children": "children",
+    "finance": "wealth",
+    "health": "wellbeing",
+}
+
+
+def chart_check(facts, birth: BirthInput, events: list,
+                today: date | None = None) -> dict:
+    """One chart check: do the user's dated events sit inside what the core
+    method would have indicated? `events` are {domain, year, month?} dicts.
+
+    An event is 'explained' when the topic's natal promise is at least
+    moderate AND a linked antardasha was running at the event AND a
+    Saturn+Jupiter double transit touched the topic within ±6 months.
+    A linked period alone is 'partially explained'; anything else is a miss.
+
+    Returns {"fit": "good"|"partial"|"poor"|None, "checked": n, "events": [...]}.
+    fit is None when fewer than two usable events exist."""
+    from . import core
+
+    usable = []
+    for e in events:
+        dom, year = e.get("domain"), e.get("year")
+        topic_id = _FIT_DOMAIN_TOPIC.get(dom or "")
+        if topic_id and year:
+            usable.append((e, topic_id))
+    if len(usable) < 2:
+        return {"fit": None, "checked": 0, "events": []}
+
+    results = []
+    for e, topic_id in usable:
+        year, month = int(e["year"]), int(e.get("month") or 6)
+        center = date(year, min(max(month, 1), 12), 15)
+        lo = center - timedelta(days=183)
+        hi = center + timedelta(days=183)
+        pr = core.promise(facts, topic_id)
+        promise_ok = pr["grade"] in ("strong", "moderate")
+        try:
+            pers = core.periods(facts, birth, topic_id, lo, hi)
+        except Exception:
+            pers = []
+        try:
+            trig = core.triggers(facts, birth, topic_id, lo, hi)
+        except Exception:
+            trig = []
+        linked = any(p.get("link") in ("strong", "medium") for p in pers)
+        triggered = any(t.get("from_lagna") or t.get("from_moon") for t in trig)
+        if promise_ok and linked and triggered:
+            outcome = "explained"
+        elif linked:
+            outcome = "partially_explained"
+        else:
+            outcome = "not_explained"
+        results.append({"domain": e.get("domain"), "topic": topic_id,
+                        "year": year, "month": e.get("month"),
+                        "promise": pr["grade"], "period_link": linked,
+                        "double_transit": triggered, "outcome": outcome})
+
+    full = sum(r["outcome"] == "explained" for r in results)
+    partial = sum(r["outcome"] == "partially_explained" for r in results)
+    n = len(results)
+    if full * 2 >= n:
+        fit = "good"
+    elif (full + partial) * 2 >= n:
+        fit = "partial"
+    else:
+        fit = "poor"
+    return {"fit": fit, "checked": n, "explained": full, "partial": partial,
+            "events": results}
+
+
+def update_personal_fit(db, profile, facts, birth: BirthInput) -> str | None:
+    """Recompute the profile's chart-check fit from its recorded milestones
+    and store it on the profile. Returns the fit, or None when there aren't
+    enough usable events. Safe to call on every milestone change."""
+    events = [{"domain": m.domain, "year": m.year, "month": m.month}
+              for m in (profile.milestones or []) if m.domain and m.year]
+    result = chart_check(facts, birth, events)
+    if result["fit"] is not None:
+        profile.personal_fit = result["fit"]
+        db.flush()
+    return result["fit"]

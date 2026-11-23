@@ -56,9 +56,6 @@ class Settings:
     OPENROUTER_API_KEY: str = os.environ.get("OPENROUTER_API_KEY", "")
     OPENROUTER_MODEL: str = os.environ.get("JYOTISH_OPENROUTER_MODEL", "openrouter/free")
     DECIDER_ENABLED: bool = os.environ.get("JYOTISH_DECIDER_ENABLED", "false").lower() == "true"
-    # Single timing path: the gated convergence runner replaces the legacy
-    # four-method verdict for every intent it covers. Set to "false" to fall back.
-    CONVERGENCE_V2: bool = os.environ.get("JYOTISH_CONVERGENCE_V2", "true").lower() != "false"
     OLLAMA_URL: str = os.environ.get("JYOTISH_OLLAMA_URL", "http://localhost:11434")
     OLLAMA_MODEL: str = os.environ.get("JYOTISH_OLLAMA_MODEL", "llama3.1")
     LMSTUDIO_URL: str = os.environ.get("JYOTISH_LMSTUDIO_URL", "http://localhost:1234/v1")
@@ -110,9 +107,17 @@ class Settings:
 
     FRONTEND_ORIGIN: str = os.environ.get("JYOTISH_FRONTEND_ORIGIN", "http://localhost:3000")
 
-    # Multi-method convergence engine v2 (docs/INTENT_CONVERGENCE_SPEC.md). Off by default:
-    # the orchestrator keeps the legacy pillars until this is switched on.
+    # Engine flags (docs/SIMPLIFICATION_PLAN.md Phase 4).
+    # ENGINE: 'core' (astro/core.py, one Parashari method) or 'pillars' (legacy four-method
+    # reading, kept for comparison). Chat is wired to it in Phase 3.
+    ENGINE: str = os.environ.get("JYOTISH_ENGINE", "core").lower()
+    # Multi-method convergence engine v2 (docs/INTENT_CONVERGENCE_SPEC.md). Off: the chat keeps
+    # the legacy pillars and /api/convergence/* returns 404.
     CONVERGENCE_V2: bool = os.environ.get("JYOTISH_CONVERGENCE_V2", "false").lower() == "true"
+    # KP (Krishnamurti Paddhati) chart endpoint /api/kp. Off: returns 404.
+    KP_ENABLED: bool = os.environ.get("JYOTISH_KP_ENABLED", "false").lower() == "true"
+    # Advanced screens (tables, Varshaphala, Prashna, KP) shown in the frontend's Advanced area.
+    ADVANCED_SCREENS: bool = os.environ.get("JYOTISH_ADVANCED_SCREENS", "true").lower() != "false"
 
 
 settings = Settings()

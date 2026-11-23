@@ -39,6 +39,7 @@ export type MsgMeta = {
   report?: { domains?: { domain: string; analysis?: { classical?: ClassicalAudit } }[] };
   expanded?: boolean;
   followup?: { id: number; options: string[]; question?: string; success_criteria?: string | null };
+  card?: unknown;                  // core-engine answer card; shaped like components/AnswerCard Card
   analysis?: { convergence?: string; classical?: ClassicalAudit; decision?: { event?: unknown } };
 };
 export type Msg = {
@@ -382,3 +383,27 @@ export const apiExtra = {
     setTimeout(() => URL.revokeObjectURL(href), 1000);
   },
 };
+
+// ---- Simplified Home (GET /api/home) ----
+export type Verdict = "likely" | "mixed" | "not_indicated" | "strong" | "moderate" | "weak";
+export type Confidence = "high" | "medium" | "low";
+export type HomeYearItem = {
+  topic: string; label: string; verdict: Verdict;
+  window: { start: string; end: string } | null;
+  confidence: Confidence; why: { text: string }[]; action: string;
+};
+export type HomeOverview = {
+  chart_brief: { lagna: string | null; moon_sign: string; nakshatra: string;
+    current_dasha: { maha: string; antar: string; until: string } | string | null; time_known: boolean;
+    life_phase?: { key: string; label: string; focus: string; note: string } };
+  year_overview: HomeYearItem[];
+  chart_check: { state: string; personal_fit?: string | null };
+  suggested_questions: string[];
+};
+// resolves to null when the endpoint does not exist yet (404)
+export async function getHome(): Promise<HomeOverview | null> {
+  const r = await fetch(API + "/api/home", { cache: "no-store", headers: authHeaders() });
+  if (r.status === 404) return null;
+  await failIfBad(r);
+  return r.json();
+}

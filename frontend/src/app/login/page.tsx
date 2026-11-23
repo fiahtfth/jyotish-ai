@@ -18,7 +18,7 @@ export default function Login() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { if (token()) router.replace("/chat"); }, [router]);
+  useEffect(() => { if (token()) router.replace("/home"); }, [router]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -28,7 +28,7 @@ export default function Login() {
         ? await api.login(email, password)
         : await api.register(email, password, name, agreed, adult);
       setToken(r.access_token);
-      router.replace(mode === "login" ? "/chat" : "/birth");
+      router.replace(mode === "login" ? "/home" : "/birth");
     } catch (x) { setErr(errMsg(x)); } finally { setBusy(false); }
   }
 

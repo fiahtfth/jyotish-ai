@@ -26,6 +26,7 @@ export default defineConfig({
       JYOTISH_FRONTEND_DIR: path.join(root, "frontend/out"),
       JYOTISH_DATABASE_URL: "sqlite:////tmp/jyotish_e2e.db",
       JYOTISH_LLM_PROVIDER: "offline",
+      JYOTISH_KP_ENABLED: "true",
       JYOTISH_JWT_SECRET: "e2e-test-secret-0123456789-abcdefghijkl",
     },
   },

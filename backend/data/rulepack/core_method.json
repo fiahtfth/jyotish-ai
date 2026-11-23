@@ -1,0 +1,198 @@
+{
+ "pack": "core_method",
+ "version": "1.0",
+ "note": "Core method (docs/SIMPLIFICATION_PLAN.md Phase 1); implemented in backend/app/astro/core.py. House-judgement points reuse bhava.py BH.* rules; MD-AD friction reuses dasha_craft DC.AD_FROM_MD.*.",
+ "rules": [
+  {
+   "rule_id": "CORE.PROMISE",
+   "version": "1.0",
+   "source": "BPHS ch.11-24 (bhava phala) and ch.32 (karakas) via bhava.judge_house (BH.* rules); Phaladeepika ch.15",
+   "conditions": "Topic primary house judged by its lord's placement (kendra/trikona good; 6/8/12 weak unless Viparita), dignity, combustion, Shadbala vs BPHS minimum, occupants and aspects (benefic/malefic), SAV, D9 lord (only if D9 reliable) and Bhava Bala. Lagna view weight 1, Moon view 0.5, averaged. Grade on the combined score: strong >= 3.0, weak < 1.0 (app convention).",
+   "exceptions": [
+    "Birth time unknown: Moon view only, Shadbala and Bhava Bala dropped"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_promise_career_and_marriage",
+    "backend/tests/test_core_engine.py::test_every_reason_has_fact_ids"
+   ]
+  },
+  {
+   "rule_id": "CORE.PROMISE_MOON",
+   "version": "1.0",
+   "source": "Standard Parashari practice: Chandra Lagna as a secondary ascendant (chapter reference not yet verified)",
+   "conditions": "Houses re-counted from the natal Moon sign and judged with the same BH.* rules; secondary weight 0.5, sole reference when the birth time is unknown.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_unknown_time_moon_only_and_low_confidence"
+   ]
+  },
+  {
+   "rule_id": "CORE.FUNC_ROLE",
+   "version": "1.0",
+   "source": "BPHS ch.34 (functional benefics/malefics, yogakaraka)",
+   "conditions": "House lord's functional role from the Lagna: yogakaraka +1, Lagna lord or benefic by lordship +0.5, malefic by lordship -0.5.",
+   "exceptions": [
+    "Not used when the birth time is unknown"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_promise_career_and_marriage"
+   ]
+  },
+  {
+   "rule_id": "CORE.LORD_COMPOUND",
+   "version": "1.0",
+   "source": "BPHS ch.3 (Panchadha maitri, compound relationship)",
+   "conditions": "House lord in a friendly (adhimitra/friend) sign +0.5, unfriendly (enemy/adhishatru) -0.5, only when it has no exaltation/own/debilitation dignity.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_promise_career_and_marriage"
+   ]
+  },
+  {
+   "rule_id": "CORE.KARAKA",
+   "version": "1.0",
+   "source": "BPHS ch.32 (natural karakas); strength.py STR.SUMMARY",
+   "conditions": "Topic karakas other than the house karaka already scored by bhava.py: strong +0.5, weak -0.5 (strength summary, else sign dignity). Nodes not scored.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_promise_career_and_marriage"
+   ]
+  },
+  {
+   "rule_id": "CORE.YOGA",
+   "version": "1.0",
+   "source": "BPHS ch.36-41 (yogas) via yogas.py",
+   "conditions": "Active yogas (status == 'active') whose houses include a topic house or whose participants include the house lord: +0.5 each, at most +1.",
+   "exceptions": [
+    "Not used when the birth time is unknown"
+   ],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_promise_career_and_marriage"
+   ]
+  },
+  {
+   "rule_id": "CORE.VARGA_CONFIRM",
+   "version": "1.0",
+   "source": "BPHS ch.6-7 (divisional charts and their significations)",
+   "conditions": "House lord exalted/own in the topic varga +0.5, debilitated -0.5; only when varga_reliability for that varga is 'reliable'.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_varga_confirmation_only_when_reliable"
+   ]
+  },
+  {
+   "rule_id": "CORE.PERIOD_LINK",
+   "version": "1.0",
+   "source": "BPHS dasha phala chapters (ch.46-62: results by the dasha lord's lordship and placement); K.N. Rao linking practice",
+   "conditions": "MD/AD/PD lord links to topic houses (Lagna weight 1, Moon 0.5): owns, occupies, aspects, conjunct the house lord, nakshatra lord owns/occupies, node dispositor. Primary house weighs more. AD score = AD links + 0.5 x MD links; strong >= 4, medium >= 2 (app convention). MD-AD friction via DC.AD_FROM_MD.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_periods_link_hand_check"
+   ]
+  },
+  {
+   "rule_id": "CORE.DOUBLE_TRANSIT",
+   "version": "1.0",
+   "source": "K.N. Rao, double transit of Saturn and Jupiter (Planets and Children / Timing Events through Vimshottari Dasa)",
+   "conditions": "A month qualifies when transiting Saturn AND Jupiter each occupy or aspect (Parashari drishti) the topic's primary house sign or its lord's natal sign; from the Lagna, and from the Moon as secondary.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_triggers_double_transit"
+   ]
+  },
+  {
+   "rule_id": "CORE.WINDOW",
+   "version": "1.0",
+   "source": "app convention (promise -> period -> trigger)",
+   "conditions": "Narrowest window: linked PD intersected with double-transit months, else linked AD intersected with transit months, else the strongest linked AD; clipped to the range. Weak promise gives no window.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_card_json_round_trip",
+    "backend/tests/test_core_engine.py::test_weak_promise_not_indicated"
+   ]
+  },
+  {
+   "rule_id": "CORE.CONFIDENCE",
+   "version": "1.0",
+   "source": "app convention",
+   "conditions": "Points: promise strong 2 / moderate 1; link strong 2 / medium 1; transit 1; birth time approximate -1, unknown -2; topic varga unreliable -1; personal fit good +1, poor -2. Timing: high >= 5, medium >= 3; natal: high >= 3, medium >= 1. Unknown time or poor fit caps at low.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_unknown_time_moon_only_and_low_confidence"
+   ]
+  },
+  {
+   "rule_id": "CORE.CARD",
+   "version": "1.0",
+   "source": "app convention",
+   "conditions": "Card: verdict likely (linked period + transit) / mixed / not_indicated (natal: strong/moderate/weak), <= 2 plain reasons with fact IDs, one action line from a per-topic table (no remedies, no fear).",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_card_json_round_trip",
+    "backend/tests/test_core_engine.py::test_every_reason_has_fact_ids"
+   ]
+  },
+  {
+   "rule_id": "CORE.PAST_SCAN",
+   "version": "1.0",
+   "source": "app convention",
+   "conditions": "Past questions scan backward (default last 15 years) and return linked periods (with transit where present) as candidates, most recent first.",
+   "exceptions": [],
+   "status": "enabled",
+   "verify": false,
+   "verified_by": null,
+   "verified_on": null,
+   "tests": [
+    "backend/tests/test_core_engine.py::test_past_tense_returns_past_periods"
+   ]
+  }
+ ]
+}

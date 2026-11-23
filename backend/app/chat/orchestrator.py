@@ -13,7 +13,7 @@ from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
-from ..astro import career_events, classical, calibration, inspection, panchang, pillars, precision, preregistration, prediction, registry, report, sensitivity, transits, verify, vimshottari
+from ..astro import career_events, classical, calibration, core, inspection, panchang, pillars, precision, preregistration, prediction, registry, report, sensitivity, transits, verify, vimshottari
 from ..astro.constants import DOMAINS, DOMAIN_REMEDIES, SIGN_NAMES
 from .. import geo, moonmode
 from ..config import settings
@@ -108,7 +108,9 @@ def _calibrated(profile: BirthProfile) -> bool:
     Lagna-degree eclipse hits) apply only when the chart passed the
     three-check calibration — an unverified time moves the Lagna ~1 deg
     every 4 minutes."""
-    return profile.calibration_state == "calibrated"
+    return (profile.calibration_state == "calibrated"
+            or (profile.calibration_state not in ("uncalibrated", "insufficient_history")
+                and getattr(profile, "personal_fit", None) == "good"))
 
 
 def _precision_analysis(facts, birth, domain, start, end, profile, question="", event=None, *, as_of=None):
@@ -796,6 +798,8 @@ def _collect_milestones(db, conv, profile, text) -> bool:
         profile.milestones.append(m)
         added.append(m)
     db.flush()
+    if added:
+        calibration.update_personal_fit(db, profile, chart_facts(profile), birth_input(profile))
     if added or problems:
         _ack_milestones(db, conv, profile, [m for m in added if m.domain], problems)
         return True
@@ -1004,8 +1008,12 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
     if entries:
         msg.meta_json = json.dumps({memory.KEY: entries}, ensure_ascii=False)
         if conv.state == "open":
-            for milestone in _milestones_from_entries(db, profile, entries):
+            added_ms = list(_milestones_from_entries(db, profile, entries))
+            for milestone in added_ms:
                 db.add(milestone)
+            if added_ms:
+                db.flush()
+                calibration.update_personal_fit(db, profile, facts, birth)
     if _vimshottari_lookup(db, conv, profile, facts, birth, text):
         db.commit()
         return conv.messages[start_len:]
@@ -1013,6 +1021,11 @@ def handle_message(db: Session, conv: Conversation, profile: BirthProfile,
     # with the correction in context (see _answer_reading).
 
     # ---------- calibration phase ----------
+    # "Please check my birth time" from Home (or open chat) re-enters the
+    # optional checks after they were skipped.
+    if (conv.state == "open" and profile.calibration_state in ("skipped", "uncalibrated", "pending")
+            and re.search(r"check\s+(?:my\s+|the\s+|your\s+)?(?:birth\s+)?time|janm\s+samay|जन्म\s*समय", text, re.I)):
+        conv.state = "cal_intro"
     if conv.state in ("cal_intro", "cal_events", "cal_ask", "cal_followup"):
         _calibration_turn(db, conv, profile, facts, text, on_delta)
         db.commit()
@@ -1246,7 +1259,7 @@ def _calibration_turn(db, conv, profile, facts, text, on_delta):
     if conv.state == "cal_followup" and ev:
         # expect a month/year
         m = re.search(r"(20\d\d|19\d\d)", text)
-        mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", text, re.I)
+        mon = _MONTH_RE.search(text)
         if not m:
             if _norm_reply(text) in ("not sure", "don't know", "skip", "don't remember"):
                 _advance_calibration(db, conv, profile,
@@ -1427,7 +1440,9 @@ def _enter_rectify(db: Session, conv: Conversation, profile: BirthProfile):
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
-_MONTH_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b", re.I)
+_MONTH_NAME = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+               r"aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
+_MONTH_RE = re.compile(r"\b(" + _MONTH_NAME + r")\b", re.I)
 _YEAR_RE = re.compile(r"\b(19\d\d|20\d\d)\b")
 _NUM_MONTH_RE = re.compile(r"\b(\d{1,2})[/-](?:19|20)\d\d\b|\b(?:19|20)\d\d[/-](\d{1,2})\b")
 # a first-person past event, not a question about a year
@@ -1913,7 +1928,8 @@ _EXPAND = re.compile(r"\b(details|reasoning|evidence|calculations?|workings?|pro
 _EXPLAIN_NOTE = (
     "The user is asking why, or for the reasoning behind your previous answer. The ANALYSIS holds the stored "
     "computation for that answer. Explain in plain words which chart factors and checks drove the answer, "
-    "what supports it and what pulls against it, and how confident the reading is. No tables, no internal "
+    "what supports it and what pulls against it, and how confident the reading is. Keep it conversational — "
+    "name life areas and periods, not method names or point scores. No tables, no internal "
     "IDs, no new predictions.")
 
 
@@ -2369,7 +2385,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     t = text.lower()
     history = _conversation_history(conv)
     prior = _previous_reading(conv, profile)
-    previous = prior.get("analysis", {})
+    previous = prior.get("analysis") or {
+        k: prior[k] for k in ("domain", "decision", "analysis_window", "period_requested")
+        if k in prior}
     old_window = previous.get("analysis_window", {})
     dates = prior.get("requested_window") or ([old_window["start"], old_window["end"]] if old_window else None)
     prior_window = tuple(date.fromisoformat(d) for d in dates) if dates else None
@@ -2551,6 +2569,19 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     if default_used:
         window = language.default_window(today)
     moon_mode = moonmode.is_unknown(profile)
+    # The core engine answers fresh forecast questions with a card. Follow-ups
+    # ("why", clarifications, feedback, statements) and "second opinion" stay on
+    # the legacy path. Moon mode is fine: core reads from the Moon sign itself.
+    if (settings.ENGINE == "core" and domain and not is_minor(profile)
+            and (wants_forecast or (event and tense == "future"))
+            and not references_reading and not statement_only
+            and not (route and (route.is_feedback or route.clarifying_question))
+            and not re.search(r"second opinion", t)):
+        card_msgs = _core_card_turn(db, conv, profile, facts, birth, domain, event,
+                                    window, tense, focus, history, today, on_delta,
+                                    routing_seconds=routing_seconds, asked_window=period)
+        if card_msgs is not None:
+            return card_msgs
     if (domain and window is not None and not moon_mode and not ground_window_only
             and (not selected or event or period or default_used)):
         # An accepted domain-only correction must survive the engine's event
@@ -2715,6 +2746,130 @@ _LONG_RANGE_HOUSES = (
     "partnerships", "shared obligations and change", "higher study and travel",
     "professional responsibility", "networks and longer-term goals", "work behind the scenes and distant ties",
 )
+
+
+# DOMAIN/event -> core topic (backend/data/topics.json). Events that the core
+# engine has no opinion on stay unmapped and fall through to the LLM path.
+_CORE_EVENT_TOPIC = {
+    "promotion": "promotion", "job_change": "job_change", "job_offer": "job_change",
+    "business_launch": "business", "marriage": "marriage", "engagement": "marriage",
+    "foreign_travel": "foreign", "foreign_settlement": "foreign",
+    "property_purchase": "property", "childbirth": "children",
+    "education_start": "education", "exam_result": "education",
+    "debt_clearance": "wealth",
+}
+_CORE_DOMAIN_TOPIC = {
+    "career": "career", "finance": "wealth", "relationship": "relationship",
+    "education": "education", "relocation": "foreign", "property": "property",
+    "children": "children", "health": "wellbeing",
+}
+
+
+def _core_topic_id(domain: str | None, event) -> str | None:
+    etype = (event or {}).get("event_type") if isinstance(event, dict) else event
+    return _CORE_EVENT_TOPIC.get(etype or "") or _CORE_DOMAIN_TOPIC.get(domain or "")
+
+
+def _profile_fit(profile) -> str | None:
+    return profile.personal_fit or {"calibrated": "good", "partial": "partial",
+                                    "uncalibrated": "poor"}.get(profile.calibration_state or "")
+
+
+def _card_consistent(reply: str, card) -> bool:
+    """The phrased reply must keep the card's verdict and stay inside its dates."""
+    low = reply.lower()
+    if card.verdict == "not_indicated" and re.search(r"\blikely\b|\byes\b|will (?:happen|occur|be)", low):
+        return False
+    if card.verdict == "likely" and re.search(r"not indicated|unlikely|no strong", low):
+        return False
+    years = set(int(y) for y in re.findall(r"\b((?:19|20)\d{2})\b", reply))
+    if years:
+        allowed = set()
+        for key in ("start", "end"):
+            if card.range and card.range.get(key):
+                allowed.update(int(card.range[key][:4]) + d for d in (-1, 0, 1))
+        for c in card.candidates:
+            for key in ("start", "end"):
+                if c.get(key):
+                    allowed.update(int(c[key][:4]) + d for d in (-1, 0, 1))
+        if allowed and any(y not in allowed for y in years):
+            return False
+    # a month the model named must sit inside the card's range/candidates —
+    # same-year drift still contradicts the card shown beside the reply
+    months = {m[:3].lower() for m in _MONTH_RE.findall(reply)}
+    if months:
+        def _span_ok(mn: int) -> bool:
+            spans = ([(card.range["start"], card.range["end"])] if card.range else []
+                     ) + [(c["start"], c["end"]) for c in card.candidates
+                          if c.get("start") and c.get("end")]
+            for s, e in spans:
+                if int(s[5:7]) <= mn <= int(e[5:7]):
+                    return True
+            return False
+        if any(not _span_ok(_MONTHS[m]) for m in months if m in _MONTHS):
+            return False
+    return True
+
+
+def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
+                    tense, focus, history, today, on_delta, routing_seconds=0,
+                    asked_window=None):
+    topic_id = _core_topic_id(domain, event)
+    if not topic_id:
+        return None
+    try:
+        qt = tense if tense in ("future", "past", "natal") else "future"
+        # chat windows end on the last day asked for; core.answer takes an
+        # exclusive end, so a one-day span ("tomorrow") would otherwise raise
+        card = core.answer(facts, birth, topic_id, question_tense=qt,
+                           start=window[0] if window else None,
+                           end=(window[1] + timedelta(days=1)) if window else None,
+                           today=today, personal_fit=_profile_fit(profile))
+    except (core.TopicError, ValueError):
+        return None
+    fallback = core.card_text(card)
+    note = ("The analysis produced the answer card below. Phrase it in plain, warm words "
+            "for the user: keep the verdict and the dates exactly as given, at most 100 words, "
+            "no planet names, house numbers, jargon or new timings.\n\n" + fallback)
+    reply = None
+    try:
+        reply, provider = providers.generate(history, facts=facts, analysis=None,
+                                             context_note=note, on_delta=on_delta,
+                                             allow_external=_external_ok(profile),
+                                             routing_seconds=routing_seconds)
+    except Exception:
+        provider = "offline"
+    if reply == providers.OFFLINE_MESSAGE:
+        reply = None
+    if not reply or not _card_consistent(reply, card):
+        try:
+            retry, provider2 = providers.regenerate_with_issues(
+                history, facts, None, reply or "",
+                ["Keep the card's verdict and dates exactly; do not add new timings or jargon."],
+                context_note=note, allow_external=_external_ok(profile),
+                routing_seconds=routing_seconds)
+            if retry and retry != providers.OFFLINE_MESSAGE and _card_consistent(retry, card):
+                reply, provider = retry, provider2
+        except Exception:
+            pass
+    if not reply or not _card_consistent(reply, card):
+        reply, provider = fallback, "core"
+    notes = card.details.get("notes") if isinstance(card.details, dict) else None
+    meta = {"provider": provider, "fingerprint": profile.calc_fingerprint,
+            "card": {"topic": card.label, "verdict": card.verdict, "window": card.window,
+                     "confidence": card.confidence, "why": card.why, "action": card.action,
+                     "details": "\n".join(notes) if notes else None},
+            "reading_domain": domain,
+            # keys follow-up turns read via _previous_reading: domain reuse,
+            # period inheritance and the previous event
+            "domain": domain, "decision": {"event": event}}
+    # Only a window the user asked for is reused later; an inherited or
+    # default span must not pull an unrelated follow-up into the old dates.
+    if asked_window:
+        meta["period_requested"] = True
+        meta["requested_window"] = [asked_window[0].isoformat(), asked_window[1].isoformat()]
+    _add_msg(db, conv, "assistant", reply, meta=meta)
+    return conv.messages[-2:]
 
 
 def _dasha_overview(facts: dict, span: tuple, domain=None) -> list[str]:

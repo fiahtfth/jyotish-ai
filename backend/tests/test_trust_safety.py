@@ -85,7 +85,9 @@ def test_unknown_time_model_context_has_no_lagna_data(model):
     assert "Arudhas" not in brief and "bhava-chalit" not in brief
 
 
-def test_unknown_time_chart_endpoint_is_moon_chart():
+def test_unknown_time_chart_endpoint_is_moon_chart(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "KP_ENABLED", True)       # off by default (Phase 4 flags)
     h = _user(UNKNOWN)
     r = client.get("/api/chart/D1", headers=h).json()
     assert r["chandra_lagna"] is True
