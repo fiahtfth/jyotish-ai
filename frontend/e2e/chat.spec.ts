@@ -91,8 +91,9 @@ test("existing accounts accept service terms once, without an AI toggle", async 
 test("signup includes AI processing in one required terms agreement", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("button", { name: "Create account", exact: true }).first().click();
-  await expect(page.getByRole("checkbox")).toHaveCount(1);
+  await expect(page.getByRole("checkbox")).toHaveCount(2);
   await expect(page.getByText(/recent messages and relevant details remembered/i)).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /18 years/i })).toBeVisible();
   await expect(page.getByRole("link", { name: "terms and conditions" })).toHaveAttribute("href", "/terms");
   await expect(page.locator("form").getByRole("button", { name: "Create account", exact: true }).last()).toBeDisabled();
 });
@@ -172,16 +173,16 @@ test("forecast evidence tables fit a mobile chat bubble", async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 740 });
   const columns = ["Point", "D1", "D2", "D6", "D7", "D9", "D10", "D12", "D24", "D60"];
   const tables = [{ title: "Lahiri positions", columns, rows: [columns.map(() => "Sagittarius 20.0010°")] }];
-  const reading = { ...message(5, "assistant", "Career reading"), meta: { analysis: {
-    decision: { event: { event_type: "promotion" } }, classical: { tables, note: "Sampled on one date." },
-  } } };
-  await page.route("**/api/chat/history", route => route.fulfill({ json: [reading] }));
+  const analysis = { decision: { event: { event_type: "promotion" } }, classical: { tables, note: "Sampled on one date." } };
+  // calculations stay internal: evidence only renders when the backend marked
+  // the turn as an explicit detail request (meta.expanded)
+  const expanded = { ...message(5, "assistant", "Career reading"), meta: { analysis, expanded: true } };
+  const plain = { ...message(6, "assistant", "Career reading"), meta: { analysis } };
+  await page.route("**/api/chat/history", route => route.fulfill({ json: [expanded, plain] }));
   await page.goto("/chat");
   await expect(page.getByRole("table", { name: "Lahiri positions" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
-  await page.getByText("Chart calculations and timing evidence").click();
-  await expect(page.getByText("Career reading")).toBeVisible();
-  await expect(page.getByRole("table")).toHaveCount(0);
+  await expect(page.getByRole("table")).toHaveCount(1);
 });
 
 

@@ -488,7 +488,8 @@ def _available_providers(allow_external):
     provider = settings.LLM_PROVIDER
     providers_to_try = []
     if provider in PROVIDERS:
-        providers_to_try = [provider] + [f for f in ("groq", "openrouter") if f != provider]
+        providers_to_try = [provider] + [f for f in ("groq", "openrouter", "gemini")
+                                       if f != provider]
     # skip external providers that have no key or no consent — no point retrying them
     keys = {"gemini": settings.GEMINI_API_KEY, "groq": settings.GROQ_API_KEY,
             "openrouter": settings.OPENROUTER_API_KEY}
@@ -757,6 +758,7 @@ def generate(messages: list[dict], facts: dict | None = None,
                 remaining = provider_deadline - now
                 if remaining <= 0:
                     break
+                retry_after = None
                 try:
                     log.info("LLM call provider=%s model=%s temperature=%s",
                              p, pinned_model_id(p), _temperature())
@@ -775,6 +777,13 @@ def generate(messages: list[dict], facts: dict | None = None,
                     code = exc.response.status_code
                     log.warning("LLM provider %s failed: HTTP %s", p, code)
                     retryable = code == 429 or code >= 500
+                    # rate limits often name their own reset — honour Retry-After
+                    # instead of a fixed backoff that wakes up still-limited
+                    if code == 429:
+                        try:
+                            retry_after = float(exc.response.headers.get("retry-after", ""))
+                        except ValueError:
+                            retry_after = None
                 except (httpx.TimeoutException, httpx.TransportError) as exc:
                     log.warning("LLM provider %s failed: %s", p, type(exc).__name__)
                     retryable = True
@@ -786,7 +795,7 @@ def generate(messages: list[dict], facts: dict | None = None,
                     return _offline()
                 if not retryable or attempt >= 2:
                     break
-                delay = 2 * (attempt + 1)
+                delay = retry_after if retry_after is not None and retry_after > 0 else 2 * (attempt + 1)
                 if time.monotonic() + delay + _MIN_CALL_SECONDS >= provider_deadline:
                     break
                 time.sleep(delay)
