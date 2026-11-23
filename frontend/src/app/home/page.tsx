@@ -113,6 +113,13 @@ export default function Home() {
                   ))}
                 </dl>
                 {dashaText && <p className="text-sm"><span className="text-muted">{t("homeDasha")}: </span>{dashaText}</p>}
+                {brief.life_phase && (
+                  <div className="rounded-lg bg-accentsoft p-3 text-sm">
+                    <p className="font-medium">{brief.life_phase.label}</p>
+                    <p className="mt-0.5 text-muted">{brief.life_phase.focus}</p>
+                    {brief.life_phase.note && <p className="mt-1">{brief.life_phase.note}</p>}
+                  </div>
+                )}
                 {!brief.time_known && <p role="status" className="rounded-lg bg-accentsoft p-3 text-sm">{t("homeTimeUnknown")}</p>}
               </section>
             )}

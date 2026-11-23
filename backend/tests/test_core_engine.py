@@ -260,6 +260,14 @@ def test_year_overview_shape(facts):
     assert core.dasha_brief(facts, TODAY) == "Rahu major period, Venus sub-period until June 2027"
 
 
+def test_life_phase(facts):
+    lp = core.life_phase(facts, ARJUN, TODAY)   # age 36, Rahu MD / Venus AD
+    assert lp["key"] == "building" and lp["label"] == "Building phase"
+    assert "Rahu major period" in lp["note"] and "Venus sub-period" in lp["note"]
+    senior = core.life_phase(facts, replace(ARJUN, year=1960), TODAY)   # age 66
+    assert senior["key"] == "consolidation"
+
+
 # ------------------------------------------------------------------ API and flags
 
 def _user(profile):

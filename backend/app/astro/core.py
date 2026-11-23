@@ -889,6 +889,40 @@ def year_overview(facts: dict, birth, today: date, *, personal_fit: Optional[str
     return out
 
 
+# desh-kaal-paristhiti on the brief itself: where a person stands in life
+# (ashrama-wise age bands) read through the running period's flavour.
+_LIFE_PHASES = [
+    (25, "foundation", "learning, education, and finding your direction"),
+    (50, "building", "career, family, and asset-building years"),
+    (75, "consolidation", "harvest, stability, and mentoring others"),
+    (200, "legacy", "reflection, detachment, and passing things on"),
+]
+_LORD_FLAVOR = {
+    "Sun": "position, visibility and responsibility", "Moon": "home, mind and care for people",
+    "Mars": "drive, competition and getting things done", "Mercury": "learning, skills and trade",
+    "Jupiter": "growth, wisdom and expansion", "Venus": "comfort, relationships and creativity",
+    "Saturn": "work, discipline and endurance", "Rahu": "ambition, change and unconventional paths",
+    "Ketu": "completion, detachment and inner focus",
+}
+
+
+def life_phase(facts: dict, birth, today: date) -> dict:
+    """{'key','label','focus','note'} — e.g. 43 + Jupiter MD →
+    'Building phase' / 'career, family…' / 'Your Jupiter major period —
+    growth, wisdom and expansion — runs until 2029.'."""
+    age = today.year - birth.year
+    key, focus = next((k, f) for limit, k, f in _LIFE_PHASES if age < limit)
+    note = ""
+    md, ad, _ = dasha_craft.current_rows(facts, today)
+    if md is not None:
+        flavor = _LORD_FLAVOR.get(md["lord"], "its own themes")
+        note = f"Your {md['lord']} major period — {flavor} — runs until {md['end'][:4]}"
+        if ad is not None and ad["antar"] != md["lord"]:
+            note += f", with {ad['antar']} sub-period until {_fmt_month(ad['end'])}"
+        note += "."
+    return {"key": key, "label": f"{key.title()} phase", "focus": focus, "note": note}
+
+
 def dasha_brief(facts: dict, today: date) -> Optional[str]:
     """'Jupiter major period, Saturn sub-period until March 2027'."""
     md, ad, _ = dasha_craft.current_rows(facts, today)

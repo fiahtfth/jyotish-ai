@@ -394,7 +394,8 @@ export type HomeYearItem = {
 };
 export type HomeOverview = {
   chart_brief: { lagna: string | null; moon_sign: string; nakshatra: string;
-    current_dasha: { maha: string; antar: string; until: string } | string | null; time_known: boolean };
+    current_dasha: { maha: string; antar: string; until: string } | string | null; time_known: boolean;
+    life_phase?: { key: string; label: string; focus: string; note: string } };
   year_overview: HomeYearItem[];
   chart_check: { state: string; personal_fit?: string | null };
   suggested_questions: string[];

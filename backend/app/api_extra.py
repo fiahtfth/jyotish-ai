@@ -609,7 +609,8 @@ def home(user: User = Depends(current_user)):
     return {
         "chart_brief": {"lagna": facts["lagna"]["sign_name"] if time_known else None,
                         "moon_sign": moon["sign_name"], "nakshatra": moon["nakshatra"]["name"],
-                        "current_dasha": core.dasha_brief(facts, today), "time_known": time_known},
+                        "current_dasha": core.dasha_brief(facts, today), "time_known": time_known,
+                        "life_phase": core.life_phase(facts, birth, today)},
         "year_overview": overview,
         "chart_check": {"state": "checked" if fit else "not_checked", "personal_fit": fit},
         "suggested_questions": questions,
