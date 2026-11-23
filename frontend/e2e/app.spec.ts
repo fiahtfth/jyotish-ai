@@ -57,17 +57,21 @@ test("register, birth details, calibration, chat, sign out/in, privacy, delete",
   await expect(warn).toBeVisible();
   // A typed question must work immediately, without pressing Continue or editing the time.
   const box = page.getByPlaceholder(/ask anything/i);
+  const sendBtn = page.getByRole("button", { name: "Send", exact: true });
   await box.fill("Will I change jobs next year?");
   await box.press("Enter");
   await expect(page.locator(".chat-message").last()).toContainText(/job change/i);
   await expect(continueReading).toHaveCount(0);
 
+  await expect(sendBtn).toBeEnabled();  // wait for the reply stream to finish
   await box.fill("What about July 2027?");
   await box.press("Enter");
   await expect(page.locator(".chat-message").last()).toContainText(/2027/i);
+  await expect(sendBtn).toBeEnabled();  // Enter is dropped while a reply streams
   await box.fill("Actually, I meant a promotion at my current company.");
   await box.press("Enter");
   await expect(page.locator(".chat-message").last()).toContainText(/promotion/i);
+  await expect(sendBtn).toBeEnabled();
   await box.fill("I work as a school principal.");
   await box.press("Enter");
   await expect(page.getByText("I work as a school principal.", { exact: true })).toBeVisible();

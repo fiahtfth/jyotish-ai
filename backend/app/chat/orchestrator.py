@@ -2385,7 +2385,9 @@ def _answer_reading(db, conv, profile, facts, birth, text, varga, on_delta, rout
     t = text.lower()
     history = _conversation_history(conv)
     prior = _previous_reading(conv, profile)
-    previous = prior.get("analysis", {})
+    previous = prior.get("analysis") or {
+        k: prior[k] for k in ("domain", "decision", "analysis_window", "period_requested")
+        if k in prior}
     old_window = previous.get("analysis_window", {})
     dates = prior.get("requested_window") or ([old_window["start"], old_window["end"]] if old_window else None)
     prior_window = tuple(date.fromisoformat(d) for d in dates) if dates else None
@@ -2837,6 +2839,8 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
                                              routing_seconds=routing_seconds)
     except Exception:
         provider = "offline"
+    if reply == providers.OFFLINE_MESSAGE:
+        reply = None
     if not reply or not _card_consistent(reply, card):
         try:
             retry, provider2 = providers.regenerate_with_issues(
@@ -2844,7 +2848,7 @@ def _core_card_turn(db, conv, profile, facts, birth, domain, event, window,
                 ["Keep the card's verdict and dates exactly; do not add new timings or jargon."],
                 context_note=note, allow_external=_external_ok(profile),
                 routing_seconds=routing_seconds)
-            if retry and _card_consistent(retry, card):
+            if retry and retry != providers.OFFLINE_MESSAGE and _card_consistent(retry, card):
                 reply, provider = retry, provider2
         except Exception:
             pass
