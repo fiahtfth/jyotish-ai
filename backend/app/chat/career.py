@@ -26,7 +26,8 @@ COMPARE = re.compile(r"\b(?:compar(?:e|ing)|choose(?: between)?|deciding between
 TIMING = re.compile(r"\b(?:when|timing|forecast|outlook|will I (?:get|receive|land|start|be promoted))\b", re.I)
 CHART = re.compile(r"\b(?:chart|jyotish|astrolog\w*|kundli|d-?10)\b", re.I)
 FIT = re.compile(r"\b(?:suits?|suited|fits?|right for me|best for me|cut out for|meant (?:to|for))\b", re.I)
-PERIOD = re.compile(r"\b(?:19|20)\d\d\b|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b"
+PERIOD = re.compile(r"\b(?:19|20)\d\d\b|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|"
+                    r"jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b"
                     r"|\b(?:next|this|last|coming) (?:year|month|week)\b|\b(?:years?|months?|weeks?)\b", re.I)
 STOP = {"skip", "none", "no preference", "no constraints", "not sure", "no shortlist", "suggest options"}
 WORK_MODES = {"remote": "remote", "work from home": "remote", "hybrid": "hybrid",

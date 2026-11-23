@@ -108,7 +108,9 @@ def _calibrated(profile: BirthProfile) -> bool:
     Lagna-degree eclipse hits) apply only when the chart passed the
     three-check calibration — an unverified time moves the Lagna ~1 deg
     every 4 minutes."""
-    return profile.calibration_state == "calibrated"
+    return (profile.calibration_state == "calibrated"
+            or (profile.calibration_state not in ("uncalibrated", "insufficient_history")
+                and getattr(profile, "personal_fit", None) == "good"))
 
 
 def _precision_analysis(facts, birth, domain, start, end, profile, question="", event=None, *, as_of=None):
@@ -273,7 +275,7 @@ def _add_msg(db: Session, conv: Conversation, role: str, content: str,
 
 
 DOMAIN_KEYWORDS = {
-    "career": ["job", "career", "promotion", "work", "business", "profession", "salary", "boss", "interview", "transfer", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work", "startup", "entrepreneur", "self-employed", "office", "vyapar", "व्यापार"],
+    "career": ["job", "career", "promotion", "promote", "work", "business", "profession", "salary", "boss", "interview", "transfer", "employer", "leadership", "manager", "colleague", "naukri", "नौकरी", "काम", "company", "companies", "lead a team", "manage a team", "managing people", "line of work", "role at work", "startup", "entrepreneur", "self-employed", "office", "vyapar", "व्यापार"],
     "education": ["study", "studies", "exam", "education", "degree", "college", "university", "course", "admission", "graduate", "graduation", "graduating", "stream", "subject", "field of study", "padhai", "पढ़ाई", "engineering", "commerce", "science stream", "arts stream", "humanities", "mba", "phd", "masters", "bachelors", "b.tech", "btech", "neet", "jee", "upsc", "entrance"],
     "relationship": ["marriage", "marry", "married", "wedding", "relationship", "partner", "wife", "husband", "love life", "love marriage", "in love", "spouse", "engagement", "tie the knot", "dating", "girlfriend", "boyfriend", "shaadi", "shadi", "vivah", "शादी", "विवाह"],
     "relocation": ["move", "city", "settle", "relocate", "relocating", "abroad", "foreign", "house shift", "shift house", "settle abroad", "settle in", "travel", "videsh", "विदेश", "buy a house", "buy a home", "buy a flat", "buy property", "house purchase", "own house", "own home", "new house", "new home", "property", "moving to", "move to", "move abroad", "move out"],
@@ -1227,7 +1229,7 @@ def _calibration_turn(db, conv, profile, facts, text, on_delta):
     if conv.state == "cal_followup" and ev:
         # expect a month/year
         m = re.search(r"(20\d\d|19\d\d)", text)
-        mon = re.search(r"(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*", text, re.I)
+        mon = _MONTH_RE.search(text)
         if not m:
             if _norm_reply(text) in ("not sure", "don't know", "skip", "don't remember"):
                 _advance_calibration(db, conv, profile,
@@ -1408,7 +1410,9 @@ def _enter_rectify(db: Session, conv: Conversation, profile: BirthProfile):
 
 _MONTHS = {m: i + 1 for i, m in enumerate(
     ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"])}
-_MONTH_RE = re.compile(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\b", re.I)
+_MONTH_NAME = (r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+               r"aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?")
+_MONTH_RE = re.compile(r"\b(" + _MONTH_NAME + r")\b", re.I)
 _YEAR_RE = re.compile(r"\b(19\d\d|20\d\d)\b")
 _NUM_MONTH_RE = re.compile(r"\b(\d{1,2})[/-](?:19|20)\d\d\b|\b(?:19|20)\d\d[/-](\d{1,2})\b")
 # a first-person past event, not a question about a year
@@ -1825,7 +1829,8 @@ _EXPAND = re.compile(r"\b(details|reasoning|evidence|calculations?|workings?|pro
 _EXPLAIN_NOTE = (
     "The user is asking why, or for the reasoning behind your previous answer. The ANALYSIS holds the stored "
     "computation for that answer. Explain in plain words which chart factors and checks drove the answer, "
-    "what supports it and what pulls against it, and how confident the reading is. No tables, no internal "
+    "what supports it and what pulls against it, and how confident the reading is. Keep it conversational — "
+    "name life areas and periods, not method names or point scores. No tables, no internal "
     "IDs, no new predictions.")
 
 

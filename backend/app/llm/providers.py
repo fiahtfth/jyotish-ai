@@ -44,6 +44,10 @@ How to answer
 - Be honest about uncertainty without hedging every line. The chart shows tendencies and
   periods, not certainties: never promise an outcome, and never give a percentage or probability.
 - Interpretations are interpretations. Separate them from the established facts of the chart.
+- Keep the arithmetic in the back office. Never quote bindus, house numbers, lordships,
+  or method names to the client — give the gist of what it means for them, the way a
+  colleague would over tea. Technical detail belongs only in a reply to a direct "why"
+  or "calculations" question, and even there in plain words.
 
 When ANALYSIS.gates lists a check with status "stopped", the reading ends at
 that check: say plainly that the chart does not strongly promise or time the
@@ -217,7 +221,19 @@ def _plain_reply(text: str) -> str:
                 continue                      # markdown table separator
             line = " · ".join(c for c in cells if c)
         lines.append(line)
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    text = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    # a provider hitting its token cap returns a reply cut mid-sentence —
+    # drop the dangling tail rather than storing a fragment
+    tail = re.search(r"([.!?…])\s*([^.!?…]+)$", text)
+    if tail:
+        frag = tail.group(2).strip()
+        # clearly unfinished: unclosed parenthesis, trailing comma, or ending
+        # on a connector — a real answer still ends on a noun or a date
+        cut = (frag.count("(") > frag.count(")") or frag.endswith(",")
+               or bool(re.search(r"(?:^|\s)(?:so|and|but|because|since|which|that|to|of|the|a|an|in|for|with|as|is|are|was|by)$", frag, re.I)))
+        if frag and cut:
+            text = text[: tail.start(2)].rstrip()
+    return text
 
 
 def _completion_text(data: dict) -> str:
@@ -752,7 +768,9 @@ def generate(messages: list[dict], facts: dict | None = None,
                         # the persona asks for plain text; strip emphasis, keep list structure
                         return _plain_reply(plain_text(text)), p
                     log.warning("LLM provider %s returned empty text", p)
-                    retryable = False
+                    # an empty body is usually a transient hiccup (free-tier
+                    # models drop turns under load), not a hard failure
+                    retryable = True
                 except httpx.HTTPStatusError as exc:
                     code = exc.response.status_code
                     log.warning("LLM provider %s failed: HTTP %s", p, code)
